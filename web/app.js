@@ -67,8 +67,14 @@ async function refreshDashboard(quiet = false) {
     const stats = d.stats || {};
     const cc = d.commandCenter || {};
 
-    // Auto-start stream if webcam is running but stream isn't showing
-    if (wc.running && !streamOn) startStream();
+    // Check if sim is running
+    const sim = d.sim || {};
+    simActive = !!sim.running;
+
+    // Auto-start stream if webcam or sim is running but stream isn't showing
+    // Don't start webcam if sim is active
+    if (sim.running && !streamOn) startStream();
+    else if (wc.running && !sim.running && !streamOn) startStream();
 
     // Sync model pill buttons with backend state
     const activeModels = new Set(wc.models || []);
@@ -84,8 +90,8 @@ async function refreshDashboard(quiet = false) {
     // Update robot actions section
     const rah = document.querySelector("#robotActionsHint");
     if (rah) {
-      const hasRobot = d.robotOnline || dimos.running;
-      rah.textContent = hasRobot ? "Connected" : "No robot connected";
+      const hasRobot = d.robotOnline || dimos.running || sim.running;
+      rah.textContent = sim.running ? `Sim: ${sim.robot || ""}` : (hasRobot ? "Connected" : "No robot connected");
       rah.className = `rah-hint${hasRobot ? " connected" : ""}`;
       if (hasRobot && robotActionsBody?.classList.contains("collapsed")) {
         robotActionsBody.classList.remove("collapsed");
@@ -94,12 +100,14 @@ async function refreshDashboard(quiet = false) {
     }
 
     // Rail status
-    setDot(document.querySelector("#sWebcam"), wc.running ? "ok" : "warn");
-    document.querySelector("#sWebcamVal").textContent = wc.running ? `${wc.fps || 0} fps` : "Off";
-    setDot(document.querySelector("#sdimOS"), dimos.running ? "ok" : "warn");
-    document.querySelector("#sdimOSVal").textContent = dimos.running ? "Online" : "Idle";
-    setDot(document.querySelector("#sRobot"), d.robotOnline ? "ok" : (p.robotIp ? "bad" : "warn"));
-    document.querySelector("#sRobotVal").textContent = d.robotOnline ? "Connected" : (p.robotIp ? "Unreach" : "No IP");
+    const sourceActive = wc.running || sim.running;
+    setDot(document.querySelector("#sWebcam"), sourceActive ? "ok" : "warn");
+    document.querySelector("#sWebcamVal").textContent = sim.running ? `SIM ${sim.fps || 0}fps` : (wc.running ? `${wc.fps || 0} fps` : "Off");
+    setDot(document.querySelector("#sdimOS"), dimos.running || sim.running ? "ok" : "warn");
+    document.querySelector("#sdimOSVal").textContent = sim.running ? "Sim" : (dimos.running ? "Online" : "Idle");
+    const robotConnected = d.robotOnline || sim.running;
+    setDot(document.querySelector("#sRobot"), robotConnected ? "ok" : (p.robotIp ? "bad" : "warn"));
+    document.querySelector("#sRobotVal").textContent = sim.running ? (sim.robot || "Sim") : (d.robotOnline ? "Connected" : (p.robotIp ? "Unreach" : "No IP"));
     setDot(document.querySelector("#sMap"), cc.ok ? "ok" : "warn");
     document.querySelector("#sMapVal").textContent = cc.ok ? "Ready" : "Closed";
 
@@ -273,6 +281,7 @@ document.querySelector("#recToggle")?.addEventListener("click", async () => {
 // ── Webcam start (from Control tab placeholder + stream button) ────────────
 
 async function startWebcam() {
+  if (simActive) { await api("/api/sim/stop", {}); simActive = false; }
   const models = [...document.querySelectorAll("[data-model].active")].map(b => b.dataset.model);
   const r = await api("/api/webcam/start", { camera: 0, models: models.length ? models : ["yolo"] });
   append(r.ok ? "Webcam started" : "Webcam start failed.", r);
@@ -280,6 +289,37 @@ async function startWebcam() {
 }
 
 document.querySelector("#camStartWebcam")?.addEventListener("click", startWebcam);
+
+// ── Simulator (from Control tab placeholder) ───────────────────────────────
+
+let simActive = false;
+
+document.querySelector("#camStartSim")?.addEventListener("click", async () => {
+  const picker = document.querySelector("#simPicker");
+  if (picker.style.display === "none") {
+    const r = await api("/api/sim/robots");
+    const sel = document.querySelector("#simRobotSelect");
+    sel.innerHTML = (r.robots || [])
+      .filter(rb => rb.available)
+      .map(rb => `<option value="${rb.id}">${rb.name} (${rb.type})</option>`)
+      .join("");
+    picker.style.display = "";
+  } else {
+    picker.style.display = "none";
+  }
+});
+
+document.querySelector("#simLaunchBtn")?.addEventListener("click", async () => {
+  const robot = document.querySelector("#simRobotSelect").value;
+  const r = await api("/api/sim/start", { robot });
+  append(r.ok ? `Sim started: ${robot}` : "Sim start failed.", r);
+  if (r.ok) {
+    simActive = true;
+    document.querySelector("#simPicker").style.display = "none";
+    startStream();
+    refreshDashboard(true);
+  }
+});
 
 // ── Dataset tab ─────────────────────────────────────────────────────────────
 
@@ -573,7 +613,13 @@ moveStepSlider?.addEventListener("input", () => {
   if (moveStepLabel) moveStepLabel.textContent = moveStep.toFixed(1) + "m";
 });
 
-function move(fwd, left, deg) { mcpCall("relative_move", { forward: fwd, left, degrees: deg }); }
+function move(fwd, left, deg) {
+  if (simActive) {
+    api("/api/sim/move", { forward: fwd, left, turn: deg });
+    return;
+  }
+  mcpCall("relative_move", { forward: fwd, left, degrees: deg });
+}
 
 const MOVE_BTNS = {
   "mv-fwd": () => move(moveStep, 0, 0), "mv-back": () => move(-moveStep, 0, 0),
@@ -1004,6 +1050,8 @@ function showToast(msg) {
 
 async function autoStartIfNeeded() {
   try {
+    const sim = await api("/api/sim/state");
+    if (sim.running) { simActive = true; startStream(); return; }
     const st = await api("/api/webcam/state");
     if (!st.running && st.state !== "running") {
       await startWebcam();

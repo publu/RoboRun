@@ -115,8 +115,15 @@
               <div class="cam-placeholder" id="cameraPlaceholder">
                 <div class="cam-ph-icon">◈</div>
                 <div class="cam-ph-text">NO SIGNAL</div>
-                <div class="cam-ph-sub">Start webcam or connect robot</div>
-                <button id="camStartWebcam" class="primary-btn" style="margin-top:12px">▷ Start Webcam</button>
+                <div class="cam-ph-sub">Choose a source</div>
+                <div class="cam-source-row">
+                  <button id="camStartWebcam" class="primary-btn">▷ Webcam</button>
+                  <button id="camStartSim" class="sec-btn">▷ Simulate</button>
+                </div>
+                <div class="cam-sim-picker" id="simPicker" style="display:none">
+                  <select id="simRobotSelect"></select>
+                  <button id="simLaunchBtn" class="primary-btn small-btn">Launch</button>
+                </div>
               </div>
               <img id="cameraStream" class="cam-img" style="display:none" alt="Live feed" />
               <img id="cameraImg" class="cam-img" style="display:none" alt="Snapshot" />

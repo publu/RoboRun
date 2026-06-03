@@ -66,6 +66,14 @@ def _get_dataset():
         _dataset = DatasetCollector()
     return _dataset
 
+_simulator = None
+def _get_simulator():
+    global _simulator
+    if _simulator is None:
+        from roborun.simulator import SimulatorRunner
+        _simulator = SimulatorRunner()
+    return _simulator
+
 _spatial_memory = None
 def _get_memory():
     global _spatial_memory
@@ -687,6 +695,7 @@ def dashboard() -> dict[str, Any]:
         "robotIp": robot_ip,
         "commandCenter": {"ok": False, "url": "http://127.0.0.1:7779/command-center"},
         "webcam": webcam.get_state(),
+        "sim": _get_simulator().get_state(),
         "dataset": dataset.get_status(),
         "stats": system_stats(),
         "collectTime": time.strftime("%Y-%m-%d %H:%M:%S %Z"),
@@ -851,6 +860,14 @@ class Handler(SimpleHTTPRequestHandler):
             else:
                 self.send_json(200, {"ok": True, "alive": agent.is_alive, "session": agent._session_id is not None})
             return
+        # ── Simulator GET ──
+        if self.path == "/api/sim/robots":
+            self.send_json(200, {"ok": True, "robots": _get_simulator().list_robots()})
+            return
+        if self.path == "/api/sim/state":
+            self.send_json(200, {"ok": True, **_get_simulator().get_state()})
+            return
+
         # ── Spatial Memory GET ──
         if self.path == "/api/memory/stats":
             self.send_json(200, {"ok": True, **_get_memory().stats()})
@@ -908,6 +925,29 @@ class Handler(SimpleHTTPRequestHandler):
             if self.path == "/api/webcam/clip_query":
                 result = _get_webcam().set_clip_query(str(payload.get("query", "")))
                 self.send_json(200, result)
+                return
+
+            # ── Simulator ──
+            if self.path == "/api/sim/start":
+                _get_webcam().stop()
+                robot = payload.get("robot", "unitree_go1")
+                result = _get_simulator().start(robot_id=robot)
+                if result.get("ok"):
+                    log_event("sim_started", f"Sim: {robot}")
+                self.send_json(200, result)
+                return
+            if self.path == "/api/sim/stop":
+                result = _get_simulator().stop()
+                log_event("sim_stopped", "Simulator stopped")
+                self.send_json(200, result)
+                return
+            if self.path == "/api/sim/move":
+                _get_simulator().set_cmd_vel(
+                    forward=float(payload.get("forward", 0)),
+                    left=float(payload.get("left", 0)),
+                    turn=float(payload.get("turn", 0)),
+                )
+                self.send_json(200, {"ok": True})
                 return
 
             # ── Spatial Memory ──
