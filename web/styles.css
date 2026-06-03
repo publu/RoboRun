@@ -1268,3 +1268,70 @@ label span { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1
 .fm-body { padding: 16px; overflow-y: auto; flex: 1; }
 .fm-foot { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 16px; border-top: 1px solid var(--border); flex-shrink: 0; }
 .bp-icon-row { display: flex; gap: 6px; align-items: center; }
+
+/* ── CHAT TOGGLE ───────────────────────────────────────────────── */
+
+.chat-toggle {
+  position: absolute;
+  right: 400px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  width: 20px; height: 48px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-right: none;
+  border-radius: 6px 0 0 6px;
+  color: var(--muted);
+  font-size: 10px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: right 0.25s, color 0.15s;
+}
+.chat-toggle:hover { color: var(--green); }
+.app.chat-collapsed .chat-toggle { right: 0; }
+.app.chat-collapsed .chat-toggle::after { content: "◀"; }
+.app.chat-collapsed .chat-panel { display: none; }
+.app.chat-collapsed { grid-template-columns: 188px 1fr 0px; }
+
+/* ── ROBOT ACTIONS COLLAPSIBLE ─────────────────────────────────── */
+
+.robot-actions-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s;
+}
+.robot-actions-header:hover { background: var(--surface2); }
+.rah-label { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.14em; color: var(--muted); font-weight: 500; }
+.rah-hint { font-family: var(--font-mono); font-size: 9px; color: var(--amber); margin-left: auto; }
+.rah-hint.connected { color: var(--green); }
+.rah-chevron { font-size: 10px; color: var(--muted); transition: transform 0.2s; }
+.robot-actions-body { display: flex; flex-direction: column; gap: 6px; }
+.robot-actions-body.collapsed { display: none; }
+.robot-actions-header.open .rah-chevron { transform: rotate(90deg); }
+
+/* ── MODEL TOAST ──────────────────────────────────────────────── */
+
+.model-toast {
+  position: fixed;
+  bottom: 20px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(224,64,64,0.15);
+  border: 1px solid rgba(224,64,64,0.4);
+  color: var(--red);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 8px 16px;
+  border-radius: var(--r2);
+  z-index: 500;
+  animation: toast-in 0.3s ease-out;
+  pointer-events: none;
+}
+@keyframes toast-in { from { opacity: 0; transform: translateX(-50%) translateY(10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }

@@ -30,3 +30,8 @@ datasets/
 # Logs
 *.log
 *.tmp
+
+# Model weights
+*.pt
+*.onnx
+*.safetensors

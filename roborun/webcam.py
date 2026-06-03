@@ -11,7 +11,7 @@ from typing import Any
 import cv2
 import numpy as np
 
-from roborun.models import CLIPMatcher, Detection, YOLODetector
+from roborun.models import CLIPMatcher, Detection, JEPAEncoder, YOLODetector
 
 FRAME_PATH = Path("/tmp/roborun_frame.jpg")
 STATE_PATH = Path("/tmp/roborun_state.json")
@@ -30,11 +30,13 @@ class WebcamPipeline:
 
         self._yolo: YOLODetector | None = None
         self._clip: CLIPMatcher | None = None
+        self._jepa: JEPAEncoder | None = None
         self._active_models: set[str] = set()
 
         self._latest_frame: np.ndarray | None = None
         self._latest_detections: list[Detection] = []
         self._latest_clip_matches: list[Detection] = []
+        self._latest_jepa_heatmap: np.ndarray | None = None
         self._clip_query: str = ""
         self._frame_count: int = 0
         self._fps: float = 0.0
@@ -67,6 +69,10 @@ class WebcamPipeline:
             if self._clip is None:
                 self._clip = CLIPMatcher()
 
+        if "jepa" in self._active_models:
+            if self._jepa is None:
+                self._jepa = JEPAEncoder()
+
         self._should_stop.clear()
         self._state = "running"
         self._thread = Thread(target=self._capture_loop, daemon=True, name="WebcamPipeline")
@@ -93,6 +99,8 @@ class WebcamPipeline:
             self._yolo = YOLODetector()
         if "clip" in new and self._clip is None:
             self._clip = CLIPMatcher()
+        if "jepa" in new and self._jepa is None:
+            self._jepa = JEPAEncoder()
         self._active_models = new
         return {"ok": True, "models": list(self._active_models)}
 
@@ -128,54 +136,71 @@ class WebcamPipeline:
         fps_window: list[float] = []
         clip_interval = 10
 
-        while not self._should_stop.is_set():
-            t0 = time.monotonic()
+        try:
+            while not self._should_stop.is_set():
+                t0 = time.monotonic()
 
-            ret, frame = self._cap.read()
-            if not ret:
-                time.sleep(0.01)
-                continue
+                ret, frame = self._cap.read()
+                if not ret:
+                    time.sleep(0.01)
+                    continue
 
-            self._frame_count += 1
-            with self._lock:
-                self._latest_frame = frame
+                self._frame_count += 1
+                with self._lock:
+                    self._latest_frame = frame
 
-            detections: list[Detection] = []
-            clip_matches: list[Detection] = []
+                detections: list[Detection] = []
+                clip_matches: list[Detection] = []
 
-            if "yolo" in self._active_models and self._yolo:
-                detections = self._yolo.detect(frame)
-                self._latest_detections = detections
+                if "yolo" in self._active_models and self._yolo:
+                    try:
+                        detections = self._yolo.detect(frame)
+                        self._latest_detections = detections
+                    except Exception:
+                        self._active_models.discard("yolo")
 
-            if "clip" in self._active_models and self._clip and self._clip_query:
-                if self._frame_count % clip_interval == 0:
-                    targets = detections if detections else [
-                        Detection(bbox=(0, 0, frame.shape[1], frame.shape[0]),
-                                  label="full_frame", confidence=1.0)
-                    ]
-                    clip_matches = self._clip.match_detections(
-                        self._clip_query, frame, targets, threshold=0.15,
-                    )
-                    self._latest_clip_matches = clip_matches
+                if "clip" in self._active_models and self._clip and self._clip_query:
+                    if self._frame_count % clip_interval == 0:
+                        try:
+                            targets = detections if detections else [
+                                Detection(bbox=(0, 0, frame.shape[1], frame.shape[0]),
+                                          label="full_frame", confidence=1.0)
+                            ]
+                            clip_matches = self._clip.match_detections(
+                                self._clip_query, frame, targets, threshold=0.15,
+                            )
+                            self._latest_clip_matches = clip_matches
+                        except Exception:
+                            self._active_models.discard("clip")
 
-            annotated = self._annotate(frame, detections, clip_matches)
-            ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            if ok:
-                FRAME_PATH.write_bytes(buf.tobytes())
+                if "jepa" in self._active_models and self._jepa:
+                    if self._frame_count % 5 == 0:
+                        try:
+                            features = self._jepa.encode(frame)
+                            self._latest_jepa_heatmap = self._features_to_heatmap(features, frame.shape[:2])
+                        except Exception:
+                            self._active_models.discard("jepa")
 
-            self._write_state()
+                annotated = self._annotate(frame, detections, clip_matches)
+                ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                if ok:
+                    FRAME_PATH.write_bytes(buf.tobytes())
 
-            elapsed = time.monotonic() - t0
-            fps_window.append(elapsed)
-            if len(fps_window) > 30:
-                fps_window.pop(0)
-            self._fps = 1.0 / (sum(fps_window) / len(fps_window)) if fps_window else 0
+                self._write_state()
 
-            sleep_dur = max(0, (1.0 / 30.0) - elapsed)
-            if sleep_dur > 0:
-                time.sleep(sleep_dur)
+                elapsed = time.monotonic() - t0
+                fps_window.append(elapsed)
+                if len(fps_window) > 30:
+                    fps_window.pop(0)
+                self._fps = 1.0 / (sum(fps_window) / len(fps_window)) if fps_window else 0
 
-        self._state = "idle"
+                sleep_dur = max(0, (1.0 / 30.0) - elapsed)
+                if sleep_dur > 0:
+                    time.sleep(sleep_dur)
+        except Exception:
+            pass
+        finally:
+            self._state = "idle"
 
     def _annotate(
         self, frame: np.ndarray, detections: list[Detection], clip_matches: list[Detection],
@@ -218,7 +243,42 @@ class WebcamPipeline:
             cv2.putText(out, line, (10, y0), _FONT, 0.55, (0, 255, 180), 2, cv2.LINE_AA)
             y0 += lh + 10
 
+        # JEPA attention heatmap overlay
+        if self._latest_jepa_heatmap is not None and "jepa" in self._active_models:
+            heatmap = cv2.applyColorMap(self._latest_jepa_heatmap, cv2.COLORMAP_INFERNO)
+            out = cv2.addWeighted(out, 0.6, heatmap, 0.4, 0)
+            cv2.putText(out, "JEPA", (w - 70, 24), _FONT, 0.55, (200, 120, 255), 2, cv2.LINE_AA)
+
         return out
+
+    @staticmethod
+    def _features_to_heatmap(features: np.ndarray, target_size: tuple[int, int]) -> np.ndarray:
+        h, w = target_size
+        # features shape: (num_patches, dim) or (1+num_patches, dim) with CLS token
+        if features.ndim == 2:
+            n_patches = features.shape[0]
+            # skip CLS token if present (common in ViT: 1 + 14*14 = 197)
+            grid_size = int(np.sqrt(n_patches))
+            if grid_size * grid_size < n_patches:
+                features = features[1:]  # drop CLS
+                n_patches = features.shape[0]
+                grid_size = int(np.sqrt(n_patches))
+            activation = np.linalg.norm(features, axis=-1)
+            activation = activation[:grid_size * grid_size].reshape(grid_size, grid_size)
+        elif features.ndim == 1:
+            activation = features.reshape(1, 1)
+        else:
+            activation = np.linalg.norm(features, axis=-1)
+            if activation.ndim > 2:
+                activation = activation.mean(axis=tuple(range(activation.ndim - 2)))
+
+        lo, hi = activation.min(), activation.max()
+        if hi > lo:
+            activation = (activation - lo) / (hi - lo)
+        else:
+            activation = np.zeros_like(activation)
+        heatmap = (activation * 255).astype(np.uint8)
+        return cv2.resize(heatmap, (w, h), interpolation=cv2.INTER_LINEAR)
 
     def _write_state(self) -> None:
         state = {

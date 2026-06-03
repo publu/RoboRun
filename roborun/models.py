@@ -206,55 +206,93 @@ class JEPAEncoder:
             return features.cpu().numpy()
 
 
-class CosmosTokenizer:
-    """NVIDIA Cosmos discrete visual tokenizer.
+class CosmosWorldModel:
+    """Cosmos 3 Nano world model via MLX on Apple Silicon.
 
-    Tokenizes video frames into discrete tokens for world model training.
-    Requires `cosmos-tokenizer` package.
+    Generates a predicted image from a text prompt using the 4-bit
+    quantized Cosmos 3 Nano model. Points at a local cosmos-mac checkout.
     """
 
-    def __init__(self, encoder_name: str = "Cosmos-Tokenizer-DV4x8x8") -> None:
-        self._encoder_name = encoder_name
-        self._encoder = None
+    _COSMOS_MAC_DIR = "/Users/dao/Documents/GitHub/cosmos_mac"
+
+    def __init__(self, cosmos_dir: str | None = None) -> None:
+        self._cosmos_dir = cosmos_dir or self._COSMOS_MAC_DIR
+        self._pipe = None
         self._lock = RLock()
 
     def _ensure_loaded(self) -> None:
-        if self._encoder is not None:
+        if self._pipe is not None:
             return
-        try:
-            from cosmos_tokenizer.video_lib import CausalVideoTokenizer
-            self._encoder = CausalVideoTokenizer(
-                checkpoint_enc=f"pretrained_ckpts/{self._encoder_name}/encoder.jit",
-            )
-        except ImportError:
-            raise ImportError(
-                "cosmos-tokenizer not installed. Run: pip install cosmos-tokenizer"
-            )
-        except Exception:
-            self._encoder = "stub"
+        import sys
+        import os
+        from pathlib import Path
 
-    def tokenize(self, frames: np.ndarray) -> Any:
+        cosmos_path = Path(self._cosmos_dir)
+        model_dir = cosmos_path / "models" / "Cosmos3-Nano-MLX-4bit"
+        if not (model_dir / "transformer").exists():
+            raise RuntimeError(f"Cosmos model not found at {model_dir}")
+
+        os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")
+        os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
+        if str(cosmos_path) not in sys.path:
+            sys.path.insert(0, str(cosmos_path))
+
+        import torch
+        from diffusers import Cosmos3OmniPipeline, AutoencoderKLWan
+        from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
+        from transformers import AutoTokenizer
+        from mlx_pipeline import MLXCosmos3Transformer
+
+        repo = str(model_dir)
+        vae = AutoencoderKLWan.from_pretrained(repo, subfolder="vae", torch_dtype=torch.float32).eval()
+        sched = UniPCMultistepScheduler.from_pretrained(repo, subfolder="scheduler")
+        tok = AutoTokenizer.from_pretrained(repo, subfolder="text_tokenizer")
+        transformer = MLXCosmos3Transformer(str(model_dir / "transformer"), config_dir=repo)
+
+        self._pipe = Cosmos3OmniPipeline(
+            transformer=transformer,
+            text_tokenizer=tok,
+            vae=vae,
+            scheduler=sched,
+            sound_tokenizer=None,
+            enable_safety_checker=False,
+        )
+
+    def generate(self, prompt: str = "What happens next in this scene",
+                 steps: int = 12, resolution: int = 256, seed: int = 1234) -> np.ndarray:
+        """Generate a single image and return it as a BGR numpy array."""
         with self._lock:
             self._ensure_loaded()
-            if self._encoder == "stub":
-                return {"tokens": [], "note": "Cosmos checkpoint not found — download from NVIDIA"}
             import torch
-            tensor = torch.from_numpy(frames).float()
-            if tensor.ndim == 3:
-                tensor = tensor.unsqueeze(0).unsqueeze(0)
-            elif tensor.ndim == 4:
-                tensor = tensor.unsqueeze(0)
-            tensor = tensor.permute(0, 1, 4, 2, 3) / 255.0
-            indices, codes = self._encoder.encode(tensor)
-            return {
-                "indices": indices.cpu().numpy().tolist(),
-                "shape": list(indices.shape),
-            }
+            generator = torch.Generator().manual_seed(seed)
+            result = self._pipe(
+                prompt=prompt,
+                num_frames=1,
+                height=resolution,
+                width=resolution,
+                num_inference_steps=steps,
+                guidance_scale=6.0,
+                enable_sound=False,
+                add_resolution_template=False,
+                add_duration_template=False,
+                generator=generator,
+                enable_safety_check=False,
+            )
+            img = result.video[0][0] if isinstance(result.video[0], list) else result.video[0]
+            frame = np.array(img)
+            if frame.ndim == 3 and frame.shape[2] == 3:
+                frame = frame[:, :, ::-1]  # RGB -> BGR for OpenCV
+            return frame
+
+
+# Keep old name as alias for backwards compat
+CosmosTokenizer = CosmosWorldModel
 
 
 MODEL_REGISTRY: dict[str, type] = {
     "yolo": YOLODetector,
     "clip": CLIPMatcher,
     "jepa": JEPAEncoder,
-    "cosmos": CosmosTokenizer,
+    "cosmos": CosmosWorldModel,
 }

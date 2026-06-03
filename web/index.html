@@ -25,11 +25,8 @@
           <button class="rnav active" data-tab="control">
             <span class="rn-icon">⬡</span><span class="rn-label">Control</span>
           </button>
-          <button class="rnav" data-tab="vision">
-            <span class="rn-icon">◎</span><span class="rn-label">Vision</span>
-          </button>
           <button class="rnav" data-tab="dataset">
-            <span class="rn-icon">◉</span><span class="rn-label">Dataset</span>
+            <span class="rn-icon">◉</span><span class="rn-label">Recordings</span>
           </button>
           <button class="rnav" data-tab="map">
             <span class="rn-icon">◈</span><span class="rn-label">Map</span>
@@ -64,7 +61,7 @@
           </div>
           <div class="rs-row">
             <span class="rs-dot" id="sMap"></span>
-            <span class="rs-key">CC</span>
+            <span class="rs-key">Map</span>
             <span class="rs-val" id="sMapVal">--</span>
           </div>
         </div>
@@ -119,6 +116,7 @@
                 <div class="cam-ph-icon">◈</div>
                 <div class="cam-ph-text">NO SIGNAL</div>
                 <div class="cam-ph-sub">Start webcam or connect robot</div>
+                <button id="camStartWebcam" class="primary-btn" style="margin-top:12px">▷ Start Webcam</button>
               </div>
               <img id="cameraStream" class="cam-img" style="display:none" alt="Live feed" />
               <img id="cameraImg" class="cam-img" style="display:none" alt="Snapshot" />
@@ -133,7 +131,6 @@
             <button class="model-pill active" data-model="yolo">YOLO</button>
             <button class="model-pill" data-model="clip">CLIP</button>
             <button class="model-pill" data-model="jepa">JEPA</button>
-            <button class="model-pill" data-model="cosmos">Cosmos</button>
             <div class="clip-search" id="clipSearchRow" style="display:none">
               <input id="clipQuery" type="text" placeholder="CLIP search: person in red..." autocomplete="off" />
               <button id="clipSearchBtn">Search</button>
@@ -144,12 +141,18 @@
           <div class="rec-bar">
             <span class="rec-indicator" id="recDot"></span>
             <span class="rec-label" id="recLabel">Not recording</span>
-            <button id="recToggle" class="sec-btn small-btn">● Record</button>
+            <button id="recToggle" class="sec-btn small-btn">● REC</button>
             <span class="rec-frames" id="recFrames"></span>
           </div>
 
           <!-- Robot Actions -->
           <div class="actions-area">
+            <div class="robot-actions-header" id="robotActionsHeader">
+              <span class="rah-label">ROBOT CONTROLS</span>
+              <span class="rah-hint" id="robotActionsHint">No robot connected</span>
+              <span class="rah-chevron" id="robotActionsChevron">▸</span>
+            </div>
+            <div class="robot-actions-body collapsed" id="robotActionsBody">
             <!-- Navigation -->
             <div class="ag">
               <div class="ag-header">
@@ -242,44 +245,6 @@
               </div>
             </div>
           </div>
-        </div>
-
-        <!-- ══ Vision Tab (webcam-only mode) ══ -->
-        <div class="ctab-pane" id="tab-vision">
-          <div class="tab-inner">
-            <div class="tab-head">
-              <h2>Vision Lab</h2>
-              <div class="tab-head-right">
-                <span id="webcamStatusBadge" class="pill idle">Idle</span>
-              </div>
-            </div>
-            <p class="tab-sub">Test CLIP, YOLO, JEPA, and Cosmos with your webcam -- no robot needed.</p>
-
-            <div class="dataset-controls">
-              <div class="dataset-row">
-                <label>
-                  <span>Camera index</span>
-                  <input id="webcamIndex" type="number" value="0" min="0" max="10" style="width:80px" />
-                </label>
-                <label>
-                  <span>Models</span>
-                  <div style="display:flex;gap:4px;flex-wrap:wrap">
-                    <button class="model-pill active" data-wmodel="yolo">YOLO</button>
-                    <button class="model-pill" data-wmodel="clip">CLIP</button>
-                    <button class="model-pill" data-wmodel="jepa">JEPA</button>
-                    <button class="model-pill" data-wmodel="cosmos">Cosmos</button>
-                  </div>
-                </label>
-              </div>
-              <div style="display:flex;gap:8px;margin-top:8px">
-                <button id="webcamStart" class="primary-btn">▷ Start Webcam</button>
-                <button id="webcamStop" class="sec-btn">■ Stop</button>
-              </div>
-            </div>
-
-            <div class="paramHint" style="margin-bottom:12px">
-              When running, the webcam feed streams to the Control tab camera panel. Toggle models and use CLIP search from there.
-            </div>
           </div>
         </div>
 
@@ -287,18 +252,18 @@
         <div class="ctab-pane" id="tab-dataset">
           <div class="tab-inner">
             <div class="tab-head">
-              <h2>Datasets</h2>
+              <h2>Recordings</h2>
               <div class="tab-head-right">
                 <span id="datasetRecBadge" class="pill idle">Not recording</span>
               </div>
             </div>
-            <p class="tab-sub">Collect training data from webcam or robot. Frames + detections saved per episode.</p>
+            <p class="tab-sub">Record video clips from your webcam or robot camera with model annotations baked in.</p>
 
             <div class="dataset-controls">
               <div class="dataset-row">
                 <label>
-                  <span>Dataset name</span>
-                  <input id="datasetName" placeholder="my-dataset" value="default" />
+                  <span>Recording name</span>
+                  <input id="datasetName" placeholder="kitchen-run-01" value="default" />
                 </label>
               </div>
               <div style="display:flex;gap:8px;align-items:center">
@@ -308,9 +273,9 @@
               </div>
             </div>
 
-            <div class="sys-card-head" style="margin-top:16px"><span class="sc-label">RECORDED DATASETS</span></div>
+            <div class="sys-card-head" style="margin-top:16px"><span class="sc-label">SAVED RECORDINGS</span></div>
             <div id="datasetList" class="dataset-list">
-              <div class="dataset-empty" id="datasetEmpty">No datasets recorded yet. Start recording above.</div>
+              <div class="dataset-empty" id="datasetEmpty">No recordings yet. Hit record above to capture annotated video from your camera.</div>
             </div>
           </div>
         </div>
@@ -520,8 +485,11 @@
 
       </div><!-- .center -->
 
+      <!-- ── CHAT TOGGLE ────────────────────────────────────────── -->
+      <button id="chatToggle" class="chat-toggle" title="Toggle Agent panel">◀</button>
+
       <!-- ── CHAT PANEL ──────────────────────────────────────────── -->
-      <aside class="chat-panel">
+      <aside class="chat-panel" id="chatPanel">
         <div class="chat-head">
           <div class="chat-head-left">
             <span class="ch-title">AGENT</span>

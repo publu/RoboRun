@@ -67,6 +67,32 @@ async function refreshDashboard(quiet = false) {
     const stats = d.stats || {};
     const cc = d.commandCenter || {};
 
+    // Auto-start stream if webcam is running but stream isn't showing
+    if (wc.running && !streamOn) startStream();
+
+    // Sync model pill buttons with backend state
+    const activeModels = new Set(wc.models || []);
+    document.querySelectorAll(".model-bar .model-pill").forEach(btn => {
+      btn.classList.toggle("active", activeModels.has(btn.dataset.model));
+    });
+    if (activeModels.has("clip")) clipSearchRow.style.display = "";
+    else clipSearchRow.style.display = "none";
+
+    // Detect model drops
+    if (wc.running) checkModelDrops(wc.models || []);
+
+    // Update robot actions section
+    const rah = document.querySelector("#robotActionsHint");
+    if (rah) {
+      const hasRobot = d.robotOnline || dimos.running;
+      rah.textContent = hasRobot ? "Connected" : "No robot connected";
+      rah.className = `rah-hint${hasRobot ? " connected" : ""}`;
+      if (hasRobot && robotActionsBody?.classList.contains("collapsed")) {
+        robotActionsBody.classList.remove("collapsed");
+        robotActionsHeader?.classList.add("open");
+      }
+    }
+
     // Rail status
     setDot(document.querySelector("#sWebcam"), wc.running ? "ok" : "warn");
     document.querySelector("#sWebcamVal").textContent = wc.running ? `${wc.fps || 0} fps` : "Off";
@@ -104,13 +130,6 @@ async function refreshDashboard(quiet = false) {
       el("#onlinePill").className = `pill ${wc.running || dimos.running ? "" : "idle"}`.trim();
     }
 
-    // Webcam status badge in Vision tab
-    const wcBadge = el("#webcamStatusBadge");
-    if (wcBadge) {
-      wcBadge.textContent = wc.running ? `Running ${wc.fps}fps` : "Idle";
-      wcBadge.className = `pill ${wc.running ? "" : "idle"}`;
-    }
-
     // Recording bar
     const recDot = el("#recDot");
     const recLabel = el("#recLabel");
@@ -119,9 +138,9 @@ async function refreshDashboard(quiet = false) {
     if (recLabel) { recLabel.textContent = ds.recording ? `REC ${ds.dataset || ""}` : "Not recording"; recLabel.className = `rec-label ${ds.recording ? "recording" : ""}`; }
     if (recFrames) recFrames.textContent = ds.recording ? `${ds.frames || 0} frames` : "";
 
-    // Dataset badge
+    // Recording badge
     const dsBadge = el("#datasetRecBadge");
-    if (dsBadge) { dsBadge.textContent = ds.recording ? `REC ${ds.frames}` : "Not recording"; dsBadge.className = `pill ${ds.recording ? "bad" : "idle"}`; }
+    if (dsBadge) { dsBadge.textContent = ds.recording ? `REC ${ds.frames} frames` : "Not recording"; dsBadge.className = `pill ${ds.recording ? "bad" : "idle"}`; }
 
     if (!quiet) append("Dashboard refreshed.", { ok: true });
   } catch (e) {
@@ -192,7 +211,12 @@ function stopStream() {
   if (cameraImg.style.display === "none") cameraPlaceholder.style.display = "";
 }
 
-streamToggleBtn.addEventListener("click", () => { if (streamOn) stopStream(); else startStream(); });
+streamToggleBtn.addEventListener("click", async () => {
+  if (streamOn) { stopStream(); return; }
+  const st = await api("/api/webcam/state");
+  if (!st.running && st.state !== "running") { await startWebcam(); return; }
+  startStream();
+});
 
 document.querySelector("#cameraRefresh").addEventListener("click", async () => {
   try {
@@ -246,26 +270,16 @@ document.querySelector("#recToggle")?.addEventListener("click", async () => {
   refreshDashboard(true);
 });
 
-// ── Vision tab (webcam standalone) ──────────────────────────────────────────
+// ── Webcam start (from Control tab placeholder + stream button) ────────────
 
-document.querySelector("#webcamStart")?.addEventListener("click", async () => {
-  const cam = parseInt(document.querySelector("#webcamIndex").value) || 0;
-  const models = [...document.querySelectorAll("[data-wmodel].active")].map(b => b.dataset.wmodel);
-  const r = await api("/api/webcam/start", { camera: cam, models });
-  append(r.ok ? `Webcam started (cam ${cam})` : "Webcam start failed.", r);
+async function startWebcam() {
+  const models = [...document.querySelectorAll("[data-model].active")].map(b => b.dataset.model);
+  const r = await api("/api/webcam/start", { camera: 0, models: models.length ? models : ["yolo"] });
+  append(r.ok ? "Webcam started" : "Webcam start failed.", r);
   if (r.ok) { startStream(); refreshDashboard(true); }
-});
+}
 
-document.querySelector("#webcamStop")?.addEventListener("click", async () => {
-  const r = await api("/api/webcam/stop", {});
-  append(r.ok ? "Webcam stopped." : "Stop failed.", r);
-  stopStream();
-  refreshDashboard(true);
-});
-
-document.querySelectorAll("[data-wmodel]").forEach(btn => {
-  btn.addEventListener("click", () => btn.classList.toggle("active"));
-});
+document.querySelector("#camStartWebcam")?.addEventListener("click", startWebcam);
 
 // ── Dataset tab ─────────────────────────────────────────────────────────────
 
@@ -944,6 +958,59 @@ document.querySelector("#deployConfirm")?.addEventListener("click", async () => 
   if (r.ok) { closeModal("deployModal"); loadFleet(); }
 });
 
+// ── Chat panel toggle ──────────────────────────────────────────────────────
+
+const chatToggle = document.querySelector("#chatToggle");
+const appEl = document.querySelector(".app");
+if (localStorage.getItem("chatCollapsed") === "1") appEl.classList.add("chat-collapsed");
+chatToggle?.addEventListener("click", () => {
+  appEl.classList.toggle("chat-collapsed");
+  localStorage.setItem("chatCollapsed", appEl.classList.contains("chat-collapsed") ? "1" : "0");
+  chatToggle.textContent = appEl.classList.contains("chat-collapsed") ? "▶" : "◀";
+});
+if (appEl.classList.contains("chat-collapsed")) chatToggle.textContent = "▶";
+
+// ── Robot actions collapse ─────────────────────────────────────────────────
+
+const robotActionsHeader = document.querySelector("#robotActionsHeader");
+const robotActionsBody = document.querySelector("#robotActionsBody");
+robotActionsHeader?.addEventListener("click", () => {
+  robotActionsBody.classList.toggle("collapsed");
+  robotActionsHeader.classList.toggle("open");
+});
+
+// ── Model failure toast ────────────────────────────────────────────────────
+
+let lastModelSet = null;
+function checkModelDrops(currentModels) {
+  if (!lastModelSet) { lastModelSet = new Set(currentModels); return; }
+  for (const m of lastModelSet) {
+    if (!currentModels.includes(m)) {
+      showToast(`${m.toUpperCase()} failed to load — not installed?`);
+    }
+  }
+  lastModelSet = new Set(currentModels);
+}
+
+function showToast(msg) {
+  const el = document.createElement("div");
+  el.className = "model-toast";
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+// ── Auto-start webcam on first load ────────────────────────────────────────
+
+async function autoStartIfNeeded() {
+  try {
+    const st = await api("/api/webcam/state");
+    if (!st.running && st.state !== "running") {
+      await startWebcam();
+    }
+  } catch {}
+}
+
 // ── Init ────────────────────────────────────────────────────────────────────
 
 refreshDashboard(true);
@@ -951,6 +1018,7 @@ loadTasks();
 loadEvents();
 loadFleet();
 loadDatasets();
+autoStartIfNeeded();
 setInterval(() => refreshDashboard(true), 15000);
 setInterval(() => loadTasks(), 20000);
 setInterval(() => loadEvents(false), 10000);
