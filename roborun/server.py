@@ -262,7 +262,11 @@ def dimos_status() -> dict[str, Any]:
     global _dimos_status_cache, _dimos_status_ts
     if _dimos_status_cache and (time.time() - _dimos_status_ts) < 8.0:
         return _dimos_status_cache
-    status = run_command(["dimos", "status"], timeout=10)
+    if not shutil.which("dimos"):
+        _dimos_status_cache = {"ok": False, "running": False, "label": "Not installed", "stdout": "", "stderr": ""}
+        _dimos_status_ts = time.time()
+        return _dimos_status_cache
+    status = run_command(["dimos", "status"], timeout=5)
     stdout = status.get("stdout", "").strip()
     running = bool(status.get("ok")) and "No running DimOS instance" not in stdout
     status["running"] = running
@@ -275,7 +279,7 @@ def command_center_status() -> dict[str, Any]:
     reachable = False
     detail = "Not listening"
     try:
-        with socket.create_connection(("127.0.0.1", 7779), timeout=10):
+        with socket.create_connection(("127.0.0.1", 7779), timeout=2):
             reachable = True
             detail = "Listening on 127.0.0.1:7779"
     except OSError as exc:
@@ -660,18 +664,16 @@ def duplicate_blueprint(bp_id: str) -> dict:
 def dashboard() -> dict[str, Any]:
     profile = load_profile()
     dimos = dimos_status()
-    cc = command_center_status()
     robot_ip = profile.get("robotIp", "").strip()
-    robot_online = robot_reachable(robot_ip) if robot_ip else False
     webcam = _get_webcam()
     dataset = _get_dataset()
     return {
         "ok": True,
         "profile": profile,
         "dimos": dimos,
-        "robotOnline": robot_online,
+        "robotOnline": False,
         "robotIp": robot_ip,
-        "commandCenter": cc,
+        "commandCenter": {"ok": False, "url": "http://127.0.0.1:7779/command-center"},
         "webcam": webcam.get_state(),
         "dataset": dataset.get_status(),
         "stats": system_stats(),
