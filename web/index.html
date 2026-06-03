@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RoboRun</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css?v=3" />
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  </head>
+  <body>
+    <div class="app">
+
+      <!-- ── RAIL ─────────────────────────────────────────────────── -->
+      <aside class="rail">
+        <div class="brand">
+          <div class="brand-mark">Robo<em>Run</em></div>
+          <div class="brand-sub">visual teleop</div>
+        </div>
+
+        <nav class="rail-nav">
+          <button class="rnav active" data-tab="control">
+            <span class="rn-icon">⬡</span><span class="rn-label">Control</span>
+          </button>
+          <button class="rnav" data-tab="vision">
+            <span class="rn-icon">◎</span><span class="rn-label">Vision</span>
+          </button>
+          <button class="rnav" data-tab="dataset">
+            <span class="rn-icon">◉</span><span class="rn-label">Dataset</span>
+          </button>
+          <button class="rnav" data-tab="map">
+            <span class="rn-icon">◈</span><span class="rn-label">Map</span>
+          </button>
+          <button class="rnav" data-tab="fleet">
+            <span class="rn-icon">⬢</span><span class="rn-label">Fleet</span>
+          </button>
+          <button class="rnav" data-tab="tasks">
+            <span class="rn-icon">◉</span><span class="rn-label">Tasks</span>
+          </button>
+          <button class="rnav" data-tab="devices">
+            <span class="rn-icon">◫</span><span class="rn-label">System</span>
+          </button>
+        </nav>
+
+        <div class="rail-section-label">STATUS</div>
+        <div class="rail-status">
+          <div class="rs-row">
+            <span class="rs-dot" id="sWebcam"></span>
+            <span class="rs-key">Webcam</span>
+            <span class="rs-val" id="sWebcamVal">--</span>
+          </div>
+          <div class="rs-row">
+            <span class="rs-dot" id="sdimOS"></span>
+            <span class="rs-key">dimOS</span>
+            <span class="rs-val" id="sdimOSVal">--</span>
+          </div>
+          <div class="rs-row">
+            <span class="rs-dot" id="sRobot"></span>
+            <span class="rs-key">Robot</span>
+            <span class="rs-val" id="sRobotVal">--</span>
+          </div>
+          <div class="rs-row">
+            <span class="rs-dot" id="sMap"></span>
+            <span class="rs-key">CC</span>
+            <span class="rs-val" id="sMapVal">--</span>
+          </div>
+        </div>
+
+        <div class="rail-section-label">METRICS</div>
+        <div class="rail-metrics">
+          <div class="rm-row">
+            <span class="rm-key">FPS</span>
+            <div class="rm-bar-wrap"><div class="rm-bar" id="fpsBar"></div></div>
+            <span class="rm-val" id="fpsSummary">--</span>
+          </div>
+          <div class="rm-row">
+            <span class="rm-key">DSK</span>
+            <div class="rm-bar-wrap"><div class="rm-bar" id="diskBar"></div></div>
+            <span class="rm-val" id="diskSummary">--</span>
+          </div>
+          <div class="rm-row">
+            <span class="rm-key">REC</span>
+            <div class="rm-bar-wrap" style="flex:1"></div>
+            <span class="rm-val" id="recSummary">--</span>
+          </div>
+        </div>
+
+        <div class="rail-bottom">
+          <button id="notifBtn" class="notif-btn" title="Events">
+            <span class="nb-icon">◐</span>
+            <span id="notifBadge" class="notif-badge" style="display:none">0</span>
+          </button>
+          <button id="refresh" class="rail-refresh" title="Refresh">↻</button>
+        </div>
+      </aside>
+
+      <!-- ── CENTER ──────────────────────────────────────────────── -->
+      <div class="center">
+
+        <!-- ══ Control Tab (Camera + Robot Actions) ══ -->
+        <div class="ctab-pane active" id="tab-control">
+          <div class="cam-panel">
+            <div class="cam-topbar">
+              <div class="cam-title">
+                <span class="cam-rec" id="camRecDot"></span>
+                CAMERA FEED
+              </div>
+              <div class="cam-controls">
+                <span id="cameraStateBadge" class="cam-badge">--</span>
+                <button id="cameraStreamToggle" class="cam-btn stream-btn">● STREAM</button>
+                <button id="cameraRefresh" class="cam-btn">SNAP</button>
+              </div>
+            </div>
+            <div class="cam-feed" id="cameraDisplay">
+              <div class="cam-placeholder" id="cameraPlaceholder">
+                <div class="cam-ph-icon">◈</div>
+                <div class="cam-ph-text">NO SIGNAL</div>
+                <div class="cam-ph-sub">Start webcam or connect robot</div>
+              </div>
+              <img id="cameraStream" class="cam-img" style="display:none" alt="Live feed" />
+              <img id="cameraImg" class="cam-img" style="display:none" alt="Snapshot" />
+              <div id="cameraStateOverlay" class="cam-overlay" style="display:none"></div>
+              <div class="cam-scanline"></div>
+            </div>
+          </div>
+
+          <!-- Model toggles + CLIP search -->
+          <div class="model-bar">
+            <span class="model-bar-label">MODELS</span>
+            <button class="model-pill active" data-model="yolo">YOLO</button>
+            <button class="model-pill" data-model="clip">CLIP</button>
+            <button class="model-pill" data-model="jepa">JEPA</button>
+            <button class="model-pill" data-model="cosmos">Cosmos</button>
+            <div class="clip-search" id="clipSearchRow" style="display:none">
+              <input id="clipQuery" type="text" placeholder="CLIP search: person in red..." autocomplete="off" />
+              <button id="clipSearchBtn">Search</button>
+            </div>
+          </div>
+
+          <!-- Recording bar -->
+          <div class="rec-bar">
+            <span class="rec-indicator" id="recDot"></span>
+            <span class="rec-label" id="recLabel">Not recording</span>
+            <button id="recToggle" class="sec-btn small-btn">● Record</button>
+            <span class="rec-frames" id="recFrames"></span>
+          </div>
+
+          <!-- Robot Actions -->
+          <div class="actions-area">
+            <!-- Navigation -->
+            <div class="ag">
+              <div class="ag-header">
+                <span class="ag-label">NAVIGATION</span>
+              </div>
+              <div class="ag-grid">
+                <button class="ab" data-skill="explore" title="Autonomous exploration">
+                  <span class="ab-icon">⬡</span><span class="ab-name">Explore</span>
+                </button>
+                <button class="ab ab-danger" data-skill="stop" title="Stop everything">
+                  <span class="ab-icon">■</span><span class="ab-name">Stop All</span>
+                </button>
+                <button class="ab" data-skill="navigate" title="Navigate to a place">
+                  <span class="ab-icon">◈</span><span class="ab-name">Navigate</span>
+                </button>
+                <button class="ab" data-skill="map_query" title="Find a place on map">
+                  <span class="ab-icon">◎</span><span class="ab-name">Map Query</span>
+                </button>
+              </div>
+            </div>
+            <!-- Modes -->
+            <div class="ag">
+              <div class="ag-header"><span class="ag-label">MODES</span></div>
+              <div class="ag-grid">
+                <button class="ab ab-accent" data-skill="dog_mode"><span class="ab-icon">◈</span><span class="ab-name">Dog Mode</span></button>
+                <button class="ab" data-skill="stop_dog"><span class="ab-icon">◻</span><span class="ab-name">Stop Dog</span></button>
+                <button class="ab" data-skill="follow_person"><span class="ab-icon">◉</span><span class="ab-name">Follow</span></button>
+                <button class="ab" data-skill="patrol"><span class="ab-icon">⬡</span><span class="ab-name">Patrol</span></button>
+              </div>
+            </div>
+            <!-- Vision -->
+            <div class="ag">
+              <div class="ag-header"><span class="ag-label">VISION</span></div>
+              <div class="ag-grid">
+                <button class="ab" data-skill="find"><span class="ab-icon">◎</span><span class="ab-name">Find</span></button>
+                <button class="ab" data-skill="scene"><span class="ab-icon">◈</span><span class="ab-name">Scene</span></button>
+                <button class="ab" data-skill="follow_object"><span class="ab-icon">◉</span><span class="ab-name">Track Obj</span></button>
+                <button class="ab" data-skill="stop_find"><span class="ab-icon">■</span><span class="ab-name">Stop Find</span></button>
+              </div>
+            </div>
+            <!-- Location -->
+            <div class="ag">
+              <div class="ag-header"><span class="ag-label">LOCATION</span></div>
+              <div class="ag-grid">
+                <button class="ab" data-skill="tag_location"><span class="ab-icon">◈</span><span class="ab-name">Tag Loc</span></button>
+                <button class="ab" data-skill="where_am_i"><span class="ab-icon">◎</span><span class="ab-name">Where?</span></button>
+                <button class="ab" data-skill="speak"><span class="ab-icon">◉</span><span class="ab-name">Speak</span></button>
+                <button class="ab" data-skill="status"><span class="ab-icon">⬡</span><span class="ab-name">Status</span></button>
+              </div>
+            </div>
+            <!-- Sport -->
+            <div class="ag">
+              <div class="ag-header"><span class="ag-label">SPORT</span></div>
+              <div class="ag-grid">
+                <button class="ab" data-skill="stand"><span class="ab-icon">▲</span><span class="ab-name">Stand</span></button>
+                <button class="ab" data-skill="sit"><span class="ab-icon">▼</span><span class="ab-name">Sit</span></button>
+                <button class="ab" data-skill="flip"><span class="ab-icon">↺</span><span class="ab-name">Flip</span></button>
+                <button class="ab" data-skill="jump"><span class="ab-icon">↑</span><span class="ab-name">Jump</span></button>
+              </div>
+            </div>
+            <!-- Move -->
+            <div class="ag ag-move">
+              <div class="ag-header">
+                <span class="ag-label">MOVE</span>
+                <span class="ag-hint">WASD / QE turn / step <span id="moveStepLabel">0.5m</span></span>
+              </div>
+              <div class="move-controls">
+                <div class="dpad">
+                  <div class="dpad-row">
+                    <button class="dpad-btn" id="mv-tl" title="Turn left (Q)">↺</button>
+                    <button class="dpad-btn dpad-main" id="mv-fwd" title="Forward (W)">▲</button>
+                    <button class="dpad-btn" id="mv-tr" title="Turn right (E)">↻</button>
+                  </div>
+                  <div class="dpad-row">
+                    <button class="dpad-btn dpad-main" id="mv-left" title="Left (A)">◀</button>
+                    <button class="dpad-btn dpad-stop" id="mv-stop" title="Stop (Space)">■</button>
+                    <button class="dpad-btn dpad-main" id="mv-right" title="Right (D)">▶</button>
+                  </div>
+                  <div class="dpad-row">
+                    <div class="dpad-spacer"></div>
+                    <button class="dpad-btn dpad-main" id="mv-back" title="Back (S)">▼</button>
+                    <div class="dpad-spacer"></div>
+                  </div>
+                </div>
+                <div class="move-step-row">
+                  <span class="move-step-label">Step</span>
+                  <input type="range" id="moveStep" min="0.2" max="2.0" step="0.1" value="0.5" />
+                  <span id="moveStepVal">0.5 m</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ Vision Tab (webcam-only mode) ══ -->
+        <div class="ctab-pane" id="tab-vision">
+          <div class="tab-inner">
+            <div class="tab-head">
+              <h2>Vision Lab</h2>
+              <div class="tab-head-right">
+                <span id="webcamStatusBadge" class="pill idle">Idle</span>
+              </div>
+            </div>
+            <p class="tab-sub">Test CLIP, YOLO, JEPA, and Cosmos with your webcam -- no robot needed.</p>
+
+            <div class="dataset-controls">
+              <div class="dataset-row">
+                <label>
+                  <span>Camera index</span>
+                  <input id="webcamIndex" type="number" value="0" min="0" max="10" style="width:80px" />
+                </label>
+                <label>
+                  <span>Models</span>
+                  <div style="display:flex;gap:4px;flex-wrap:wrap">
+                    <button class="model-pill active" data-wmodel="yolo">YOLO</button>
+                    <button class="model-pill" data-wmodel="clip">CLIP</button>
+                    <button class="model-pill" data-wmodel="jepa">JEPA</button>
+                    <button class="model-pill" data-wmodel="cosmos">Cosmos</button>
+                  </div>
+                </label>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <button id="webcamStart" class="primary-btn">▷ Start Webcam</button>
+                <button id="webcamStop" class="sec-btn">■ Stop</button>
+              </div>
+            </div>
+
+            <div class="paramHint" style="margin-bottom:12px">
+              When running, the webcam feed streams to the Control tab camera panel. Toggle models and use CLIP search from there.
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ Dataset Tab ══ -->
+        <div class="ctab-pane" id="tab-dataset">
+          <div class="tab-inner">
+            <div class="tab-head">
+              <h2>Datasets</h2>
+              <div class="tab-head-right">
+                <span id="datasetRecBadge" class="pill idle">Not recording</span>
+              </div>
+            </div>
+            <p class="tab-sub">Collect training data from webcam or robot. Frames + detections saved per episode.</p>
+
+            <div class="dataset-controls">
+              <div class="dataset-row">
+                <label>
+                  <span>Dataset name</span>
+                  <input id="datasetName" placeholder="my-dataset" value="default" />
+                </label>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button id="datasetStartBtn" class="primary-btn">● Start Recording</button>
+                <button id="datasetStopBtn" class="sec-btn danger-btn">■ Stop</button>
+                <div class="dataset-stats" id="datasetStats"></div>
+              </div>
+            </div>
+
+            <div class="sys-card-head" style="margin-top:16px"><span class="sc-label">RECORDED DATASETS</span></div>
+            <div id="datasetList" class="dataset-list">
+              <div class="dataset-empty" id="datasetEmpty">No datasets recorded yet. Start recording above.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ Map Tab ══ -->
+        <div class="ctab-pane" id="tab-map">
+          <div class="tab-inner">
+            <div class="tab-head">
+              <h2>Live Map</h2>
+              <div class="tab-head-right">
+                <span id="mapConnStatus" class="map-badge offline">● Disconnected</span>
+                <a class="sec-btn" href="http://127.0.0.1:7779/command-center" target="_blank">Open ↗</a>
+              </div>
+            </div>
+            <p class="tab-sub">Command Center -- robot position, costmap, navigation goals</p>
+            <div class="map-container" id="mapContainer">
+              <div class="map-offline" id="mapOffline">
+                <div class="map-offline-inner">
+                  <div class="moi-icon">◈</div>
+                  <strong>No live map</strong>
+                  <p>Start dimOS with your robot connected to see the live costmap.</p>
+                  <button id="mapStartRobot" class="primary-btn" style="margin-top:12px">Start Robot</button>
+                  <button id="mapStartReplay" class="sec-btn" style="margin-top:8px">Start Replay</button>
+                </div>
+              </div>
+              <iframe id="mapIframe" class="map-iframe" src="about:blank" title="Command Center" allow="same-origin" style="display:none"></iframe>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ Fleet Tab ══ -->
+        <div class="ctab-pane" id="tab-fleet">
+          <div class="tab-inner">
+            <div class="tab-head">
+              <h2>Fleet</h2>
+              <div class="tab-head-right">
+                <span id="fleetCountBadge" class="fleet-count-badge">0 robots</span>
+                <button id="addRobotBtn" class="primary-btn">+ Robot</button>
+              </div>
+            </div>
+            <p class="tab-sub">Manage your fleet -- assign blueprints, monitor status, deploy at scale.</p>
+
+            <div class="fleet-stats-bar" id="fleetStatsBar">
+              <div class="fs-stat"><span class="fs-num" id="fsTotal">0</span><span class="fs-label">Total</span></div>
+              <div class="fs-stat"><span class="fs-num fs-online" id="fsOnline">0</span><span class="fs-label">Online</span></div>
+              <div class="fs-stat"><span class="fs-num fs-offline" id="fsOffline">0</span><span class="fs-label">Offline</span></div>
+              <div class="fs-stat"><span class="fs-num" id="fsGroups">0</span><span class="fs-label">Groups</span></div>
+              <div class="fs-stat"><span class="fs-num" id="fsBlueprintsCount">0</span><span class="fs-label">Blueprints</span></div>
+            </div>
+
+            <div class="fleet-section-head">
+              <span class="fsh-label">ROBOTS</span>
+              <div class="fsh-right">
+                <button class="filterBtn active" data-fleet-filter="all">All</button>
+                <button class="filterBtn" data-fleet-filter="online">Online</button>
+                <button class="filterBtn" data-fleet-filter="offline">Offline</button>
+              </div>
+            </div>
+            <div id="fleetGrid" class="fleet-grid">
+              <div class="fleet-empty" id="fleetEmpty">
+                <div class="fe-icon">⬢</div>
+                <strong>No robots yet</strong>
+                <p>Add your first robot to start managing your fleet.</p>
+                <button id="fleetEmptyAdd" class="primary-btn" style="margin-top:10px">+ Add Robot</button>
+              </div>
+            </div>
+
+            <div class="fleet-section-head" style="margin-top:20px">
+              <span class="fsh-label">BLUEPRINT LIBRARY</span>
+              <div class="fsh-right">
+                <button id="addBlueprintBtn" class="primary-btn small-btn">+ Blueprint</button>
+              </div>
+            </div>
+            <div id="blueprintGrid" class="blueprint-grid"></div>
+          </div>
+        </div>
+
+        <!-- ══ Tasks Tab ══ -->
+        <div class="ctab-pane" id="tab-tasks">
+          <div class="tab-inner">
+            <div class="tab-head">
+              <h2>Tasks</h2>
+              <div class="tab-head-right">
+                <div class="filter-row">
+                  <button class="filterBtn active" data-filter="all">All</button>
+                  <button class="filterBtn" data-filter="pending">Pending</button>
+                  <button class="filterBtn" data-filter="in_progress">Running</button>
+                  <button class="filterBtn" data-filter="completed">Done</button>
+                </div>
+                <button id="addTaskBtn" class="primary-btn">+ New</button>
+              </div>
+            </div>
+            <div class="add-task-form" id="addTaskForm" style="display:none">
+              <div class="typeToggle">
+                <button class="typeBtn active" data-type="one_off" type="button"><strong>One-off</strong><span>Run once</span></button>
+                <button class="typeBtn" data-type="recurring" type="button"><strong>Recurring</strong><span>Scheduled</span></button>
+              </div>
+              <div class="taskFormRow">
+                <label class="taskLabel grow"><span>Task name</span><input id="taskName" placeholder="e.g. Morning patrol..." /></label>
+                <label class="taskLabel scheduleField" id="scheduleField" style="display:none">
+                  <span>Run every</span>
+                  <select id="taskSchedule">
+                    <option value="5m">5 min</option><option value="15m">15 min</option>
+                    <option value="30m">30 min</option><option value="1h" selected>1 hour</option>
+                    <option value="6h">6 hours</option><option value="24h">Daily</option>
+                  </select>
+                </label>
+              </div>
+              <div class="actionSelector">
+                <span class="actionSelectorLabel">ACTION</span>
+                <div class="actionBtns">
+                  <button class="actionBtn active" data-action="explore" type="button">Explore</button>
+                  <button class="actionBtn" data-action="navigate_gps" type="button">GPS</button>
+                  <button class="actionBtn" data-action="navigate_map" type="button">Map point</button>
+                  <button class="actionBtn" data-action="query" type="button">AI query</button>
+                </div>
+              </div>
+              <div class="actionParams" id="paramsExplore"><p class="paramHint">The robot will autonomously explore using frontier exploration.</p></div>
+              <div class="actionParams" id="paramsGps" style="display:none">
+                <div class="taskFormRow">
+                  <label class="taskLabel grow"><span>Latitude</span><input id="paramLat" placeholder="37.7749" inputmode="decimal" /></label>
+                  <label class="taskLabel grow"><span>Longitude</span><input id="paramLon" placeholder="-122.4194" inputmode="decimal" /></label>
+                </div>
+              </div>
+              <div class="actionParams" id="paramsMap" style="display:none">
+                <div class="taskFormRow">
+                  <label class="taskLabel grow"><span>X (m)</span><input id="paramX" placeholder="5.0" inputmode="decimal" /></label>
+                  <label class="taskLabel grow"><span>Y (m)</span><input id="paramY" placeholder="3.0" inputmode="decimal" /></label>
+                </div>
+              </div>
+              <div class="actionParams" id="paramsQuery" style="display:none">
+                <label class="taskLabel"><span>Instruction</span><input id="paramText" placeholder="Follow the person in black..." /></label>
+              </div>
+              <label class="taskLabel" style="margin-top:8px"><span>Notes (optional)</span><input id="taskDescription" placeholder="Context..." /></label>
+              <div class="taskFormActions">
+                <button id="submitTask" class="primary-btn">Create</button>
+                <button id="cancelTask" class="sec-btn">Cancel</button>
+              </div>
+            </div>
+            <div id="taskList" class="taskList">
+              <div class="taskEmpty" id="taskEmpty">No tasks yet.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ System Tab ══ -->
+        <div class="ctab-pane" id="tab-devices">
+          <div class="tab-inner system-grid">
+            <div class="sys-card">
+              <div class="sys-card-head">
+                <span class="sc-label">DEVICE</span>
+                <span class="pill" id="onlinePill">Idle</span>
+              </div>
+              <div class="sys-device-name" id="deviceName">RoboRun Station</div>
+              <div class="sys-device-sub" id="deviceSubtitle">Webcam + dimOS</div>
+              <div class="sys-info-grid">
+                <span class="sig-key">IP</span><span class="sig-val" id="robotIpValue">--</span>
+                <span class="sig-key">Blueprint</span><span class="sig-val" id="blueprintValue">--</span>
+                <span class="sig-key">Source</span><span class="sig-val" id="sourceValue">webcam</span>
+              </div>
+            </div>
+
+            <div class="sys-card">
+              <div class="sys-card-head"><span class="sc-label">RESOURCES</span><span id="loadValue" class="sc-val">--</span></div>
+              <div class="res-bars">
+                <div class="res-row"><span>Disk</span><meter id="diskMeter" min="0" max="100" value="0"></meter><b id="diskText">--</b></div>
+              </div>
+            </div>
+
+            <div class="sys-card">
+              <div class="sys-card-head"><span class="sc-label">PROFILE</span><button id="saveProfile" class="primary-btn small-btn">Save</button></div>
+              <div class="formGrid">
+                <label><span>Device name</span><input id="deviceNameInput" /></label>
+                <label><span>Robot IP</span><input id="robotIp" inputmode="decimal" placeholder="192.168.123.18" /></label>
+                <label><span>dimOS path (optional)</span><input id="dimosPath" placeholder="/path/to/dimos" /></label>
+                <label>
+                  <span>Blueprint</span>
+                  <select id="blueprint">
+                    <option value="unitree-go2-hackathon" selected>Full Dashboard</option>
+                    <option value="unitree-go2">Standard Go2</option>
+                    <option value="unitree-go2-basic">Basic</option>
+                    <option value="unitree-go2-spatial">Spatial Memory</option>
+                    <option value="unitree-go2-agentic">Agentic (Claude)</option>
+                    <option value="unitree-go2-agentic-ollama">Agentic (Ollama)</option>
+                    <option value="unitree-go2-security">Security Patrol</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div class="sys-card">
+              <div class="sys-card-head"><span class="sc-label">dimOS RUNTIME</span></div>
+              <div class="rt-btns">
+                <button id="dimosReplay" class="primary-btn">▷ Replay Bot</button>
+                <button id="dimosLaunch" class="primary-btn">▷ Start Robot</button>
+                <button id="dimosStatus" class="sec-btn">Status</button>
+                <button id="dimosStop" class="sec-btn danger-btn">Stop dimOS</button>
+              </div>
+            </div>
+
+            <div class="sys-card" style="grid-column:1/-1">
+              <div class="sys-card-head"><span class="sc-label">EVENT LOG</span><button id="clearOutput" class="sec-btn small-btn">Clear</button></div>
+              <div id="activityList" class="activityList"></div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- .center -->
+
+      <!-- ── CHAT PANEL ──────────────────────────────────────────── -->
+      <aside class="chat-panel">
+        <div class="chat-head">
+          <div class="chat-head-left">
+            <span class="ch-title">AGENT</span>
+            <span id="agentStatus" class="agent-badge">idle</span>
+          </div>
+          <button id="agentClear" class="sec-btn small-btn">New session</button>
+        </div>
+
+        <div id="agentMessages" class="chat-msgs"></div>
+
+        <div class="chat-shortcuts">
+          <button class="sc-btn" data-msg="Check robot status: call dimos_workbench_dashboard_status and dimos_workbench_get_robot_state. Report battery, position, mode, errors.">Status</button>
+          <button class="sc-btn" data-msg="Start autonomous frontier exploration. After 20 seconds report position and events.">Explore</button>
+          <button class="sc-btn" data-msg="Generate a mission brief: recent activity, current robot state, errors, and recommended next action.">Brief</button>
+          <button class="sc-btn" data-msg="Stop everything: stop exploration, dog mode, follow, patrol, and any active find mission. Confirm stopped.">Stop All</button>
+          <button class="sc-btn" data-msg="Start dog mode using daneel_start_dog_mode. Confirm it started.">Dog Mode</button>
+          <button class="sc-btn" data-msg="What do you see right now? Use daneel_query_scene and describe the scene.">Scene</button>
+        </div>
+
+        <div class="chat-input-row">
+          <input id="agentInput" type="text" placeholder="Tell the robot what to do..." autocomplete="off" />
+          <button id="agentSend" class="send-btn">↵</button>
+          <button id="agentStop" class="stop-btn" style="display:none">■</button>
+        </div>
+      </aside>
+    </div><!-- .app -->
+
+    <!-- ── Notification drawer ──────────────────────────────────── -->
+    <div id="notifDrawer" class="notif-drawer" style="display:none">
+      <div class="notif-head">
+        <strong>Events</strong>
+        <div style="display:flex;gap:8px">
+          <button id="notifMarkRead" class="sec-btn small-btn">Mark read</button>
+          <button id="notifClose" class="sec-btn small-btn">✕</button>
+        </div>
+      </div>
+      <div id="notifList" class="notif-list">
+        <div class="notif-empty">No events yet.</div>
+      </div>
+    </div>
+    <div id="notifOverlay" class="notif-overlay" style="display:none"></div>
+
+    <!-- ── Skill prompt modal ───────────────────────────────────── -->
+    <div id="skillPrompt" class="skill-prompt" style="display:none">
+      <div class="sp-backdrop" id="spBackdrop"></div>
+      <div class="sp-dialog">
+        <div id="spLabel" class="sp-label"></div>
+        <input id="spInput" class="sp-input" />
+        <div class="sp-actions">
+          <button id="spCancel" class="sec-btn">Cancel</button>
+          <button id="spSend" class="primary-btn">↵ Send</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Robot modal ──────────────────────────────────────────── -->
+    <div id="robotModal" class="fleet-modal" style="display:none">
+      <div class="fm-backdrop" data-close="robotModal"></div>
+      <div class="fm-dialog">
+        <div class="fm-head"><strong id="robotModalTitle">Add Robot</strong><button class="sec-btn small-btn" data-close="robotModal">✕</button></div>
+        <div class="fm-body">
+          <div class="formGrid">
+            <label><span>Name</span><input id="rmName" placeholder="Lobby Guard" /></label>
+            <label><span>Device type</span><input id="rmDeviceType" value="Unitree Go2" /></label>
+            <label><span>Serial</span><input id="rmSerial" placeholder="GO2-001" /></label>
+            <label><span>Robot IP</span><input id="rmIp" placeholder="192.168.12.1" inputmode="decimal" /></label>
+            <label><span>Group</span><input id="rmGroup" placeholder="Security" value="Default" /></label>
+            <label><span>Blueprint</span><select id="rmBlueprint"></select></label>
+          </div>
+          <label style="margin-top:10px"><span>Notes</span><input id="rmNotes" placeholder="Optional notes..." /></label>
+          <label style="margin-top:10px"><span>Tags (comma-separated)</span><input id="rmTags" placeholder="lobby, floor-1" /></label>
+        </div>
+        <div class="fm-foot"><button class="sec-btn" data-close="robotModal">Cancel</button><button id="robotModalSave" class="primary-btn">Save</button></div>
+      </div>
+    </div>
+
+    <!-- ── Blueprint modal ──────────────────────────────────────── -->
+    <div id="blueprintModal" class="fleet-modal" style="display:none">
+      <div class="fm-backdrop" data-close="blueprintModal"></div>
+      <div class="fm-dialog fm-dialog-wide">
+        <div class="fm-head"><strong id="bpModalTitle">Create Blueprint</strong><button class="sec-btn small-btn" data-close="blueprintModal">✕</button></div>
+        <div class="fm-body">
+          <div class="formGrid">
+            <label><span>Name</span><input id="bpName" placeholder="Patrol Alpha" /></label>
+            <label><span>Slug</span><input id="bpSlug" placeholder="patrol-alpha" /></label>
+          </div>
+          <label style="margin-top:10px"><span>Description</span><input id="bpDescription" placeholder="What this blueprint does..." /></label>
+          <div class="formGrid" style="margin-top:10px">
+            <label>
+              <span>Base blueprint</span>
+              <select id="bpBase">
+                <option value="unitree-go2">unitree-go2</option>
+                <option value="unitree-go2-hackathon">unitree-go2-hackathon</option>
+                <option value="unitree-go2-basic">unitree-go2-basic</option>
+                <option value="unitree-go2-spatial">unitree-go2-spatial</option>
+                <option value="unitree-go2-agentic">unitree-go2-agentic</option>
+                <option value="unitree-go2-agentic-ollama">unitree-go2-agentic-ollama</option>
+                <option value="unitree-go2-security">unitree-go2-security</option>
+              </select>
+            </label>
+            <label>
+              <span>Icon</span>
+              <div class="bp-icon-row">
+                <input id="bpIcon" value="◈" style="width:50px;text-align:center" />
+                <input id="bpColor" type="color" value="#4090e0" style="width:50px;padding:2px;height:36px" />
+              </div>
+            </label>
+          </div>
+          <label style="margin-top:10px"><span>Extra args</span><input id="bpExtraArgs" placeholder="-o module.option=value" /></label>
+          <label style="margin-top:10px"><span>Modules (comma-separated)</span><input id="bpModules" placeholder="navigation, mapping, patrol" /></label>
+          <label style="margin-top:10px"><span>Tags (comma-separated)</span><input id="bpTags" placeholder="security, patrol" /></label>
+        </div>
+        <div class="fm-foot"><button class="sec-btn" data-close="blueprintModal">Cancel</button><button id="bpModalSave" class="primary-btn">Save</button></div>
+      </div>
+    </div>
+
+    <!-- ── Deploy modal ──────────────────────────────────────────── -->
+    <div id="deployModal" class="fleet-modal" style="display:none">
+      <div class="fm-backdrop" data-close="deployModal"></div>
+      <div class="fm-dialog">
+        <div class="fm-head"><strong>Deploy Blueprint</strong><button class="sec-btn small-btn" data-close="deployModal">✕</button></div>
+        <div class="fm-body">
+          <p class="paramHint" id="deployInfo">Assign a blueprint to this robot.</p>
+          <label style="margin-top:10px"><span>Blueprint</span><select id="deployBlueprintSelect"></select></label>
+        </div>
+        <div class="fm-foot"><button class="sec-btn" data-close="deployModal">Cancel</button><button id="deployConfirm" class="primary-btn">Deploy</button></div>
+      </div>
+    </div>
+
+    <script src="./app.js?v=3"></script>
+  </body>
+</html>

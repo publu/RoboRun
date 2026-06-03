@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "roborun"
+version = "0.1.0"
+description = "Zero-terminal visual teleop, dataset collection, and one-click dimOS blueprint deployment"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [{name = "Pablo", email = "pablo@hashingsystems.com"}]
+
+dependencies = [
+    "ultralytics>=8.0",
+    "opencv-python>=4.8",
+    "numpy>=1.24",
+    "Pillow>=10.0",
+    "torch>=2.0",
+    "torchvision>=0.15",
+    "open-clip-torch>=2.20",
+]
+
+[project.optional-dependencies]
+cosmos = ["cosmos-tokenizer>=0.1"]
+jepa = ["timm>=0.9"]
+robot = ["dimos"]
+all = ["roborun[cosmos,jepa,robot]"]
+
+[project.scripts]
+roborun = "roborun.server:main"
+
+[tool.setuptools.packages.find]
+include = ["roborun*"]
