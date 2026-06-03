@@ -66,6 +66,18 @@ def _get_dataset():
         _dataset = DatasetCollector()
     return _dataset
 
+_spatial_memory = None
+def _get_memory():
+    global _spatial_memory
+    if _spatial_memory is None:
+        from roborun.spatial_memory import SpatialMemoryStore
+        _spatial_memory = SpatialMemoryStore(
+            s3_bucket=os.environ.get("ROBORUN_S3_BUCKET"),
+            s3_prefix=os.environ.get("ROBORUN_S3_PREFIX", "roborun/memories/"),
+            s3_endpoint=os.environ.get("ROBORUN_S3_ENDPOINT"),
+        )
+    return _spatial_memory
+
 # ── Agent (optional — only if `claude` CLI is available) ─────────────────────
 _AGENT = None
 def _get_agent():
@@ -839,6 +851,30 @@ class Handler(SimpleHTTPRequestHandler):
             else:
                 self.send_json(200, {"ok": True, "alive": agent.is_alive, "session": agent._session_id is not None})
             return
+        # ── Spatial Memory GET ──
+        if self.path == "/api/memory/stats":
+            self.send_json(200, {"ok": True, **_get_memory().stats()})
+            return
+        if self.path.startswith("/api/memory/list"):
+            from urllib.parse import parse_qs, urlparse
+            qs = parse_qs(urlparse(self.path).query)
+            robot = qs.get("robot_id", [None])[0]
+            limit = int(qs.get("limit", ["50"])[0])
+            self.send_json(200, {"ok": True, "memories": _get_memory().list_memories(limit=limit, robot_id=robot)})
+            return
+        if self.path.startswith("/api/memory/thumb/"):
+            mid = self.path.split("/api/memory/thumb/")[1]
+            data = _get_memory().get_thumbnail(mid)
+            if data:
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self.send_json(404, {"ok": False, "error": "not found"})
+            return
+
         if self.path == "/":
             self.path = "/index.html"
         super().do_GET()
@@ -872,6 +908,63 @@ class Handler(SimpleHTTPRequestHandler):
             if self.path == "/api/webcam/clip_query":
                 result = _get_webcam().set_clip_query(str(payload.get("query", "")))
                 self.send_json(200, result)
+                return
+
+            # ── Spatial Memory ──
+            if self.path == "/api/memory/store":
+                mem = _get_memory()
+                wc = _get_webcam()
+                frame = wc.snapshot()
+                embedding = None
+                dets = None
+                if frame is not None:
+                    if wc._clip:
+                        try:
+                            embedding = wc._clip.embed_image(frame)
+                        except Exception:
+                            pass
+                    dets = wc.get_detections()
+                mid = mem.store(
+                    frame=frame,
+                    embedding=embedding,
+                    detections=dets,
+                    x=payload.get("x"),
+                    y=payload.get("y"),
+                    z=payload.get("z"),
+                    robot_id=payload.get("robot_id", "local"),
+                    metadata=payload.get("metadata"),
+                )
+                log_event("memory_stored", f"Memory {mid}")
+                self.send_json(200, {"ok": True, "id": mid})
+                return
+            if self.path == "/api/memory/search":
+                mem = _get_memory()
+                query = payload.get("query", "")
+                mode = payload.get("mode", "clip")
+                top_k = int(payload.get("top_k", 10))
+                robot_id = payload.get("robot_id")
+                if mode == "clip" and query:
+                    wc = _get_webcam()
+                    if wc._clip is None:
+                        from roborun.models import CLIPMatcher
+                        wc._clip = CLIPMatcher()
+                    emb = wc._clip.embed_text(query)
+                    results = mem.search_clip(emb, top_k=top_k, robot_id=robot_id)
+                elif mode == "nearby":
+                    results = mem.search_nearby(
+                        x=float(payload.get("x", 0)), y=float(payload.get("y", 0)),
+                        z=float(payload.get("z")) if payload.get("z") is not None else None,
+                        radius=float(payload.get("radius", 2.0)), top_k=top_k, robot_id=robot_id,
+                    )
+                elif mode == "yolo" and query:
+                    results = mem.search_yolo(query, top_k=top_k, robot_id=robot_id)
+                else:
+                    results = mem.list_memories(limit=top_k, robot_id=robot_id)
+                self.send_json(200, {"ok": True, "results": results})
+                return
+            if self.path == "/api/memory/delete":
+                ok = _get_memory().delete(payload.get("id", ""))
+                self.send_json(200, {"ok": ok})
                 return
 
             # ── Dataset ──
