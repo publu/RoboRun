@@ -6,7 +6,7 @@ RoboRun is a visual dashboard for robot control and computer vision. Use it with
 
 No CLI required. Everything runs from the browser.
 
-<video src="https://github.com/publu/RoboRun/raw/main/assets/demo.mp4" autoplay loop muted playsinline width="100%"></video>
+[![Demo](assets/demo-thumb.jpg)](https://github.com/publu/RoboRun/raw/main/assets/demo.mp4)
 
 ---
 
