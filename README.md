@@ -12,6 +12,13 @@ No CLI required. Everything runs from the browser.
 
 ## Changelog
 
+### v0.3.0 -- MuJoCo simulator, spatial memory, walking robots
+
+- **MuJoCo simulator in the browser** -- click Simulate on the Control tab, pick a robot (Go1 or G1), and launch a full physics sim. Same camera feed, same WASD controls. 3rd-person camera tracks the robot.
+- **Trained locomotion policies** -- Go1 and G1 walk for real using ONNX neural network controllers from dimOS. WASD sends velocity commands to the policy which outputs joint torques. Actual walking gait, not position hacking.
+- **Spatial memory store** -- CLIP-searchable, geo-indexed, multi-robot memory. Store webcam frames with embeddings, YOLO detections, and x/y/z coordinates. Search by text query (CLIP cosine similarity), spatial radius, or YOLO label. Optional S3 backend for thumbnails, search index always local.
+- **Simulator integrated into Control tab** -- no separate tab. Source picker lets you switch between Webcam and Simulate. Sidebar status reflects sim state. Robot controls auto-expand when sim is active.
+
 ### v0.2.0 -- Cosmos 3, JEPA heatmaps, UX overhaul
 
 - **Cosmos 3 Nano world model** -- integrated via [cosmos-mac](https://github.com/publu/cosmos-mac) (MLX 4-bit, Apple Silicon native). Available as a Python API for world simulation, synthetic data, and action prediction. Not in the live webcam loop (generation takes ~20s), but wired in the codebase for downstream use.
