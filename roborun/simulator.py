@@ -157,6 +157,7 @@ class SimulatorRunner:
         self._policy: _Go1Policy | _G1Policy | None = None
         self._lock = RLock()
         self._should_stop = Event()
+        self._should_reset = Event()
         self._thread: Thread | None = None
         self._robot_id: str = ""
         self._fps: float = 0.0
@@ -241,6 +242,12 @@ class SimulatorRunner:
         self._state = "idle"
         return {"ok": True}
 
+    def reset(self) -> dict[str, Any]:
+        if not self.is_running:
+            return {"ok": False, "error": "Simulator not running"}
+        self._should_reset.set()
+        return {"ok": True}
+
     def set_cmd_vel(self, forward: float = 0, left: float = 0, turn: float = 0) -> None:
         if self._policy:
             self._policy.set_command(forward, left, turn)
@@ -276,6 +283,21 @@ class SimulatorRunner:
         try:
             while not self._should_stop.is_set():
                 t0 = time.monotonic()
+
+                if self._should_reset.is_set():
+                    self._should_reset.clear()
+                    if self._model.nkey > 0:
+                        mujoco.mj_resetDataKeyframe(self._model, self._data, 0)
+                    else:
+                        self._data.qpos[:] = 0
+                        self._data.qpos[2] = 0.3
+                        self._data.qpos[3] = 1.0
+                    self._data.qvel[:] = 0
+                    self._data.ctrl[:] = 0
+                    mujoco.mj_forward(self._model, self._data)
+                    if self._policy:
+                        self._policy._last_action[:] = 0
+                        self._policy._command[:] = 0
 
                 with self._lock:
                     if self._policy:

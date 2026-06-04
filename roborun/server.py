@@ -941,6 +941,12 @@ class Handler(SimpleHTTPRequestHandler):
                 log_event("sim_stopped", "Simulator stopped")
                 self.send_json(200, result)
                 return
+            if self.path == "/api/sim/reset":
+                result = _get_simulator().reset()
+                if result.get("ok"):
+                    log_event("sim_reset", "Simulator robot reset")
+                self.send_json(200, result)
+                return
             if self.path == "/api/sim/move":
                 _get_simulator().set_cmd_vel(
                     forward=float(payload.get("forward", 0)),

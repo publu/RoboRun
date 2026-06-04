@@ -583,6 +583,13 @@ spInput?.addEventListener("keydown", (e) => { if (e.key === "Enter") submitSkill
 document.querySelectorAll(".ab").forEach(btn => {
   btn.addEventListener("click", () => {
     const skill = btn.dataset.skill;
+    if (skill === "restart") {
+      fetch("/api/sim/reset", { method: "POST", headers: {"Content-Type":"application/json"}, body: "{}" })
+        .then(r => r.json())
+        .then(d => { if (!d.ok) console.warn("Reset failed:", d.error); })
+        .catch(e => console.error("Reset error:", e));
+      return;
+    }
     const mcp = SKILL_MCP[skill];
     if (mcp) {
       if (mcp.ask) {
