@@ -1,4 +1,4 @@
-"""OpenClaw MCP server — direct ROS connectivity without rosbridge.
+"""Direct ROS MCP server — zero-config robot connectivity without rosbridge.
 
 Uses ros_tap's CycloneDDS backend for zero-config robot discovery and
 direct DDS pub/sub. No ROS install, no rosbridge_server, no extra
@@ -367,7 +367,7 @@ def handle_tool_call(name: str, args: dict) -> dict:
 
 def get_mcp_manifest() -> dict:
     return {
-        "name": "roborun-openclaw",
+        "name": "roborun-ros",
         "version": "0.7.0",
         "description": "Direct ROS robot control via DDS. No rosbridge, no ROS install. Powered by ros_tap.",
         "tools": MCP_TOOLS,

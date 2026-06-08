@@ -1202,13 +1202,13 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as exc:
             return [{"type": "text", "text": f"Tool error: {exc}"}]
 
-    def _handle_openclaw_mcp(self, payload: dict) -> None:
+    def _handle_ros_mcp(self, payload: dict) -> None:
         req_id = payload.get("id")
         method = payload.get("method", "")
         params = payload.get("params", {})
 
         if method == "initialize":
-            from roborun.openclaw_mcp import get_mcp_manifest
+            from roborun.ros_mcp import get_mcp_manifest
             manifest = get_mcp_manifest()
             self._mcp_reply(req_id, {
                 "protocolVersion": "2024-11-05",
@@ -1218,12 +1218,12 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         if method == "tools/list":
-            from roborun.openclaw_mcp import MCP_TOOLS
+            from roborun.ros_mcp import MCP_TOOLS
             self._mcp_reply(req_id, {"tools": MCP_TOOLS})
             return
 
         if method == "tools/call":
-            from roborun.openclaw_mcp import handle_tool_call
+            from roborun.ros_mcp import handle_tool_call
             name = params.get("name", "")
             args = params.get("arguments", {})
             result = handle_tool_call(name, args)
@@ -1274,14 +1274,14 @@ class Handler(SimpleHTTPRequestHandler):
                 pass
             return
 
-        # ── OpenClaw MCP discovery (SSE) ──
-        if path_only == "/mcp/openclaw":
+        # ── Direct ROS MCP discovery (SSE) ──
+        if path_only == "/mcp/ros":
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
-            msg = f"data: {{\"type\":\"endpoint\",\"url\":\"http://127.0.0.1:{PORT}/mcp/openclaw\"}}\n\n"
+            msg = f"data: {{\"type\":\"endpoint\",\"url\":\"http://127.0.0.1:{PORT}/mcp/ros\"}}\n\n"
             try:
                 self.wfile.write(msg.encode())
                 self.wfile.flush()
@@ -1622,14 +1622,14 @@ class Handler(SimpleHTTPRequestHandler):
             self._handle_mcp(payload)
             return
 
-        # ── OpenClaw MCP (direct DDS, no rosbridge) ──
-        if self.path == "/mcp/openclaw":
+        # ── Direct ROS MCP (DDS, no rosbridge) ──
+        if self.path == "/mcp/ros":
             try:
                 payload = read_json(self)
             except Exception as exc:
                 self._mcp_error(None, -32700, f"Parse error: {exc}")
                 return
-            self._handle_openclaw_mcp(payload)
+            self._handle_ros_mcp(payload)
             return
 
         try:

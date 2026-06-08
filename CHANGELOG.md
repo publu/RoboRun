@@ -3,15 +3,15 @@
 ## v0.7.0 — 2026-06-08
 
 ### Added
-- **OpenClaw MCP server** at `/mcp/openclaw` — direct DDS connectivity, no rosbridge or ROS install needed
+- **Direct ROS MCP server** at `/mcp/ros` — direct DDS connectivity, no rosbridge or ROS install needed
 - Robot auto-discovery via ros_tap CycloneDDS (scan network, list all topics/nodes)
 - Direct `/cmd_vel` publishing over DDS for move/estop commands
 - 10 MCP tools: scan_robots, list_topics, read_topic, publish_topic, move, estop, camera_snapshot, battery_status, navigate, telemetry_stream
 - `ros_tap` integration for zero-config telemetry streaming
-- `openclaw` optional dependency group (`pip install roborun[openclaw]`)
+- `ros` optional dependency group (`pip install roborun[ros]`)
 
 ### Changed
-- Updated project description to reflect OpenClaw focus
+- Updated project description
 - MCP server version bumped to 0.7.0
 
 ## v0.6.0 — 2026-06-08
