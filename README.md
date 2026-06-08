@@ -31,6 +31,14 @@ Your AI gets: live camera feed, YOLO detections, move commands, robot skills, sp
 
 ## Changelog
 
+### v0.4.0 -- MCP server, native ROS 2, fast agent
+
+- **MCP server at `/mcp`** -- any AI client (Claude Desktop, Claude Code, Cursor) connects and gets 8 robot tools: camera snapshot, YOLO detections, move, execute skill, memory search, ROS topic access. Add one line to your MCP config and your AI controls the robot.
+- **Native ROS 2 transport** -- `rosbridge.py` connects to any robot running `rosbridge_server` over WebSocket. Topic pub/sub, service calls, action goals, param get/set, camera snapshot, depth distance. Works without dimOS.
+- **Fast SDK agent** -- replaced the `claude` CLI subprocess with direct Anthropic SDK streaming. Camera frame and YOLO state injected into every message so the agent sees current state without a tool call round-trip. Falls back to subprocess mode if no API key.
+- **ZK proof layer** -- `zk_prover.py` generates EZKL proofs that CLIP embeddings were correctly computed from the original frames. `pip install roborun[zk]` to enable. Verify any memory shard: `GET /api/zk/verify/{shard_id}`.
+- **`npx roborun`** -- npm wrapper for zero-friction install. Checks Python, installs via pip, starts server, opens browser.
+
 ### v0.3.0 -- MuJoCo simulator, spatial memory, walking robots
 
 - **MuJoCo simulator in the browser** -- click Simulate on the Control tab, pick a robot (Go1 or G1), and launch a full physics sim. Same camera feed, same WASD controls. 3rd-person camera tracks the robot.
