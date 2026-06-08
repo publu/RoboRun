@@ -39,6 +39,14 @@ ROBOT_CATALOG = {
         "policy": "unitree_g1_policy.onnx",
         "controller": "g1",
     },
+    "generic_drone": {
+        "name": "Quadrotor",
+        "type": "drone",
+        "xml": "generic_drone.xml",
+        "meshdir": None,
+        "policy": None,
+        "controller": "drone",
+    },
 }
 
 _FONT = cv2.FONT_HERSHEY_SIMPLEX
@@ -149,6 +157,51 @@ class _G1Policy:
         self._phase = np.fmod(self._phase + self._phase_dt + np.pi, 2 * np.pi) - np.pi
 
 
+class _DroneController:
+    """Simple PID position controller for simulated quadrotor."""
+
+    def __init__(self, model: mujoco.MjModel, data: mujoco.MjData) -> None:
+        self._target = np.array([0.0, 0.0, 1.5])
+        self._target_yaw = 0.0
+        self._command = np.zeros(3, dtype=np.float32)
+        self._hover_thrust = 9.81 * self._total_mass(model, data)
+
+    @staticmethod
+    def _total_mass(model: mujoco.MjModel, data: mujoco.MjData) -> float:
+        return sum(model.body_mass)
+
+    def set_command(self, fwd: float, left: float, turn: float) -> None:
+        self._command[:] = [fwd, left, turn]
+        self._target[0] += fwd * 0.05
+        self._target[1] += left * 0.05
+        self._target_yaw += turn * 0.02
+
+    def set_waypoint(self, x: float, y: float, z: float) -> None:
+        self._target = np.array([x, y, max(z, 0.3)])
+
+    def set_altitude(self, alt: float) -> None:
+        self._target[2] = max(alt, 0.3)
+
+    def step(self, model: mujoco.MjModel, data: mujoco.MjData) -> None:
+        pos = data.qpos[0:3]
+        vel = data.qvel[0:3]
+        err = self._target - pos
+        kp, kd = 8.0, 4.0
+        force = kp * err - kd * vel
+        force[2] += self._hover_thrust
+        n_act = model.nu
+        if n_act >= 4:
+            base = force[2] / 4.0
+            data.ctrl[0] = base + force[0] * 0.5
+            data.ctrl[1] = base - force[0] * 0.5
+            data.ctrl[2] = base + force[1] * 0.5
+            data.ctrl[3] = base - force[1] * 0.5
+        elif n_act >= 3:
+            data.ctrl[0] = force[0]
+            data.ctrl[1] = force[1]
+            data.ctrl[2] = force[2]
+
+
 class SimulatorRunner:
 
     def __init__(self) -> None:
@@ -202,7 +255,11 @@ class SimulatorRunner:
         policy_file = info.get("policy")
         controller_type = info.get("controller")
         self._policy = None
-        if policy_file and controller_type:
+        self._drone_ctrl: _DroneController | None = None
+        if controller_type == "drone":
+            self._drone_ctrl = _DroneController(self._model, self._data)
+            self._n_substeps = max(1, round(0.02 / float(self._model.opt.timestep)))
+        elif policy_file and controller_type:
             policy_path = POLICIES_DIR / policy_file
             if policy_path.exists():
                 try:
@@ -217,7 +274,7 @@ class SimulatorRunner:
                 except Exception:
                     self._policy = None
 
-        if not self._policy:
+        if not self._policy and not self._drone_ctrl:
             self._model.opt.gravity[:] = 0
 
         self._robot_id = robot_id
@@ -249,23 +306,71 @@ class SimulatorRunner:
         return {"ok": True}
 
     def set_cmd_vel(self, forward: float = 0, left: float = 0, turn: float = 0) -> None:
-        if self._policy:
+        if self._drone_ctrl:
+            self._drone_ctrl.set_command(forward, left, turn)
+        elif self._policy:
             self._policy.set_command(forward, left, turn)
 
     def get_state(self) -> dict[str, Any]:
         pos = [0.0, 0.0, 0.0]
+        quat = [1.0, 0.0, 0.0, 0.0]
         if self._data is not None:
             pos = self._data.qpos[0:3].tolist()
+            if len(self._data.qpos) >= 7:
+                quat = self._data.qpos[3:7].tolist()
+        info = ROBOT_CATALOG.get(self._robot_id, {})
         return {
             "running": self.is_running,
             "state": self._state,
             "robot": self._robot_id,
+            "robot_type": info.get("type", ""),
             "fps": round(self._fps, 1),
             "frame_count": self._frame_count,
             "sim_time": round(self._sim_time, 2),
             "position": {"x": pos[0], "y": pos[1], "z": pos[2]},
+            "orientation": {"w": quat[0], "x": quat[1], "y": quat[2], "z": quat[3]},
             "has_policy": self._policy is not None,
+            "has_drone_ctrl": self._drone_ctrl is not None,
         }
+
+    def get_telemetry(self) -> dict[str, Any]:
+        if self._data is None:
+            return {}
+        pos = self._data.qpos[0:3].tolist()
+        quat = self._data.qpos[3:7].tolist() if len(self._data.qpos) >= 7 else [1, 0, 0, 0]
+        linvel = self._data.qvel[0:3].tolist() if len(self._data.qvel) >= 3 else [0, 0, 0]
+        angvel = self._data.qvel[3:6].tolist() if len(self._data.qvel) >= 6 else [0, 0, 0]
+        w, x, y, z = quat
+        roll = float(np.arctan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y)))
+        pitch = float(np.arcsin(np.clip(2 * (w * y - z * x), -1, 1)))
+        yaw = float(np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)))
+        battery = max(0.0, 100.0 - self._sim_time / 6.0)
+        joints = self._data.qpos[7:].tolist() if len(self._data.qpos) > 7 else []
+        joint_vel = self._data.qvel[6:].tolist() if len(self._data.qvel) > 6 else []
+        return {
+            "position": {"x": pos[0], "y": pos[1], "z": pos[2]},
+            "orientation": {"w": quat[0], "x": quat[1], "y": quat[2], "z": quat[3]},
+            "euler": {"roll": roll, "pitch": pitch, "yaw": yaw},
+            "linear_velocity": {"x": linvel[0], "y": linvel[1], "z": linvel[2]},
+            "angular_velocity": {"x": angvel[0], "y": angvel[1], "z": angvel[2]},
+            "battery": round(battery, 1),
+            "altitude": pos[2],
+            "joint_positions": joints,
+            "joint_velocities": joint_vel,
+            "sim_time": self._sim_time,
+        }
+
+    def set_waypoint(self, x: float, y: float, z: float) -> dict[str, Any]:
+        if self._drone_ctrl:
+            self._drone_ctrl.set_waypoint(x, y, z)
+            return {"ok": True}
+        return {"ok": False, "error": "Not a drone"}
+
+    def set_altitude(self, alt: float) -> dict[str, Any]:
+        if self._drone_ctrl:
+            self._drone_ctrl.set_altitude(alt)
+            return {"ok": True}
+        return {"ok": False, "error": "Not a drone"}
 
     def _sim_loop(self, width: int, height: int) -> None:
         fps_window: list[float] = []
@@ -274,11 +379,11 @@ class SimulatorRunner:
         camera = mujoco.MjvCamera()
         camera.type = mujoco.mjtCamera.mjCAMERA_TRACKING
         camera.trackbodyid = 0
-        camera.distance = 3.0
-        camera.elevation = -20.0
+        camera.distance = 3.0 if not self._drone_ctrl else 6.0
+        camera.elevation = -20.0 if not self._drone_ctrl else -35.0
         camera.azimuth = 180.0
 
-        step_counter = 0
+        telemetry_counter = 0
 
         try:
             while not self._should_stop.is_set():
@@ -290,7 +395,7 @@ class SimulatorRunner:
                         mujoco.mj_resetDataKeyframe(self._model, self._data, 0)
                     else:
                         self._data.qpos[:] = 0
-                        self._data.qpos[2] = 0.3
+                        self._data.qpos[2] = 1.5 if self._drone_ctrl else 0.3
                         self._data.qpos[3] = 1.0
                     self._data.qvel[:] = 0
                     self._data.ctrl[:] = 0
@@ -298,16 +403,25 @@ class SimulatorRunner:
                     if self._policy:
                         self._policy._last_action[:] = 0
                         self._policy._command[:] = 0
+                    if self._drone_ctrl:
+                        self._drone_ctrl._target = np.array([0.0, 0.0, 1.5])
 
                 with self._lock:
-                    if self._policy:
+                    if self._drone_ctrl:
+                        n = getattr(self, "_n_substeps", 4)
+                        self._drone_ctrl.step(self._model, self._data)
+                        for _ in range(n):
+                            mujoco.mj_step(self._model, self._data)
+                        self._sim_time = self._data.time
+                    elif self._policy:
                         n = getattr(self, "_n_substeps", 4)
                         self._policy.step(self._model, self._data)
                         for _ in range(n):
                             mujoco.mj_step(self._model, self._data)
+                        self._sim_time = self._data.time
                     else:
                         mujoco.mj_forward(self._model, self._data)
-                    self._sim_time = self._data.time if self._policy else self._sim_time + 1.0 / target_fps
+                        self._sim_time = self._sim_time + 1.0 / target_fps
 
                 quat = self._data.qpos[3:7]
                 w, x, y, z = quat
@@ -322,6 +436,44 @@ class SimulatorRunner:
                 ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
                 if ok:
                     FRAME_PATH.write_bytes(buf.tobytes())
+
+                # Depth rendering
+                try:
+                    renderer.enable_depth_rendering(True)
+                    renderer.update_scene(self._data, camera)
+                    depth = renderer.render().copy()
+                    renderer.enable_depth_rendering(False)
+                    from roborun.depth import DepthProcessor
+                    DepthProcessor.get().update(depth, frame_rgb)
+                except Exception:
+                    pass
+
+                # Push telemetry every ~5 frames (~6Hz)
+                telemetry_counter += 1
+                if telemetry_counter % 5 == 0:
+                    try:
+                        from roborun.telemetry import TelemetryBus
+                        from roborun.trajectory import TrajectoryRecorder
+                        tel = self.get_telemetry()
+                        bus = TelemetryBus.get()
+                        bus.push("sim", "position", tel["position"])
+                        bus.push("sim", "orientation", tel["euler"])
+                        bus.push("sim", "velocity", tel["linear_velocity"])
+                        bus.push("sim", "battery", {"percent": tel["battery"]})
+                        if tel["joint_positions"]:
+                            bus.push("sim", "joint_states", {
+                                "positions": tel["joint_positions"],
+                                "velocities": tel["joint_velocities"],
+                            })
+                        pos = tel["position"]
+                        ori = tel["orientation"]
+                        TrajectoryRecorder.get().add_pose(
+                            pos["x"], pos["y"], pos["z"],
+                            ori["w"], ori["x"], ori["y"], ori["z"],
+                            robot_id="sim",
+                        )
+                    except Exception:
+                        pass
 
                 self._frame_count += 1
                 elapsed = time.monotonic() - t0

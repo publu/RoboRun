@@ -10,6 +10,9 @@
     <link rel="stylesheet" href="./styles.css?v=3" />
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.165.0/examples/js/controls/OrbitControls.js"></script>
   </head>
   <body>
     <div class="app">
@@ -37,12 +40,21 @@
           <button class="rnav" data-tab="tasks">
             <span class="rn-icon">◉</span><span class="rn-label">Tasks</span>
           </button>
+          <button class="rnav" data-tab="telemetry" style="display:none">
+            <span class="rn-icon">◠</span><span class="rn-label">Telemetry</span>
+          </button>
+          <button class="rnav" data-tab="viz" style="display:none">
+            <span class="rn-icon">◇</span><span class="rn-label">3D Viz</span>
+          </button>
           <button class="rnav" data-tab="devices">
             <span class="rn-icon">◫</span><span class="rn-label">System</span>
           </button>
         </nav>
 
         <div class="rail-section-label">STATUS</div>
+        <div class="robot-type-badge-row">
+          <span class="robot-type-badge" id="robotTypeBadge">Webcam</span>
+        </div>
         <div class="rail-status">
           <div class="rs-row">
             <span class="rs-dot" id="sWebcam"></span>
@@ -255,6 +267,72 @@
               </div>
             </div>
           </div>
+          </div>
+
+          <!-- Drone controls (hidden by default, shown per robot type) -->
+          <div class="actions-area" id="droneControlsSection" style="display:none">
+            <div class="ag">
+              <div class="ag-header"><span class="ag-label">DRONE CONTROLS</span></div>
+              <div class="ag-grid">
+                <button class="ab ab-accent" id="droneTakeoff"><span class="ab-icon">▲</span><span class="ab-name">Takeoff</span></button>
+                <button class="ab ab-danger" id="droneLand"><span class="ab-icon">▼</span><span class="ab-name">Land</span></button>
+              </div>
+              <div class="drone-alt-row">
+                <span class="drone-alt-label">Altitude</span>
+                <input type="range" id="droneAltSlider" min="0.5" max="10" step="0.5" value="2.0" />
+                <span id="droneAltVal">2.0m</span>
+              </div>
+              <div class="drone-wp-row">
+                <input id="droneWpX" type="number" placeholder="X" step="0.5" />
+                <input id="droneWpY" type="number" placeholder="Y" step="0.5" />
+                <input id="droneWpZ" type="number" placeholder="Z" value="2" step="0.5" />
+                <button class="primary-btn small-btn" id="droneGoto">Go</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Depth heatmap panel -->
+          <div class="depth-panel" id="depthPanel" style="display:none">
+            <div class="depth-head">
+              <span class="depth-label">DEPTH</span>
+              <span class="depth-info" id="depthInfo">--</span>
+            </div>
+            <img id="depthImg" class="depth-img" style="display:none" alt="Depth heatmap" />
+          </div>
+        </div>
+
+        <!-- ══ Telemetry Tab ══ -->
+        <div class="ctab-pane" id="tab-telemetry" style="display:none">
+          <div class="tab-inner" id="tab-telemetry-wrap">
+            <div class="tab-head">
+              <h2>Telemetry</h2>
+              <div class="tab-head-right">
+                <span class="tel-ws-badge" id="telWsBadge">● Connecting</span>
+              </div>
+            </div>
+            <div id="telemetryGrid" class="telemetry-grid"></div>
+          </div>
+        </div>
+
+        <!-- ══ 3D Visualization Tab ══ -->
+        <div class="ctab-pane" id="tab-viz" style="display:none">
+          <div class="tab-inner" id="tab-viz-wrap">
+            <div class="tab-head">
+              <h2>3D Visualization</h2>
+              <div class="tab-head-right">
+                <button class="sec-btn small-btn" id="vizClearTraj">Clear Path</button>
+              </div>
+            </div>
+            <div class="viz-grid">
+              <div class="viz-panel">
+                <div class="viz-panel-head">TRAJECTORY</div>
+                <div class="viz-canvas" id="trajectoryCanvas"></div>
+              </div>
+              <div class="viz-panel">
+                <div class="viz-panel-head">POINT CLOUD</div>
+                <div class="viz-canvas" id="pointCloudCanvas"></div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -629,6 +707,10 @@
       </div>
     </div>
 
-    <script src="./app.js?v=3"></script>
+    <script src="./websocket-client.js?v=5"></script>
+    <script src="./telemetry-charts.js?v=5"></script>
+    <script src="./three-panels.js?v=5"></script>
+    <script src="./robot-type-ui.js?v=5"></script>
+    <script src="./app.js?v=5"></script>
   </body>
 </html>

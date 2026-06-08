@@ -1066,6 +1066,67 @@ async function autoStartIfNeeded() {
   } catch {}
 }
 
+// ── Robot type + telemetry integration ────────────────────────────────────────
+
+function initV5() {
+  const RR = window.RoboRun || {};
+
+  // Connect telemetry WebSocket
+  if (RR.telemetryWs) RR.telemetryWs.connect();
+
+  // Initialize telemetry charts
+  if (RR.telemetryCharts) RR.telemetryCharts.init();
+
+  // Drone controls
+  const takeoffBtn = document.getElementById("droneTakeoff");
+  const landBtn = document.getElementById("droneLand");
+  const altSlider = document.getElementById("droneAltSlider");
+  const altVal = document.getElementById("droneAltVal");
+  const gotoBtn = document.getElementById("droneGoto");
+
+  if (takeoffBtn) takeoffBtn.addEventListener("click", async () => {
+    const alt = altSlider ? parseFloat(altSlider.value) : 2.0;
+    const r = await api("/api/sim/altitude", { altitude: alt });
+    append("Takeoff", r);
+  });
+  if (landBtn) landBtn.addEventListener("click", async () => {
+    const r = await api("/api/sim/altitude", { altitude: 0.1 });
+    append("Landing", r);
+  });
+  if (altSlider) altSlider.addEventListener("input", () => {
+    if (altVal) altVal.textContent = altSlider.value + "m";
+  });
+  if (altSlider) altSlider.addEventListener("change", async () => {
+    await api("/api/sim/altitude", { altitude: parseFloat(altSlider.value) });
+  });
+  if (gotoBtn) gotoBtn.addEventListener("click", async () => {
+    const x = parseFloat(document.getElementById("droneWpX")?.value || 0);
+    const y = parseFloat(document.getElementById("droneWpY")?.value || 0);
+    const z = parseFloat(document.getElementById("droneWpZ")?.value || 2);
+    const r = await api("/api/sim/waypoint", { x, y, z });
+    append("Waypoint", r);
+  });
+
+  // Clear trajectory button
+  const clearTraj = document.getElementById("vizClearTraj");
+  if (clearTraj) clearTraj.addEventListener("click", async () => {
+    await api("/api/trajectory/clear", {});
+  });
+}
+
+// Hook into dashboard refresh to update robot type
+const _origRefreshDashboard = refreshDashboard;
+refreshDashboard = async function (quiet) {
+  await _origRefreshDashboard(quiet);
+  try {
+    const d = await api("/api/dashboard");
+    const RR = window.RoboRun || {};
+    if (d.robotType && RR.robotTypeUI) {
+      RR.robotTypeUI.update(d.robotType);
+    }
+  } catch {}
+};
+
 // ── Init ────────────────────────────────────────────────────────────────────
 
 refreshDashboard(true);
@@ -1074,6 +1135,7 @@ loadEvents();
 loadFleet();
 loadDatasets();
 autoStartIfNeeded();
+initV5();
 setInterval(() => refreshDashboard(true), 15000);
 setInterval(() => loadTasks(), 20000);
 setInterval(() => loadEvents(false), 10000);

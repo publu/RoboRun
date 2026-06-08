@@ -1,0 +1,53 @@
+<mujoco model="generic_drone">
+  <compiler angle="radian"/>
+
+  <option timestep="0.002" gravity="0 0 -9.81"/>
+
+  <default>
+    <geom rgba="0.3 0.3 0.3 1"/>
+  </default>
+
+  <worldbody>
+    <light diffuse="0.8 0.8 0.8" pos="0 0 5" dir="0 0 -1"/>
+    <geom type="plane" size="50 50 0.1" rgba="0.15 0.18 0.15 1"/>
+
+    <body name="drone" pos="0 0 1.5">
+      <joint type="free"/>
+      <inertial pos="0 0 0" mass="1.5" diaginertia="0.02 0.02 0.04"/>
+
+      <!-- Frame -->
+      <geom type="box" size="0.15 0.02 0.015" rgba="0.2 0.2 0.2 1"/>
+      <geom type="box" size="0.02 0.15 0.015" rgba="0.2 0.2 0.2 1"/>
+
+      <!-- Arms -->
+      <geom type="capsule" fromto="0 0 0 0.12 0.12 0" size="0.008" rgba="0.25 0.25 0.28 1"/>
+      <geom type="capsule" fromto="0 0 0 -0.12 0.12 0" size="0.008" rgba="0.25 0.25 0.28 1"/>
+      <geom type="capsule" fromto="0 0 0 0.12 -0.12 0" size="0.008" rgba="0.25 0.25 0.28 1"/>
+      <geom type="capsule" fromto="0 0 0 -0.12 -0.12 0" size="0.008" rgba="0.25 0.25 0.28 1"/>
+
+      <!-- Motors (visual) -->
+      <geom type="cylinder" pos="0.12 0.12 0.01" size="0.04 0.005" rgba="0.1 0.6 0.9 0.7"/>
+      <geom type="cylinder" pos="-0.12 0.12 0.01" size="0.04 0.005" rgba="0.1 0.6 0.9 0.7"/>
+      <geom type="cylinder" pos="0.12 -0.12 0.01" size="0.04 0.005" rgba="0.1 0.6 0.9 0.7"/>
+      <geom type="cylinder" pos="-0.12 -0.12 0.01" size="0.04 0.005" rgba="0.1 0.6 0.9 0.7"/>
+
+      <!-- Camera mount -->
+      <geom type="box" pos="0.06 0 -0.02" size="0.015 0.01 0.01" rgba="0.1 0.1 0.1 1"/>
+
+      <!-- IMU sensor site -->
+      <site name="imu" pos="0 0 0" size="0.005"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <!-- 4 thrust actuators at motor positions -->
+    <general name="thrust_fr" joint="drone" gear="0 0 1 0.12 -0.12 0" ctrlrange="0 10" forcerange="0 10"/>
+    <general name="thrust_fl" joint="drone" gear="0 0 1 -0.12 -0.12 0" ctrlrange="0 10" forcerange="0 10"/>
+    <general name="thrust_br" joint="drone" gear="0 0 1 0.12 0.12 0" ctrlrange="0 10" forcerange="0 10"/>
+    <general name="thrust_bl" joint="drone" gear="0 0 1 -0.12 0.12 0" ctrlrange="0 10" forcerange="0 10"/>
+  </actuator>
+
+  <keyframe>
+    <key name="home" qpos="0 0 1.5 1 0 0 0"/>
+  </keyframe>
+</mujoco>

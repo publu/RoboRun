@@ -261,6 +261,43 @@ _FAST_TOOLS = [
             "required": ["query"],
         },
     },
+    {
+        "name": "get_telemetry",
+        "description": "Get current robot telemetry — battery, position, orientation, velocity, joint states.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_trajectory",
+        "description": "Get the recorded trajectory as timestamped poses.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"limit": {"type": "integer", "description": "Max points"}},
+        },
+    },
+    {
+        "name": "takeoff",
+        "description": "Arm and take off to specified altitude (drone only).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"altitude": {"type": "number"}},
+        },
+    },
+    {
+        "name": "land",
+        "description": "Land the drone at current position.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "goto_waypoint",
+        "description": "Fly to a 3D waypoint (drone only).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"},
+            },
+            "required": ["x", "y", "z"],
+        },
+    },
 ]
 
 
@@ -354,6 +391,32 @@ def _execute_fast_tool(name: str, args: dict) -> str:
                 lines.append(f"{loc} — {', '.join(labels) or 'no labels'}")
             return "\n".join(lines)
         return f"Search failed: {result.get('error')}"
+
+    elif name == "get_telemetry":
+        result = _call_local_api("/api/telemetry", method="GET")
+        if result.get("ok"):
+            return json.dumps(result.get("telemetry", {}), indent=2)
+        return "No telemetry available"
+
+    elif name == "get_trajectory":
+        limit = int(args.get("limit", 500))
+        result = _call_local_api(f"/api/trajectory?limit={limit}", method="GET")
+        traj = result.get("trajectory", [])
+        return f"{len(traj)} points" if traj else "No trajectory data"
+
+    elif name == "takeoff":
+        alt = float(args.get("altitude", 2.0))
+        result = _call_local_api("/api/sim/altitude", {"altitude": alt})
+        return f"Takeoff to {alt}m" if result.get("ok") else f"Failed: {result.get('error')}"
+
+    elif name == "land":
+        result = _call_local_api("/api/sim/altitude", {"altitude": 0.1})
+        return "Landing" if result.get("ok") else f"Failed: {result.get('error')}"
+
+    elif name == "goto_waypoint":
+        x, y, z = float(args.get("x", 0)), float(args.get("y", 0)), float(args.get("z", 2))
+        result = _call_local_api("/api/sim/waypoint", {"x": x, "y": y, "z": z})
+        return f"Waypoint ({x},{y},{z})" if result.get("ok") else f"Failed: {result.get('error')}"
 
     return f"Unknown tool: {name}"
 

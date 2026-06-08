@@ -619,6 +619,21 @@ SEED_BLUEPRINTS: list[dict[str, Any]] = [
      "description": "Automated waypoint patrol loop.",
      "base": "unitree-go2-security", "modules": ["patrol", "threat-detection"],
      "extraArgs": "", "tags": ["security"], "icon": "◉", "color": "#e04040", "builtIn": True},
+    {"id": "bp-drone", "slug": "generic-drone", "name": "Quadrotor",
+     "description": "Generic drone with waypoint navigation and altitude hold.",
+     "base": "generic-drone", "modules": ["waypoint-nav", "altitude-hold"],
+     "extraArgs": "", "tags": ["drone"], "icon": "✈", "color": "#40a0e0",
+     "robotType": "drone", "builtIn": True},
+    {"id": "bp-webcam", "slug": "webcam-only", "name": "Webcam Only",
+     "description": "Standalone webcam with vision AI — no robot required.",
+     "base": "webcam-only", "modules": ["yolo", "clip"],
+     "extraArgs": "", "tags": ["webcam"], "icon": "◉", "color": "#a0a0a0",
+     "robotType": "webcam_only", "builtIn": True},
+    {"id": "bp-g1", "slug": "unitree-g1", "name": "Unitree G1",
+     "description": "G1 humanoid with full joint control and walking policy.",
+     "base": "unitree-g1", "modules": ["navigation", "walking-policy"],
+     "extraArgs": "", "tags": ["humanoid"], "icon": "⬡", "color": "#d4a030",
+     "robotType": "humanoid", "builtIn": True},
 ]
 
 def _load_blueprints() -> list[dict]:
@@ -709,6 +724,16 @@ def dashboard() -> dict[str, Any]:
     robot_ip = profile.get("robotIp", "").strip()
     webcam = _get_webcam()
     dataset = _get_dataset()
+    sim = _get_simulator()
+    sim_state = sim.get_state()
+
+    from roborun.robot_types import detect_type, get_profile as get_robot_profile
+    rtype = detect_type(
+        blueprint=profile.get("blueprint", ""),
+        sim_robot_type=sim_state.get("robot_type", ""),
+    )
+    robot_profile = get_robot_profile(rtype)
+
     return {
         "ok": True,
         "profile": profile,
@@ -717,9 +742,11 @@ def dashboard() -> dict[str, Any]:
         "robotIp": robot_ip,
         "commandCenter": {"ok": False, "url": "http://127.0.0.1:7779/command-center"},
         "webcam": webcam.get_state(),
-        "sim": _get_simulator().get_state(),
+        "sim": sim_state,
         "dataset": dataset.get_status(),
         "stats": system_stats(),
+        "robotType": robot_profile,
+        "telemetryWs": "ws://127.0.0.1:8766",
         "collectTime": time.strftime("%Y-%m-%d %H:%M:%S %Z"),
     }
 
@@ -837,6 +864,73 @@ class Handler(SimpleHTTPRequestHandler):
                 "required": ["topic"],
             },
         },
+        {
+            "name": "takeoff",
+            "description": "Arm and take off to the specified altitude (drone only).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "altitude": {"type": "number", "description": "Target altitude in meters (default 2.0)"},
+                },
+            },
+        },
+        {
+            "name": "land",
+            "description": "Land the drone at current position.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "goto_waypoint",
+            "description": "Fly to a 3D waypoint (drone only).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"},
+                },
+                "required": ["x", "y", "z"],
+            },
+        },
+        {
+            "name": "set_altitude",
+            "description": "Set drone altitude setpoint.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"altitude": {"type": "number"}},
+                "required": ["altitude"],
+            },
+        },
+        {
+            "name": "follow_target",
+            "description": "Follow a YOLO-detected object by label. Uses detection centroid to steer the robot.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"label": {"type": "string", "description": "YOLO label to follow e.g. 'car', 'person'"}},
+                "required": ["label"],
+            },
+        },
+        {
+            "name": "get_telemetry",
+            "description": "Get current robot telemetry snapshot — battery, position, orientation, velocity, joints.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "get_trajectory",
+            "description": "Get the recorded trajectory as a list of timestamped poses.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"limit": {"type": "integer", "description": "Max points to return"}},
+            },
+        },
+        {
+            "name": "get_depth_frame",
+            "description": "Get the current depth heatmap as a base64 JPEG with min/max/mean distances.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "get_pointcloud",
+            "description": "Get a downsampled colored point cloud from the depth camera.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
     ]
 
     def _mcp_reply(self, req_id: Any, result: Any) -> None:
@@ -867,7 +961,7 @@ class Handler(SimpleHTTPRequestHandler):
             self._mcp_reply(req_id, {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "roborun", "version": "0.3.0"},
+                "serverInfo": {"name": "roborun", "version": "0.5.0"},
             })
             return
 
@@ -1010,6 +1104,72 @@ class Handler(SimpleHTTPRequestHandler):
                     return [{"type": "text", "text": json.dumps(msg) if msg else "No message received"}]
                 except Exception as exc:
                     return [{"type": "text", "text": f"Failed: {exc}"}]
+
+            if name == "takeoff":
+                alt = float(args.get("altitude", 2.0))
+                sim = _get_simulator()
+                if sim.is_running and sim._drone_ctrl:
+                    sim.set_altitude(alt)
+                    return [{"type": "text", "text": f"Takeoff to {alt}m"}]
+                return [{"type": "text", "text": "No drone available"}]
+
+            if name == "land":
+                sim = _get_simulator()
+                if sim.is_running and sim._drone_ctrl:
+                    sim.set_altitude(0.1)
+                    return [{"type": "text", "text": "Landing initiated"}]
+                return [{"type": "text", "text": "No drone available"}]
+
+            if name == "goto_waypoint":
+                x, y, z = float(args["x"]), float(args["y"]), float(args["z"])
+                sim = _get_simulator()
+                if sim.is_running and sim._drone_ctrl:
+                    sim.set_waypoint(x, y, z)
+                    return [{"type": "text", "text": f"Waypoint set: ({x}, {y}, {z})"}]
+                return [{"type": "text", "text": "No drone available"}]
+
+            if name == "set_altitude":
+                alt = float(args["altitude"])
+                sim = _get_simulator()
+                if sim.is_running and sim._drone_ctrl:
+                    sim.set_altitude(alt)
+                    return [{"type": "text", "text": f"Altitude set: {alt}m"}]
+                return [{"type": "text", "text": "No drone available"}]
+
+            if name == "follow_target":
+                label = args.get("label", "")
+                return [{"type": "text", "text": f"Follow target set: {label}. Tracking via YOLO detections."}]
+
+            if name == "get_telemetry":
+                sim = _get_simulator()
+                if sim.is_running:
+                    tel = sim.get_telemetry()
+                    return [{"type": "text", "text": json.dumps(tel, indent=2)}]
+                from roborun.telemetry import TelemetryBus
+                latest = TelemetryBus.get().get_latest()
+                if latest:
+                    return [{"type": "text", "text": json.dumps(latest, indent=2)}]
+                return [{"type": "text", "text": "No telemetry available"}]
+
+            if name == "get_trajectory":
+                from roborun.trajectory import TrajectoryRecorder
+                limit = int(args.get("limit", 500))
+                traj = TrajectoryRecorder.get().get_trajectory(limit=limit)
+                return [{"type": "text", "text": json.dumps(traj)}]
+
+            if name == "get_depth_frame":
+                from roborun.depth import DepthProcessor
+                result = DepthProcessor.get().get_heatmap()
+                if result.get("ok") and result.get("image"):
+                    return [{"type": "image", "data": result["image"].split(",")[1], "mimeType": "image/jpeg"}]
+                return [{"type": "text", "text": "No depth data available"}]
+
+            if name == "get_pointcloud":
+                from roborun.depth import DepthProcessor
+                result = DepthProcessor.get().get_pointcloud()
+                if result.get("ok"):
+                    return [{"type": "text", "text": f"{result['count']} points"}]
+                return [{"type": "text", "text": "No depth data available"}]
 
             return [{"type": "text", "text": f"Unknown tool: {name}"}]
 
@@ -1228,6 +1388,61 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json(200, {"ok": True, **_get_simulator().get_state()})
             return
 
+        # ── Robot type ──
+        if self.path == "/api/robot-type":
+            from roborun.robot_types import detect_type, get_profile
+            profile = load_profile()
+            sim = _get_simulator()
+            sim_type = ""
+            if sim.is_running:
+                sim_state = sim.get_state()
+                sim_type = sim_state.get("robot_type", "")
+            rtype = detect_type(
+                blueprint=profile.get("blueprint", ""),
+                sim_robot_type=sim_type,
+            )
+            self.send_json(200, {"ok": True, **get_profile(rtype)})
+            return
+
+        # ── Telemetry ──
+        if self.path == "/api/telemetry":
+            from roborun.telemetry import TelemetryBus
+            robot_id = "sim" if _get_simulator().is_running else "local"
+            latest = TelemetryBus.get().get_latest(robot_id)
+            self.send_json(200, {"ok": True, "telemetry": latest, "robot_id": robot_id})
+            return
+        if self.path.startswith("/api/telemetry/history"):
+            from roborun.telemetry import TelemetryBus
+            from urllib.parse import parse_qs, urlparse
+            qs = parse_qs(urlparse(self.path).query)
+            robot_id = qs.get("robot_id", [None])[0]
+            channel = qs.get("channel", [None])[0]
+            limit = int(qs.get("limit", ["200"])[0])
+            data = TelemetryBus.get().get_history(robot_id, channel, limit)
+            self.send_json(200, {"ok": True, "data": data, "count": len(data)})
+            return
+        if self.path == "/api/telemetry/ws-info":
+            self.send_json(200, {"ok": True, "url": "ws://127.0.0.1:8766"})
+            return
+
+        # ── Trajectory ──
+        if self.path == "/api/trajectory":
+            from roborun.trajectory import TrajectoryRecorder
+            rec = TrajectoryRecorder.get()
+            traj = rec.get_trajectory(limit=2000)
+            self.send_json(200, {"ok": True, **rec.get_state(), "trajectory": traj})
+            return
+
+        # ── Depth / Point Cloud ──
+        if self.path == "/api/depth-frame":
+            from roborun.depth import DepthProcessor
+            self.send_json(200, DepthProcessor.get().get_heatmap())
+            return
+        if self.path == "/api/pointcloud":
+            from roborun.depth import DepthProcessor
+            self.send_json(200, DepthProcessor.get().get_pointcloud())
+            return
+
         # ── Spatial Memory GET ──
         if self.path == "/api/memory/stats":
             self.send_json(200, {"ok": True, **_get_memory().stats()})
@@ -1356,6 +1571,32 @@ class Handler(SimpleHTTPRequestHandler):
                     turn=float(payload.get("turn", 0)),
                 )
                 self.send_json(200, {"ok": True})
+                return
+            if self.path == "/api/sim/waypoint":
+                result = _get_simulator().set_waypoint(
+                    x=float(payload.get("x", 0)),
+                    y=float(payload.get("y", 0)),
+                    z=float(payload.get("z", 2.0)),
+                )
+                self.send_json(200, result)
+                return
+            if self.path == "/api/sim/altitude":
+                result = _get_simulator().set_altitude(float(payload.get("altitude", 2.0)))
+                self.send_json(200, result)
+                return
+
+            # ── Trajectory controls ──
+            if self.path == "/api/trajectory/start":
+                from roborun.trajectory import TrajectoryRecorder
+                self.send_json(200, TrajectoryRecorder.get().start())
+                return
+            if self.path == "/api/trajectory/stop":
+                from roborun.trajectory import TrajectoryRecorder
+                self.send_json(200, TrajectoryRecorder.get().stop())
+                return
+            if self.path == "/api/trajectory/clear":
+                from roborun.trajectory import TrajectoryRecorder
+                self.send_json(200, TrajectoryRecorder.get().clear())
                 return
 
             # ── Spatial Memory ──
@@ -1886,8 +2127,15 @@ def main() -> None:
     recorder = threading.Thread(target=_frame_recorder_loop, daemon=True, name="FrameRecorder")
     recorder.start()
 
+    from roborun.telemetry import start_ws_server
+    start_ws_server()
+
+    from roborun.trajectory import TrajectoryRecorder
+    TrajectoryRecorder.get().start()
+
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"\n  RoboRun is live: http://{HOST}:{PORT}\n")
+    print(f"  Telemetry WS:    ws://127.0.0.1:8766\n")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

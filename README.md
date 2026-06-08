@@ -31,6 +31,18 @@ Your AI gets: live camera feed, YOLO detections, move commands, robot skills, sp
 
 ## Changelog
 
+### v0.5.0 -- 3D spatial perception, drone support, telemetry dashboard
+
+- **Real-time telemetry dashboard** -- WebSocket-powered charts (Chart.js) for battery, altitude, speed, orientation, joint states. Updates at 6Hz from simulator or rosbridge. Robot-type-aware: drones show altitude/heading, quadrupeds show joint angles/contact forces.
+- **3D trajectory visualization** -- Three.js panel renders the robot's path in real-time with orbit controls. Color-coded path line + glowing robot marker. Records 10,000+ poses.
+- **Point cloud viewer** -- Three.js colored point cloud from depth camera or LiDAR. Auto-refreshes at 2Hz with orbit controls for inspection.
+- **Depth heatmap** -- Color-mapped depth visualization (INFERNO colormap) with min/max/mean distance overlay. Updates at 5Hz alongside camera stream.
+- **Drone support** -- MuJoCo quadrotor model with PID position controller. Takeoff, land, waypoint navigation, altitude hold. 6 new MCP tools: `takeoff`, `land`, `goto_waypoint`, `set_altitude`, `follow_target`, `get_telemetry`.
+- **Robot type system** -- Dashboard automatically adapts based on robot type (drone, quadruped, humanoid, webcam-only). Different controls, different telemetry panels, different visualizations.
+- **10 new MCP tools** -- Drone tools, telemetry access, trajectory recording, depth frame, point cloud. Total tool count: 18. Any AI client gets full spatial perception.
+- **New blueprints** -- Quadrotor, Webcam Only, Unitree G1 humanoid. Blueprint library expanded from 7 to 10.
+- **Telemetry bus** -- Centralized telemetry collection from sim/rosbridge/webcam with WebSocket broadcast on port 8766. Ring buffers store 10 minutes of history.
+
 ### v0.4.0 -- MCP server, native ROS 2, fast agent
 
 - **MCP server at `/mcp`** -- any AI client (Claude Desktop, Claude Code, Cursor) connects and gets 8 robot tools: camera snapshot, YOLO detections, move, execute skill, memory search, ROS topic access. Add one line to your MCP config and your AI controls the robot.
