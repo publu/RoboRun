@@ -255,7 +255,8 @@ class SpatialMemoryStore:
         return None
 
     def list_memories(
-        self, limit: int = 50, robot_id: str | None = None, since: float | None = None
+        self, limit: int = 50, robot_id: str | None = None, since: float | None = None,
+        source: str | None = None,
     ) -> list[dict]:
         with self._lock:
             params: list[Any] = []
@@ -266,6 +267,9 @@ class SpatialMemoryStore:
             if since:
                 where_parts.append("ts > ?")
                 params.append(since)
+            if source:
+                where_parts.append("json_extract(metadata, '$.source') = ?")
+                params.append(source)
             where = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
             params.append(limit)
             rows = self._conn.execute(

@@ -108,8 +108,12 @@ async function refreshDashboard(quiet = false) {
     const robotConnected = d.robotOnline || sim.running;
     setDot(document.querySelector("#sRobot"), robotConnected ? "ok" : (p.robotIp ? "bad" : "warn"));
     document.querySelector("#sRobotVal").textContent = sim.running ? (sim.robot || "Sim") : (d.robotOnline ? "Connected" : (p.robotIp ? "Unreach" : "No IP"));
-    setDot(document.querySelector("#sMap"), cc.ok ? "ok" : "warn");
-    document.querySelector("#sMapVal").textContent = cc.ok ? "Ready" : "Closed";
+    const ros = d.ros || {};
+    setDot(document.querySelector("#sRos"), ros.connected ? "ok" : "warn");
+    document.querySelector("#sRosVal").textContent = ros.connected ? `${ros.telemetry_topics || 0} topics` : "Off";
+    // Show spatial tab when ROS telemetry is active
+    const spatialNav = document.querySelector('.rnav[data-tab="spatial"]');
+    if (spatialNav && ros.connected && ros.telemetry_topics > 0) spatialNav.style.display = "";
 
     // Rail metrics
     document.querySelector("#fpsSummary").textContent = wc.running ? `${wc.fps || 0}` : "--";
@@ -118,7 +122,17 @@ async function refreshDashboard(quiet = false) {
     document.querySelector("#diskSummary").textContent = `${stats.disk?.percent || "--"}%`;
     const diskBar = document.querySelector("#diskBar");
     if (diskBar) diskBar.style.width = `${stats.disk?.percent || 0}%`;
-    document.querySelector("#recSummary").textContent = ds.recording ? `${ds.frames || 0}` : "--";
+    const recBar = document.querySelector("#recBar");
+    if (ds.recording && ds.started_at) {
+      const elapsed = Math.floor((Date.now() - new Date(ds.started_at).getTime()) / 1000);
+      const mm = Math.floor(elapsed / 60);
+      const ss = elapsed % 60;
+      document.querySelector("#recSummary").textContent = `${mm}:${String(ss).padStart(2, "0")}`;
+      if (recBar) { recBar.style.width = "100%"; recBar.style.background = "var(--red, #e04040)"; recBar.style.opacity = "0.6"; }
+    } else {
+      document.querySelector("#recSummary").textContent = ds.recording ? "REC" : "--";
+      if (recBar) { recBar.style.width = "0%"; recBar.style.opacity = ""; }
+    }
 
     // System tab
     const el = (id) => document.querySelector(id);
@@ -168,6 +182,8 @@ const streamToggleBtn = document.querySelector("#cameraStreamToggle");
 let streamOn = false;
 let statePoller = null;
 
+let streamRetryTimer = null;
+
 function startStream() {
   cameraStream.src = "/api/camera/stream?" + Date.now();
   cameraStream.style.display = "";
@@ -178,6 +194,20 @@ function startStream() {
   streamToggleBtn.classList.add("active");
   camRecDot.classList.add("live");
   cameraStateBadge.classList.add("live");
+
+  if (streamRetryTimer) clearInterval(streamRetryTimer);
+  cameraStream.onerror = () => {
+    if (streamOn) {
+      cameraStream.src = "/api/camera/stream?" + Date.now();
+    }
+  };
+  streamRetryTimer = setInterval(() => {
+    if (!streamOn) return;
+    if (cameraStream.naturalHeight === 0 && cameraStream.complete) {
+      cameraStream.src = "/api/camera/stream?" + Date.now();
+    }
+  }, 6000);
+
   statePoller = setInterval(async () => {
     try {
       const s = await (await fetch("/api/scene")).json();
@@ -206,6 +236,8 @@ function startStream() {
 }
 
 function stopStream() {
+  cameraStream.onerror = null;
+  if (streamRetryTimer) { clearInterval(streamRetryTimer); streamRetryTimer = null; }
   cameraStream.src = "";
   cameraStream.style.display = "none";
   streamOn = false;
@@ -452,13 +484,16 @@ let ccSocket = null, mapIframeLoaded = false;
 
 function setMapOnline(online) {
   if (online) {
-    mapOffline.style.display = "none";
-    if (!mapIframeLoaded) { mapIframe.src = "http://127.0.0.1:7779/command-center"; mapIframeLoaded = true; }
-    mapIframe.style.display = "";
-    mapConnBadge.textContent = "● Live"; mapConnBadge.className = "map-badge online";
+    if (mapOffline) mapOffline.style.display = "none";
+    if (mapIframe) {
+      if (!mapIframeLoaded) { mapIframe.src = "http://127.0.0.1:7779/command-center"; mapIframeLoaded = true; }
+      mapIframe.style.display = "";
+    }
+    if (mapConnBadge) { mapConnBadge.textContent = "● Live"; mapConnBadge.className = "map-badge online"; }
   } else {
-    mapOffline.style.display = ""; mapIframe.style.display = "none";
-    mapConnBadge.textContent = "● Disconnected"; mapConnBadge.className = "map-badge offline";
+    if (mapOffline) mapOffline.style.display = "";
+    if (mapIframe) mapIframe.style.display = "none";
+    if (mapConnBadge) { mapConnBadge.textContent = "● Disconnected"; mapConnBadge.className = "map-badge offline"; }
   }
 }
 
@@ -1066,6 +1101,159 @@ async function autoStartIfNeeded() {
   } catch {}
 }
 
+// ── Detections panel ────────────────────────────────────────────────────────
+
+const MIN_CONFIDENCE = 0.5;
+
+let _detExpanded = false;
+let _detLastHash = "";
+
+function setupDetectionsPanel() {
+  const head = document.getElementById("detHead");
+  const panel = document.getElementById("detectionsPanel");
+  if (head && panel) {
+    head.addEventListener("click", () => {
+      _detExpanded = !_detExpanded;
+      panel.classList.toggle("expanded", _detExpanded);
+      document.getElementById("detGrid").style.display = _detExpanded ? "none" : "";
+      document.getElementById("detTimeline").style.display = _detExpanded ? "" : "none";
+    });
+  }
+}
+
+async function refreshTimeline() {
+  try {
+    const d = await api("/api/timeline?limit=30");
+    if (!d.ok) return;
+    const entries = d.entries || [];
+    const countEl = document.getElementById("detCount");
+    const grid = document.getElementById("detGrid");
+    const tl = document.getElementById("detTimeline");
+    if (!grid) return;
+
+    const good = [];
+    for (const e of entries) {
+      const dets = (e.detections || []).filter(det => det.confidence >= MIN_CONFIDENCE);
+      if (dets.length) good.push({ ...e, detections: dets });
+    }
+
+    // Deduplicate for the grid: use track_id of best detection so the same
+    // tracked object (e.g. the same person) only gets one cell
+    const seenTracks = new Set();
+    const seenLabels = new Set();
+    const unique = [];
+    for (const e of good) {
+      const best = e.detections.reduce((a, b) => a.confidence > b.confidence ? a : b);
+      const tid = best.track_id;
+      if (tid >= 0 && seenTracks.has(tid)) continue;
+      if (tid < 0) {
+        const lkey = [...new Set(e.detections.map(d => d.label))].sort().join("+");
+        if (seenLabels.has(lkey)) continue;
+        seenLabels.add(lkey);
+      }
+      if (tid >= 0) seenTracks.add(tid);
+      unique.push(e);
+      if (unique.length >= 9) break;
+    }
+
+    const hash = unique.map(e => e.id).join(",");
+    if (hash === _detLastHash) return;
+    _detLastHash = hash;
+
+    if (countEl) countEl.textContent = `${unique.length} unique`;
+
+    // 3x3 grid — one cell per distinct detection set, cropped to best bbox
+    grid.innerHTML = "";
+    const last9 = unique;
+    for (let i = 0; i < 9; i++) {
+      const cell = document.createElement("div");
+      cell.className = "det-cell";
+      if (i < last9.length) {
+        const e = last9[i];
+        const best = e.detections.reduce((a, b) => a.confidence > b.confidence ? a : b);
+
+        const canvas = document.createElement("canvas");
+        canvas.className = "det-cell-img";
+        cell.appendChild(canvas);
+
+        const srcImg = new Image();
+        srcImg.crossOrigin = "anonymous";
+        srcImg.src = `/api/memory/thumb/${e.id}`;
+        srcImg.onload = () => {
+          const iw = srcImg.naturalWidth, ih = srcImg.naturalHeight;
+          const bb = best.bbox;
+          // bbox is in original frame coords — scale to thumbnail
+          const scaleX = iw / 1280, scaleY = ih / 720;
+          const bx = bb[0] * scaleX, by = bb[1] * scaleY;
+          const bw = (bb[2] - bb[0]) * scaleX, bh = (bb[3] - bb[1]) * scaleY;
+          const pad = 0.2;
+          const px = bw * pad, py = bh * pad;
+          const sx = Math.max(0, bx - px);
+          const sy = Math.max(0, by - py);
+          const sw = Math.min(iw - sx, bw + px * 2);
+          const sh = Math.min(ih - sy, bh + py * 2);
+          const size = Math.max(sw, sh);
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#0c1410";
+          ctx.fillRect(0, 0, size, size);
+          ctx.drawImage(srcImg, sx, sy, sw, sh, (size - sw) / 2, (size - sh) / 2, sw, sh);
+        };
+
+        const lbl = document.createElement("div");
+        lbl.className = "det-cell-label";
+        lbl.textContent = best.label;
+        cell.appendChild(lbl);
+
+        const conf = document.createElement("div");
+        conf.className = "det-cell-conf";
+        conf.textContent = (best.confidence * 100).toFixed(0) + "%";
+        cell.appendChild(conf);
+      } else {
+        cell.classList.add("empty");
+      }
+      grid.appendChild(cell);
+    }
+
+    // Expanded timeline list
+    if (tl) {
+      tl.innerHTML = "";
+      for (const e of good.slice(0, 30)) {
+        const row = document.createElement("div");
+        row.className = "det-tl-row";
+
+        const thumb = document.createElement("img");
+        thumb.className = "det-tl-thumb";
+        thumb.src = `/api/memory/thumb/${e.id}`;
+        thumb.alt = "";
+        thumb.loading = "lazy";
+        row.appendChild(thumb);
+
+        const info = document.createElement("div");
+        info.className = "det-tl-info";
+        const labels = document.createElement("div");
+        labels.className = "det-tl-labels";
+        labels.textContent = e.detections.map(d => `${d.label} ${(d.confidence * 100).toFixed(0)}%`).slice(0, 4).join(", ");
+        info.appendChild(labels);
+        const meta = document.createElement("div");
+        meta.className = "det-tl-meta";
+        meta.textContent = `${e.detections.length} detection${e.detections.length !== 1 ? "s" : ""}`;
+        info.appendChild(meta);
+        row.appendChild(info);
+
+        const time = document.createElement("div");
+        time.className = "det-tl-time";
+        const ts = new Date(e.ts * 1000);
+        time.textContent = ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        row.appendChild(time);
+
+        tl.appendChild(row);
+      }
+    }
+  } catch {}
+}
+
 // ── Robot type + telemetry integration ────────────────────────────────────────
 
 function initV5() {
@@ -1076,6 +1264,67 @@ function initV5() {
 
   // Initialize telemetry charts
   if (RR.telemetryCharts) RR.telemetryCharts.init();
+
+  // Scene builder controls
+  let sceneBuilding = false;
+  let sceneInited = false;
+  const buildBtn = document.getElementById("sceneBuildBtn");
+  const clearBtn = document.getElementById("sceneClearBtn");
+  const collapseBtn = document.getElementById("sceneCollapseBtn");
+  const canvasWrap = document.getElementById("sceneCanvasWrap");
+  const scenePH = document.getElementById("scenePlaceholder");
+  const scenePHText = document.getElementById("scenePlaceholderText");
+
+  if (buildBtn) buildBtn.addEventListener("click", async () => {
+    if (sceneBuilding) {
+      const r = await api("/api/scene3d/stop", {});
+      buildBtn.textContent = "BUILD";
+      buildBtn.classList.remove("active");
+      sceneBuilding = false;
+      if (scenePH) { scenePH.classList.remove("hidden"); scenePHText.textContent = "Click BUILD to start 3D mapping"; scenePHText.classList.remove("error"); }
+    } else {
+      const r = await api("/api/scene3d/start", {});
+      if (r.ok) {
+        buildBtn.textContent = "STOP";
+        buildBtn.classList.add("active");
+        sceneBuilding = true;
+        if (canvasWrap) { canvasWrap.classList.remove("collapsed"); if (collapseBtn) collapseBtn.textContent = "▾"; }
+        // Start polling for stats immediately (even before Three.js inits)
+        if (RR.threePanels && !window._sceneRefreshInterval) {
+          window._sceneRefreshInterval = setInterval(() => RR.threePanels.refreshScene3D(), 2000);
+          RR.threePanels.refreshScene3D();
+        }
+        if (!sceneInited && RR.threePanels) {
+          const tryInit = (tries) => {
+            const wrap = document.getElementById("sceneCanvasWrap");
+            if (wrap && wrap.clientWidth > 0 && wrap.clientHeight > 0) {
+              RR.threePanels.initScene3D("sceneCanvasWrap");
+              sceneInited = true;
+            } else if (tries < 40) {
+              setTimeout(() => tryInit(tries + 1), 150);
+            }
+          };
+          requestAnimationFrame(() => tryInit(0));
+        }
+        if (scenePH) { scenePHText.textContent = "Building..."; scenePHText.classList.remove("error"); }
+      } else {
+        if (scenePH) { scenePHText.textContent = r.error || "Scene builder failed"; scenePHText.classList.add("error"); }
+      }
+    }
+  });
+
+  if (clearBtn) clearBtn.addEventListener("click", async () => {
+    await api("/api/scene3d/clear", {});
+    if (scenePH) { scenePH.classList.remove("hidden"); scenePHText.textContent = "Click BUILD to start 3D mapping"; scenePHText.classList.remove("error"); }
+  });
+
+  if (collapseBtn && canvasWrap) collapseBtn.addEventListener("click", () => {
+    canvasWrap.classList.toggle("collapsed");
+    collapseBtn.textContent = canvasWrap.classList.contains("collapsed") ? "▸" : "▾";
+    if (!canvasWrap.classList.contains("collapsed") && !sceneInited && RR.threePanels) {
+      RR.threePanels.initScene3D("sceneCanvasWrap"); sceneInited = true;
+    }
+  });
 
   // Drone controls
   const takeoffBtn = document.getElementById("droneTakeoff");
@@ -1134,9 +1383,12 @@ loadTasks();
 loadEvents();
 loadFleet();
 loadDatasets();
+setupDetectionsPanel();
+refreshTimeline();
 autoStartIfNeeded();
 initV5();
 setInterval(() => refreshDashboard(true), 15000);
 setInterval(() => loadTasks(), 20000);
 setInterval(() => loadEvents(false), 10000);
 setInterval(() => loadFleet(), 30000);
+setInterval(() => refreshTimeline(), 4000);

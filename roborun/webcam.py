@@ -43,6 +43,10 @@ class WebcamPipeline:
         self._state: str = "idle"
         self._camera_index: int = 0
 
+        self._timeline_enabled: bool = True
+        self._timeline_interval: float = 3.0
+        self._last_timeline_ts: float = 0.0
+
     @property
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
@@ -187,6 +191,7 @@ class WebcamPipeline:
                     FRAME_PATH.write_bytes(buf.tobytes())
 
                 self._write_state()
+                self._maybe_timeline(frame, detections)
 
                 elapsed = time.monotonic() - t0
                 fps_window.append(elapsed)
@@ -279,6 +284,30 @@ class WebcamPipeline:
             activation = np.zeros_like(activation)
         heatmap = (activation * 255).astype(np.uint8)
         return cv2.resize(heatmap, (w, h), interpolation=cv2.INTER_LINEAR)
+
+    def _maybe_timeline(self, frame: np.ndarray, detections: list[Detection]) -> None:
+        if not self._timeline_enabled:
+            return
+        now = time.monotonic()
+        if now - self._last_timeline_ts < self._timeline_interval:
+            return
+        self._last_timeline_ts = now
+        frame_copy = frame.copy()
+        det_dicts = [d.to_dict() for d in detections]
+        Thread(target=self._store_timeline, args=(frame_copy, det_dicts), daemon=True).start()
+
+    @staticmethod
+    def _store_timeline(frame: np.ndarray, det_dicts: list[dict]) -> None:
+        try:
+            from roborun.server import _get_memory
+            mem = _get_memory()
+            mem.store(
+                frame=frame,
+                detections=det_dicts,
+                metadata={"source": "timeline"},
+            )
+        except Exception:
+            pass
 
     def _write_state(self) -> None:
         state = {

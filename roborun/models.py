@@ -286,6 +286,55 @@ class CosmosWorldModel:
             return frame
 
 
+class DepthEstimator:
+    """Monocular depth estimation via Depth Anything V2 Small.
+
+    Requires `transformers>=4.30` (optional dep: pip install roborun[depth]).
+    Returns relative depth as a float32 ndarray normalized to [0, 1].
+    """
+
+    def __init__(self, model_name: str = "depth-anything/Depth-Anything-V2-Small-hf") -> None:
+        self._model_name = model_name
+        self._pipe = None
+        self._lock = RLock()
+
+    def _ensure_loaded(self) -> None:
+        if self._pipe is not None:
+            return
+        from transformers import pipeline
+        import torch
+        device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
+        self._pipe = pipeline(
+            "depth-estimation",
+            model=self._model_name,
+            device=device,
+            dtype=torch.float32,
+        )
+
+    def estimate(self, frame: np.ndarray) -> np.ndarray:
+        """Return depth map as float32 ndarray with shape (H, W), values in [0, 1]."""
+        with self._lock:
+            self._ensure_loaded()
+            from PIL import Image
+            pil = Image.fromarray(frame[..., ::-1]) if frame.ndim == 3 and frame.shape[2] == 3 else Image.fromarray(frame)
+            result = self._pipe(pil)
+            depth = np.array(result["depth"], dtype=np.float32)
+            lo, hi = depth.min(), depth.max()
+            if hi > lo:
+                depth = (depth - lo) / (hi - lo)
+            else:
+                depth = np.zeros_like(depth)
+            return depth
+
+    @staticmethod
+    def is_available() -> bool:
+        try:
+            import transformers  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
+
 # Keep old name as alias for backwards compat
 CosmosTokenizer = CosmosWorldModel
 
@@ -295,4 +344,5 @@ MODEL_REGISTRY: dict[str, type] = {
     "clip": CLIPMatcher,
     "jepa": JEPAEncoder,
     "cosmos": CosmosWorldModel,
+    "depth": DepthEstimator,
 }

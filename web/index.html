@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=3" />
+    <link rel="stylesheet" href="./styles.css?v=4" />
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
@@ -28,23 +28,11 @@
           <button class="rnav active" data-tab="control">
             <span class="rn-icon">⬡</span><span class="rn-label">Control</span>
           </button>
-          <button class="rnav" data-tab="dataset">
-            <span class="rn-icon">◉</span><span class="rn-label">Recordings</span>
-          </button>
-          <button class="rnav" data-tab="map">
-            <span class="rn-icon">◈</span><span class="rn-label">Map</span>
+          <button class="rnav" data-tab="spatial" style="display:none">
+            <span class="rn-icon">◇</span><span class="rn-label">Spatial</span>
           </button>
           <button class="rnav" data-tab="fleet">
             <span class="rn-icon">⬢</span><span class="rn-label">Fleet</span>
-          </button>
-          <button class="rnav" data-tab="tasks">
-            <span class="rn-icon">◉</span><span class="rn-label">Tasks</span>
-          </button>
-          <button class="rnav" data-tab="telemetry" style="display:none">
-            <span class="rn-icon">◠</span><span class="rn-label">Telemetry</span>
-          </button>
-          <button class="rnav" data-tab="viz" style="display:none">
-            <span class="rn-icon">◇</span><span class="rn-label">3D Viz</span>
           </button>
           <button class="rnav" data-tab="devices">
             <span class="rn-icon">◫</span><span class="rn-label">System</span>
@@ -72,9 +60,9 @@
             <span class="rs-val" id="sRobotVal">--</span>
           </div>
           <div class="rs-row">
-            <span class="rs-dot" id="sMap"></span>
-            <span class="rs-key">Map</span>
-            <span class="rs-val" id="sMapVal">--</span>
+            <span class="rs-dot" id="sRos"></span>
+            <span class="rs-key">ROS</span>
+            <span class="rs-val" id="sRosVal">--</span>
           </div>
         </div>
 
@@ -92,7 +80,7 @@
           </div>
           <div class="rm-row">
             <span class="rm-key">REC</span>
-            <div class="rm-bar-wrap" style="flex:1"></div>
+            <div class="rm-bar-wrap"><div class="rm-bar" id="recBar"></div></div>
             <span class="rm-val" id="recSummary">--</span>
           </div>
         </div>
@@ -111,6 +99,7 @@
 
         <!-- ══ Control Tab (Camera + Robot Actions) ══ -->
         <div class="ctab-pane active" id="tab-control">
+          <div class="control-top">
           <div class="cam-panel">
             <div class="cam-topbar">
               <div class="cam-title">
@@ -143,7 +132,25 @@
               <div class="cam-scanline"></div>
             </div>
           </div>
+          <div class="scene-panel" id="scenePanel">
+            <div class="scene-head">
+              <span class="scene-label">3D SCENE</span>
+              <span class="scene-stats" id="sceneStats">0 pts</span>
+              <div class="scene-controls">
+                <button id="sceneBuildBtn" class="primary-btn small-btn">BUILD</button>
+                <button id="sceneClearBtn" class="sec-btn small-btn">CLEAR</button>
+              </div>
+            </div>
+            <div class="scene-canvas-wrap" id="sceneCanvasWrap">
+              <div class="scene-placeholder" id="scenePlaceholder">
+                <div class="scene-ph-icon">◈</div>
+                <div class="scene-ph-text" id="scenePlaceholderText">Click BUILD to start 3D mapping</div>
+              </div>
+            </div>
+          </div>
+          </div>
 
+          <div class="control-bottom">
           <!-- Model toggles + CLIP search -->
           <div class="model-bar">
             <span class="model-bar-label">MODELS</span>
@@ -299,31 +306,51 @@
             </div>
             <img id="depthImg" class="depth-img" style="display:none" alt="Depth heatmap" />
           </div>
-        </div>
 
-        <!-- ══ Telemetry Tab ══ -->
-        <div class="ctab-pane" id="tab-telemetry" style="display:none">
-          <div class="tab-inner" id="tab-telemetry-wrap">
-            <div class="tab-head">
-              <h2>Telemetry</h2>
-              <div class="tab-head-right">
-                <span class="tel-ws-badge" id="telWsBadge">● Connecting</span>
+          <!-- Recordings (inline) -->
+          <div class="actions-area">
+            <div class="robot-actions-header" id="recordingsHeader">
+              <span class="rah-label">RECORDINGS</span>
+              <span class="rah-hint" id="datasetRecBadge">Not recording</span>
+              <span class="rah-chevron" id="recordingsChevron">▸</span>
+            </div>
+            <div class="robot-actions-body collapsed" id="recordingsBody">
+              <div class="dataset-controls">
+                <div class="dataset-row">
+                  <label>
+                    <span>Recording name</span>
+                    <input id="datasetName" placeholder="kitchen-run-01" value="default" />
+                  </label>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <button id="datasetStartBtn" class="primary-btn">● Start Recording</button>
+                  <button id="datasetStopBtn" class="sec-btn danger-btn">■ Stop</button>
+                  <div class="dataset-stats" id="datasetStats"></div>
+                </div>
+              </div>
+              <div class="sys-card-head" style="margin-top:8px"><span class="sc-label">SAVED</span></div>
+              <div id="datasetList" class="dataset-list">
+                <div class="dataset-empty" id="datasetEmpty">No recordings yet.</div>
               </div>
             </div>
-            <div id="telemetryGrid" class="telemetry-grid"></div>
+          </div>
           </div>
         </div>
 
-        <!-- ══ 3D Visualization Tab ══ -->
-        <div class="ctab-pane" id="tab-viz" style="display:none">
-          <div class="tab-inner" id="tab-viz-wrap">
+        <!-- ══ Spatial Tab (Telemetry + 3D Viz merged) ══ -->
+        <div class="ctab-pane" id="tab-spatial">
+          <div class="tab-inner" id="tab-spatial-wrap">
             <div class="tab-head">
-              <h2>3D Visualization</h2>
+              <h2>Spatial</h2>
               <div class="tab-head-right">
+                <span class="tel-ws-badge" id="telWsBadge">● Connecting</span>
                 <button class="sec-btn small-btn" id="vizClearTraj">Clear Path</button>
               </div>
             </div>
-            <div class="viz-grid">
+
+            <div id="telemetryGrid" class="telemetry-grid"></div>
+
+            <div class="viz-grid" style="margin-top:12px">
               <div class="viz-panel">
                 <div class="viz-panel-head">TRAJECTORY</div>
                 <div class="viz-canvas" id="trajectoryCanvas"></div>
@@ -332,64 +359,6 @@
                 <div class="viz-panel-head">POINT CLOUD</div>
                 <div class="viz-canvas" id="pointCloudCanvas"></div>
               </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ══ Dataset Tab ══ -->
-        <div class="ctab-pane" id="tab-dataset">
-          <div class="tab-inner">
-            <div class="tab-head">
-              <h2>Recordings</h2>
-              <div class="tab-head-right">
-                <span id="datasetRecBadge" class="pill idle">Not recording</span>
-              </div>
-            </div>
-            <p class="tab-sub">Record video clips from your webcam or robot camera with model annotations baked in.</p>
-
-            <div class="dataset-controls">
-              <div class="dataset-row">
-                <label>
-                  <span>Recording name</span>
-                  <input id="datasetName" placeholder="kitchen-run-01" value="default" />
-                </label>
-              </div>
-              <div style="display:flex;gap:8px;align-items:center">
-                <button id="datasetStartBtn" class="primary-btn">● Start Recording</button>
-                <button id="datasetStopBtn" class="sec-btn danger-btn">■ Stop</button>
-                <div class="dataset-stats" id="datasetStats"></div>
-              </div>
-            </div>
-
-            <div class="sys-card-head" style="margin-top:16px"><span class="sc-label">SAVED RECORDINGS</span></div>
-            <div id="datasetList" class="dataset-list">
-              <div class="dataset-empty" id="datasetEmpty">No recordings yet. Hit record above to capture annotated video from your camera.</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ══ Map Tab ══ -->
-        <div class="ctab-pane" id="tab-map">
-          <div class="tab-inner">
-            <div class="tab-head">
-              <h2>Live Map</h2>
-              <div class="tab-head-right">
-                <span id="mapConnStatus" class="map-badge offline">● Disconnected</span>
-                <a class="sec-btn" href="http://127.0.0.1:7779/command-center" target="_blank">Open ↗</a>
-              </div>
-            </div>
-            <p class="tab-sub">Command Center -- robot position, costmap, navigation goals</p>
-            <div class="map-container" id="mapContainer">
-              <div class="map-offline" id="mapOffline">
-                <div class="map-offline-inner">
-                  <div class="moi-icon">◈</div>
-                  <strong>No live map</strong>
-                  <p>Start dimOS with your robot connected to see the live costmap.</p>
-                  <button id="mapStartRobot" class="primary-btn" style="margin-top:12px">Start Robot</button>
-                  <button id="mapStartReplay" class="sec-btn" style="margin-top:8px">Start Replay</button>
-                </div>
-              </div>
-              <iframe id="mapIframe" class="map-iframe" src="about:blank" title="Command Center" allow="same-origin" style="display:none"></iframe>
             </div>
           </div>
         </div>
@@ -438,22 +407,18 @@
               </div>
             </div>
             <div id="blueprintGrid" class="blueprint-grid"></div>
-          </div>
-        </div>
 
-        <!-- ══ Tasks Tab ══ -->
-        <div class="ctab-pane" id="tab-tasks">
-          <div class="tab-inner">
-            <div class="tab-head">
-              <h2>Tasks</h2>
-              <div class="tab-head-right">
+            <!-- Tasks (folded into Fleet) -->
+            <div class="fleet-section-head" style="margin-top:20px">
+              <span class="fsh-label">TASKS</span>
+              <div class="fsh-right">
                 <div class="filter-row">
                   <button class="filterBtn active" data-filter="all">All</button>
                   <button class="filterBtn" data-filter="pending">Pending</button>
                   <button class="filterBtn" data-filter="in_progress">Running</button>
                   <button class="filterBtn" data-filter="completed">Done</button>
                 </div>
-                <button id="addTaskBtn" class="primary-btn">+ New</button>
+                <button id="addTaskBtn" class="primary-btn small-btn">+ Task</button>
               </div>
             </div>
             <div class="add-task-form" id="addTaskForm" style="display:none">
@@ -586,6 +551,16 @@
           <button id="agentClear" class="sec-btn small-btn">New session</button>
         </div>
 
+        <div class="detections-panel" id="detectionsPanel">
+          <div class="det-head" id="detHead">
+            <span class="det-label">DETECTIONS</span>
+            <span class="det-count" id="detCount">0</span>
+            <span class="det-expand" id="detExpand">▾</span>
+          </div>
+          <div class="det-grid" id="detGrid"></div>
+          <div class="det-timeline" id="detTimeline" style="display:none"></div>
+        </div>
+
         <div id="agentMessages" class="chat-msgs"></div>
 
         <div class="chat-shortcuts">
@@ -709,8 +684,8 @@
 
     <script src="./websocket-client.js?v=5"></script>
     <script src="./telemetry-charts.js?v=5"></script>
-    <script src="./three-panels.js?v=5"></script>
+    <script src="./three-panels.js?v=9"></script>
     <script src="./robot-type-ui.js?v=5"></script>
-    <script src="./app.js?v=5"></script>
+    <script src="./app.js?v=12"></script>
   </body>
 </html>

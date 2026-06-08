@@ -86,6 +86,10 @@ def _get_memory():
         )
     return _spatial_memory
 
+def _get_scene_builder():
+    from roborun.scene_builder import SceneBuilder
+    return SceneBuilder.get()
+
 # ── Agent — FastRobotAgent (SDK) preferred, RobotAgent (subprocess) as fallback
 _AGENT = None
 def _get_agent():
@@ -724,8 +728,13 @@ def dashboard() -> dict[str, Any]:
     robot_ip = profile.get("robotIp", "").strip()
     webcam = _get_webcam()
     dataset = _get_dataset()
-    sim = _get_simulator()
-    sim_state = sim.get_state()
+    try:
+        sim = _get_simulator()
+        sim_state = sim.get_state()
+    except Exception:
+        sim_state = {"running": False, "state": "idle", "robot": "", "robot_type": "",
+                     "fps": 0, "frame_count": 0, "sim_time": 0, "position": {"x": 0, "y": 0, "z": 0},
+                     "orientation": {"w": 1, "x": 0, "y": 0, "z": 0}, "has_policy": False, "has_drone_ctrl": False}
 
     from roborun.robot_types import detect_type, get_profile as get_robot_profile
     rtype = detect_type(
@@ -733,6 +742,18 @@ def dashboard() -> dict[str, Any]:
         sim_robot_type=sim_state.get("robot_type", ""),
     )
     robot_profile = get_robot_profile(rtype)
+
+    ros_connected = False
+    ros_topics_count = 0
+    try:
+        from roborun.rosbridge import get_client as _get_ros_client
+        rc = _get_ros_client(auto_connect=False)
+        if rc and rc.is_connected:
+            ros_connected = True
+            from roborun.ros_telemetry import get_bridge
+            ros_topics_count = len(get_bridge()._subscribed_topics)
+    except Exception:
+        pass
 
     return {
         "ok": True,
@@ -747,6 +768,7 @@ def dashboard() -> dict[str, Any]:
         "stats": system_stats(),
         "robotType": robot_profile,
         "telemetryWs": "ws://127.0.0.1:8766",
+        "ros": {"connected": ros_connected, "telemetry_topics": ros_topics_count},
         "collectTime": time.strftime("%Y-%m-%d %H:%M:%S %Z"),
     }
 
@@ -775,6 +797,10 @@ class Handler(SimpleHTTPRequestHandler):
 
     def log_message(self, fmt: str, *args: Any) -> None:
         print(f"[roborun] {self.address_string()} - {fmt % args}")
+
+    def end_headers(self) -> None:
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        super().end_headers()
 
     def send_json(self, status: int, data: dict) -> None:
         encoded = json.dumps(data, indent=2).encode("utf-8")
@@ -1221,7 +1247,7 @@ class Handler(SimpleHTTPRequestHandler):
             try:
                 last_mtime = 0.0
                 started = time.monotonic()
-                try: self.connection.settimeout(5.0)
+                try: self.connection.settimeout(30.0)
                 except Exception: pass
                 while time.monotonic() - started < 300:
                     for p in (_HACKATHON_FRAME_PATH, _WEBCAM_FRAME_PATH, _CAMERA_FRAME_PATH):
@@ -1392,11 +1418,14 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path == "/api/robot-type":
             from roborun.robot_types import detect_type, get_profile
             profile = load_profile()
-            sim = _get_simulator()
             sim_type = ""
-            if sim.is_running:
-                sim_state = sim.get_state()
-                sim_type = sim_state.get("robot_type", "")
+            try:
+                sim = _get_simulator()
+                if sim.is_running:
+                    sim_state = sim.get_state()
+                    sim_type = sim_state.get("robot_type", "")
+            except Exception:
+                pass
             rtype = detect_type(
                 blueprint=profile.get("blueprint", ""),
                 sim_robot_type=sim_type,
@@ -1472,6 +1501,29 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json(200, {"ok": True, "shard_id": shard_id,
                                  "verified": verified, "meta": meta})
             return
+        if self.path == "/api/scene3d":
+            sb = _get_scene_builder()
+            scene = sb.get_scene()
+            scene["is_running"] = sb.is_running
+            scene["available"] = sb._available
+            scene["has_depth"] = sb._depth_estimator is not None
+            scene["last_error"] = sb._last_error
+            scene["loop_state"] = sb._loop_state
+            self.send_json(200, scene)
+            return
+
+        if self.path.startswith("/api/timeline"):
+            from urllib.parse import parse_qs, urlparse
+            qs = parse_qs(urlparse(self.path).query)
+            limit = min(int(qs.get("limit", ["30"])[0]), 100)
+            since = float(qs.get("since", ["0"])[0])
+            memories = _get_memory().list_memories(
+                limit=limit, source="timeline",
+                since=since if since > 0 else None,
+            )
+            self.send_json(200, {"ok": True, "entries": memories, "count": len(memories)})
+            return
+
         if self.path.startswith("/api/memory/list"):
             from urllib.parse import parse_qs, urlparse
             qs = parse_qs(urlparse(self.path).query)
@@ -1718,6 +1770,30 @@ class Handler(SimpleHTTPRequestHandler):
                 threading.Thread(target=_do_prove, daemon=True).start()
                 return
 
+            # ── Scene Builder ──
+            if self.path == "/api/scene3d/start":
+                sb = _get_scene_builder()
+                sb._webcam_ref = _get_webcam()
+                self.send_json(200, sb.start())
+                return
+            if self.path == "/api/scene3d/stop":
+                self.send_json(200, _get_scene_builder().stop())
+                return
+            if self.path == "/api/scene3d/clear":
+                self.send_json(200, _get_scene_builder().clear())
+                return
+
+            # ── Timeline ──
+            if self.path == "/api/timeline/settings":
+                wc = _get_webcam()
+                if "enabled" in payload:
+                    wc._timeline_enabled = bool(payload["enabled"])
+                if "interval" in payload:
+                    wc._timeline_interval = max(1.0, min(30.0, float(payload["interval"])))
+                self.send_json(200, {"ok": True, "enabled": wc._timeline_enabled,
+                                     "interval": wc._timeline_interval})
+                return
+
             # ── Dataset ──
             if self.path == "/api/dataset/start":
                 result = _get_dataset().start_recording(str(payload.get("name", "default")).strip())
@@ -1896,6 +1972,10 @@ class Handler(SimpleHTTPRequestHandler):
                     if not client:
                         self.send_json(503, {"ok": False, "error": "Connection failed"})
                     else:
+                        from roborun.ros_telemetry import get_bridge
+                        bridge = get_bridge()
+                        bridge.stop()
+                        bridge.start(host)
                         self.send_json(200, {"ok": True, "host": host, "port": port})
                 except Exception as exc:
                     self.send_json(503, {"ok": False, "error": str(exc)})
@@ -2129,6 +2209,9 @@ def main() -> None:
 
     from roborun.telemetry import start_ws_server
     start_ws_server()
+
+    from roborun.ros_telemetry import get_bridge
+    get_bridge().start()
 
     from roborun.trajectory import TrajectoryRecorder
     TrajectoryRecorder.get().start()

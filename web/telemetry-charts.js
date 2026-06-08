@@ -16,6 +16,8 @@ window.RoboRun = window.RoboRun || {};
     roll:     { label: "Roll deg",   color: "#d4a030", min: -90, max: 90, field: "roll",     types: ["drone","quadruped","humanoid"] },
     pitch:    { label: "Pitch deg",  color: "#a060f0", min: -90, max: 90, field: "pitch",    types: ["drone","quadruped","humanoid"] },
     yaw:      { label: "Yaw deg",    color: "#e04040", min: -180, max: 180, field: "yaw",    types: ["drone","quadruped","humanoid"] },
+    imu:      { label: "IMU g",      color: "#40d0a0", min: 0, max: 20,  field: "_imu",      types: ["drone","quadruped","humanoid"] },
+    lidar:    { label: "LIDAR m",   color: "#60c0e0", min: 0, max: 10,  field: "min_range", types: ["drone","quadruped","humanoid"] },
     fps:      { label: "FPS",        color: "#40a0e0", min: 0, max: 60,  field: "fps",       types: ["webcam_only"] },
   };
 
@@ -115,6 +117,17 @@ window.RoboRun = window.RoboRun || {};
       if (entry.roll !== undefined) pushData("roll", toDeg(entry.roll));
       if (entry.pitch !== undefined) pushData("pitch", toDeg(entry.pitch));
       if (entry.yaw !== undefined) pushData("yaw", toDeg(entry.yaw));
+    }
+    if (ch === "imu_accel") {
+      const total = Math.sqrt(
+        (entry.x || 0) * (entry.x || 0) +
+        (entry.y || 0) * (entry.y || 0) +
+        (entry.z || 0) * (entry.z || 0)
+      );
+      pushData("imu", Math.round(total * 100) / 100);
+    }
+    if (ch === "lidar" && entry.min_range !== undefined) {
+      pushData("lidar", entry.min_range);
     }
   }
 

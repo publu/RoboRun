@@ -174,4 +174,5 @@ class DatasetCollector:
                 "episode_id": self._current_episode.episode_id,
                 "dataset": self._current_episode.dataset_name,
                 "frames": self._current_episode.frame_count,
+                "started_at": self._current_episode.metadata.get("created_at", ""),
             }
