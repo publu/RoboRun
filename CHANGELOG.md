@@ -3,16 +3,22 @@
 ## v0.7.0 — 2026-06-08
 
 ### Added
-- **Direct ROS MCP server** at `/mcp/ros` — direct DDS connectivity, no rosbridge or ROS install needed
-- Robot auto-discovery via ros_tap CycloneDDS (scan network, list all topics/nodes)
-- Direct `/cmd_vel` publishing over DDS for move/estop commands
-- 10 MCP tools: scan_robots, list_topics, read_topic, publish_topic, move, estop, camera_snapshot, battery_status, navigate, telemetry_stream
-- `ros_tap` integration for zero-config telemetry streaming
+- **Unified ROS MCP** — 23 tools with DDS direct + rosbridge fallback
+- Dual transport: CycloneDDS for zero-config discovery/pub, rosbridge for services/actions/params
+- `scan_robots` — auto-discover any ROS robot on the network, no config
+- `connect_to_robot` — dynamic rosbridge connection from the LLM
+- `get_robot_info` — auto-classify robot type from topics (quadruped, drone, humanoid, arm)
+- Full topic tools: `list_topics`, `get_topic_type`, `get_message_details`, `subscribe_once`, `subscribe_for_duration`, `publish`
+- Service tools: `get_services`, `get_service_type`, `call_service`
+- Action tools: `get_actions`, `send_action_goal`
+- Parameter tools: `get_parameters`, `get_parameter`, `set_parameter`
+- Node introspection: `get_nodes`
+- Movement: `move` (with timed stop), `estop`, `navigate` (Nav2 goal)
+- `camera_snapshot` — tries local webcam, falls back to robot camera
+- `telemetry_stream` — ros_tap integration for data capture
+- Main `/mcp` endpoint now includes all ROS tools (38 total)
+- Dedicated `/mcp/ros` endpoint for ROS-only tools (23 total)
 - `ros` optional dependency group (`pip install roborun[ros]`)
-
-### Changed
-- Updated project description
-- MCP server version bumped to 0.7.0
 
 ## v0.6.0 — 2026-06-08
 

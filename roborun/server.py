@@ -992,12 +992,22 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         if method == "tools/list":
-            self._mcp_reply(req_id, {"tools": self._MCP_TOOLS})
+            from roborun.ros_mcp import MCP_TOOLS as ROS_TOOLS
+            all_tools = self._MCP_TOOLS + [t for t in ROS_TOOLS
+                                           if t["name"] not in {x["name"] for x in self._MCP_TOOLS}]
+            self._mcp_reply(req_id, {"tools": all_tools})
             return
 
         if method == "tools/call":
             name = params.get("name", "")
             args = params.get("arguments", {})
+            from roborun.ros_mcp import _TOOL_HANDLERS
+            if name in _TOOL_HANDLERS:
+                from roborun.ros_mcp import handle_tool_call
+                result = handle_tool_call(name, args)
+                text = json.dumps(result, indent=2)
+                self._mcp_reply(req_id, {"content": [{"type": "text", "text": text}]})
+                return
             content = self._run_mcp_tool(name, args)
             self._mcp_reply(req_id, {"content": content})
             return
