@@ -1,0 +1,17 @@
+{
+  "name": "roborun",
+  "version": "0.3.0",
+  "description": "Agentic robot OS with real-time vision AI, spatial memory, and ZK-verified observations",
+  "keywords": ["robotics", "ros2", "ai-agent", "yolo", "clip", "agenticros", "dimos", "computer-vision"],
+  "license": "MIT",
+  "author": "Pablo <pablo@hashingsystems.com>",
+  "bin": {
+    "roborun": "./bin/roborun.mjs"
+  },
+  "files": [
+    "bin/"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

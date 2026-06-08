@@ -1,10 +1,29 @@
 # RoboRun
 
-**Zero-terminal visual teleop, dataset collection, and one-click dimOS blueprint deployment.**
+**The agentic robot OS with real-time vision AI, spatial memory, and native ROS 2 transport.**
 
-RoboRun is a visual dashboard for robot control and computer vision. Use it with just a webcam to run YOLO, CLIP, and JEPA models in real time -- or connect to [dimOS](https://github.com/dimensionalOS/dimos) for full robot control with navigation, exploration, smart follow, dog mode, and more.
+```
+npx roborun
+```
 
-No CLI required. Everything runs from the browser.
+Open your browser. Your webcam now has YOLO, CLIP, and JEPA running in real time. Add a robot IP and you have full fleet control, spatial memory, a Claude agent, a MuJoCo physics simulator, and native ROS 2 topic pub/sub over rosbridge — all from a single browser tab.
+
+**Works with any AI client. Claude Desktop, Claude Code, Cursor — add one line to your MCP config:**
+
+```json
+{ "mcpServers": { "roborun": { "type": "http", "url": "http://localhost:8765/mcp" } } }
+```
+
+Your AI gets: live camera feed, YOLO detections, move commands, robot skills, spatial memory search, ROS 2 topic access.
+
+**Works with any robot. No ROS installation required.**
+
+- Webcam-only: pip install, open browser, done
+- dimOS robots (Unitree Go2/G1): one-click blueprint deploy
+- Any ROS 2 robot with rosbridge_server: `/api/ros/*` endpoints match the agenticROS tool surface exactly
+- Any HTTP camera or video stream: plug in the URL
+
+[![Demo](assets/demo-thumb.jpg)](https://github.com/publu/RoboRun/raw/main/assets/demo.mp4)
 
 [![Demo](assets/demo-thumb.jpg)](https://github.com/publu/RoboRun/raw/main/assets/demo.mp4)
 
@@ -44,6 +63,32 @@ No CLI required. Everything runs from the browser.
 
 ---
 
+## vs agenticROS
+
+[agenticROS](https://github.com/agenticros/agenticros) bridges ROS 2 robots to AI agents. RoboRun does that too, plus everything else:
+
+| Capability | RoboRun | agenticROS |
+|---|:---:|:---:|
+| Native ROS 2 transport (rosbridge) | Yes | Yes |
+| Raw topic pub/sub/service/action | Yes (`/api/ros/*`) | Yes (MCP tools) |
+| Works without ROS (webcam-only) | **Yes** | No |
+| Real-time YOLO object detection | **Yes** | No |
+| CLIP zero-shot search | **Yes** | No |
+| JEPA attention heatmap | **Yes** | No |
+| Spatial memory (geo-indexed, searchable) | **Yes** | No |
+| Physics simulation (MuJoCo, in browser) | **Yes** | Gazebo (Linux only) |
+| Dataset/episode recording | **Yes** | No |
+| Cosmos 3 world model | **Yes** | No |
+| ZK-verified observations (EZKL) | **Yes** (`pip install roborun[zk]`) | No |
+| Multi-agent (Claude + Gemini) | **Yes** | Yes |
+| Single-command install | `npx roborun` | `npx agenticros` |
+| Fleet management UI | **Yes** | No |
+| EU AI Act compliance path | **Yes** (ZK proofs) | No |
+
+RoboRun's `/api/ros/*` endpoints use the same tool names and schemas as agenticROS's MCP tools — any agenticROS skill or prompt works unmodified.
+
+---
+
 ## Features
 
 ### Webcam + Vision Models
@@ -79,22 +124,32 @@ Record video clips from your webcam or robot camera with model annotations baked
 
 ## Quick Start
 
-### 1. Install
+### Option A — one command (Node 18+ required)
+
+```bash
+npx roborun
+```
+
+Checks Python 3.10+, installs `roborun` via pip, starts the server, opens the browser.
+
+### Option B — pip install
+
+```bash
+pip install roborun
+roborun
+```
+
+Open **http://127.0.0.1:8765**. Your webcam starts automatically.
+
+### Option C — from source
 
 ```bash
 git clone https://github.com/publu/RoboRun.git
 cd RoboRun
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
-```
-
-### 2. Run
-
-```bash
 python -m roborun.server
 ```
-
-Open **http://127.0.0.1:8765** in your browser. Your webcam starts automatically.
 
 ### 3. (Optional) Cosmos 3 setup
 
@@ -127,6 +182,40 @@ python -m roborun.server  # then click "Replay Bot" in System tab
 
 ---
 
+## ROS 2 Native Transport
+
+RoboRun connects to any robot running `rosbridge_server` via WebSocket. The `/api/ros/*` endpoints match the agenticROS MCP tool surface — any agenticROS skill or prompt works with RoboRun unmodified.
+
+```bash
+# On the robot (any ROS 2 distro)
+ros2 launch rosbridge_server rosbridge_websocket_launch.xml
+
+# In your profile settings, set Robot IP to the robot's IP
+# Then use the ROS tab or call the API directly:
+curl -X POST http://localhost:8765/api/ros/topics
+curl -X POST http://localhost:8765/api/ros/publish \
+  -d '{"topic":"/cmd_vel","type":"geometry_msgs/Twist","message":{"linear":{"x":0.5}}}'
+curl -X POST http://localhost:8765/api/ros/subscribe-once \
+  -d '{"topic":"/scan","timeout":5000}'
+```
+
+| Endpoint | Description |
+|---|---|
+| `GET  /api/ros/topics` | List all ROS 2 topics |
+| `GET  /api/ros/status` | Check rosbridge connection |
+| `POST /api/ros/connect` | Connect to rosbridge host |
+| `POST /api/ros/publish` | Publish to any topic |
+| `POST /api/ros/subscribe-once` | Read one message from a topic |
+| `POST /api/ros/service` | Call a ROS 2 service |
+| `POST /api/ros/action` | Send an action goal |
+| `POST /api/ros/param/get` | Read a node parameter |
+| `POST /api/ros/param/set` | Set a node parameter |
+| `POST /api/ros/camera` | Grab a camera frame (CompressedImage or raw) |
+| `POST /api/ros/depth` | Sample center depth in meters |
+| `POST /api/ros/move` | Publish Twist to /cmd_vel |
+
+**dimOS is optional.** RoboRun works with dimOS robots (full MCP skill set) or any ROS 2 robot (raw rosbridge transport) or just a webcam (no robot required).
+
 ## Architecture
 
 ```
@@ -134,14 +223,16 @@ Browser (RoboRun UI)
     |
     +-- /api/webcam/*      -> WebcamPipeline (YOLO + CLIP + JEPA)
     +-- /api/dataset/*     -> DatasetCollector (episode recording)
+    +-- /api/ros/*         -> RosbridgeClient (any ROS 2 robot)
     +-- /api/mcp/call      -> Daneel MCP (:9990) -> dimOS -> Robot
     +-- /api/agent/chat    -> Claude CLI (stream-json) -> MCP tools
     +-- /api/fleet/*       -> Fleet + Blueprint management
     +-- /api/tasks/*       -> Task scheduler
     +-- /api/camera/stream -> MJPEG (webcam or robot camera)
+    +-- /api/memory/*      -> SpatialMemoryStore (CLIP search + S3)
 ```
 
-**dimOS is optional.** The webcam pipeline, model inference, and recording all work standalone. When dimOS is available, RoboRun adds full robot control on top.
+For a fleet-scale version of this architecture, see [docs/realtime-data-plane.md](docs/realtime-data-plane.md). The short version: keep local mode lightweight, use MQTT or NATS for robot events and command acknowledgements, use Postgres/Supabase for operator and fleet state, use Timescale/Influx/QuestDB for telemetry history, and keep high-bandwidth robotics logs in Foxglove/MCAP plus object storage.
 
 ---
 
@@ -171,12 +262,45 @@ Settings persist in `.roborun/profile.json`.
 
 ---
 
+## ZK-Verified Observations
+
+RoboRun can generate cryptographic proofs that CLIP embeddings in the spatial memory were correctly computed from the original frames. This enables post-hoc verification of what the robot actually saw — for compliance, insurance, and trust.
+
+```bash
+pip install "roborun[zk]"  # installs ezkl + onnx
+
+# One-time circuit setup (~2-5 min)
+curl -X POST http://localhost:8765/api/zk/setup
+
+# Check status
+curl http://localhost:8765/api/zk/status
+
+# Generate proof for a memory shard
+curl -X POST http://localhost:8765/api/zk/prove \
+  -d '{"shard_id": "abc123"}'
+
+# Verify a proof
+curl http://localhost:8765/api/zk/verify/abc123
+# → {"verified": true, "model": "CLIP ViT-B/32", "frame_count": 128}
+```
+
+The proof file travels with the data: anyone with `shard.proof.bin` + the original frames can verify independently, without trusting your server.
+
+Proof generation: ~30-120s per shard on 1 GPU (EZKL CLIP ViT-B/32). Verification: ~50ms. Storage: ~2MB per shard proof.
+
+EU AI Act high-risk AI systems (autonomous robots in workplaces) require audit-grade logs by August 2026. ZK proofs satisfy this without exposing proprietary model weights.
+
+---
+
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ROBORUN_PORT` | `8765` | Server port |
 | `ROBOT_IP` | -- | Robot IP (can also set in UI) |
+| `GEMINI_API_KEY` | -- | Enables Gemini agent (`/api/agent/gemini`) |
+| `ROBORUN_S3_BUCKET` | -- | S3/R2 bucket for spatial memory thumbnails |
+| `ROBORUN_S3_ENDPOINT` | -- | Custom S3 endpoint (Cloudflare R2, MinIO, etc.) |
 
 ---
 

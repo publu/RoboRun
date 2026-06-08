@@ -86,17 +86,39 @@ def _get_memory():
         )
     return _spatial_memory
 
-# ── Agent (optional — only if `claude` CLI is available) ─────────────────────
+# ── Agent — FastRobotAgent (SDK) preferred, RobotAgent (subprocess) as fallback
 _AGENT = None
 def _get_agent():
     global _AGENT
     if _AGENT is None:
+        import os
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            try:
+                from roborun.agent import FastRobotAgent
+                _AGENT = FastRobotAgent()
+                return _AGENT
+            except Exception:
+                pass
         try:
             from roborun.agent import RobotAgent
             _AGENT = RobotAgent()
         except Exception:
             _AGENT = "unavailable"
     return _AGENT
+
+_GEMINI_AGENT = None
+def _get_gemini_agent():
+    global _GEMINI_AGENT
+    if _GEMINI_AGENT is None:
+        import os
+        if not os.environ.get("GEMINI_API_KEY"):
+            return "unavailable"
+        try:
+            from roborun.agent import GeminiAgent
+            _GEMINI_AGENT = GeminiAgent()
+        except Exception:
+            _GEMINI_AGENT = "unavailable"
+    return _GEMINI_AGENT
 
 # ── Async MCP-call task store ────────────────────────────────────────────────
 _MCP_TASKS: dict[str, dict[str, Any]] = {}
@@ -735,8 +757,299 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(encoded)
 
+    # ── MCP server implementation ─────────────────────────────────────────────
+
+    _MCP_TOOLS = [
+        {
+            "name": "camera_snapshot",
+            "description": "Capture the current robot camera frame. Returns a live JPEG image so you can see what the robot sees right now.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "yolo_detections",
+            "description": "Get the current YOLO object detection results from the robot camera — labels, confidence scores, and bounding boxes.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "move",
+            "description": "Send a velocity command to the robot. linear_x: forward (+) / back (−) in m/s. angular_z: turn left (+) / right (−) in rad/s.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "linear_x": {"type": "number", "description": "Forward speed m/s (e.g. 0.3)"},
+                    "angular_z": {"type": "number", "description": "Turn rate rad/s (e.g. 0.5)"},
+                    "duration_s": {"type": "number", "description": "Hold command for N seconds, then stop"},
+                },
+            },
+        },
+        {
+            "name": "execute_skill",
+            "description": "Execute a dimOS robot skill. Available skills: navigate_with_text, begin_exploration, smart_follow_person, smart_follow_object, smart_find, query_scene, execute_sport_command, speak, tag_location, where_am_i.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "skill": {"type": "string", "description": "Skill name"},
+                    "args": {"type": "object", "description": "Skill arguments"},
+                },
+                "required": ["skill"],
+            },
+        },
+        {
+            "name": "memory_search",
+            "description": "Search the robot's spatial memory for past observations using CLIP semantic similarity. Returns matching frames with location coordinates.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "What to search for e.g. 'red chair', 'charging dock'"},
+                    "top_k": {"type": "integer", "description": "Max results (default 5)"},
+                },
+                "required": ["query"],
+            },
+        },
+        {
+            "name": "ros_topics",
+            "description": "List all available ROS 2 topics and their message types. Requires rosbridge connection.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "ros_publish",
+            "description": "Publish a message to any ROS 2 topic.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string"},
+                    "type": {"type": "string", "description": "ROS message type"},
+                    "message": {"type": "object"},
+                },
+                "required": ["topic", "type", "message"],
+            },
+        },
+        {
+            "name": "ros_subscribe_once",
+            "description": "Read one message from a ROS 2 topic.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string"},
+                    "type": {"type": "string"},
+                    "timeout_ms": {"type": "number"},
+                },
+                "required": ["topic"],
+            },
+        },
+    ]
+
+    def _mcp_reply(self, req_id: Any, result: Any) -> None:
+        body = json.dumps({"jsonrpc": "2.0", "id": req_id, "result": result}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _mcp_error(self, req_id: Any, code: int, message: str) -> None:
+        body = json.dumps({"jsonrpc": "2.0", "id": req_id,
+                           "error": {"code": code, "message": message}}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_mcp(self, payload: dict) -> None:
+        req_id = payload.get("id")
+        method = payload.get("method", "")
+        params = payload.get("params", {})
+
+        if method == "initialize":
+            self._mcp_reply(req_id, {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "roborun", "version": "0.3.0"},
+            })
+            return
+
+        if method == "tools/list":
+            self._mcp_reply(req_id, {"tools": self._MCP_TOOLS})
+            return
+
+        if method == "tools/call":
+            name = params.get("name", "")
+            args = params.get("arguments", {})
+            content = self._run_mcp_tool(name, args)
+            self._mcp_reply(req_id, {"content": content})
+            return
+
+        if method == "notifications/initialized":
+            # client acknowledges — no response needed for notifications
+            self.send_response(204)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            return
+
+        self._mcp_error(req_id, -32601, f"Method not found: {method}")
+
+    def _run_mcp_tool(self, name: str, args: dict) -> list[dict]:
+        """Execute a tool and return MCP content blocks."""
+        try:
+            if name == "camera_snapshot":
+                return self._mcp_camera()
+
+            if name == "yolo_detections":
+                for p in (_HACKATHON_STATE_PATH, _WEBCAM_STATE_PATH):
+                    if p.exists() and (time.time() - p.stat().st_mtime) < 3.0:
+                        try:
+                            state = json.loads(p.read_text())
+                            dets = state.get("detections", [])
+                            return [{"type": "text", "text": json.dumps(dets, indent=2)}]
+                        except Exception:
+                            pass
+                return [{"type": "text", "text": "No detections available"}]
+
+            if name == "move":
+                lx = float(args.get("linear_x", 0.0))
+                az = float(args.get("angular_z", 0.0))
+                dur = float(args.get("duration_s", 0.0))
+                profile = load_profile()
+                host = profile.get("robotIp", "")
+                try:
+                    from roborun.rosbridge import get_client
+                    client = get_client(host) if host else None
+                    if client:
+                        client.move(lx, 0.0, az)
+                        if dur > 0:
+                            time.sleep(dur)
+                            client.stop()
+                        return [{"type": "text", "text": f"Move sent: linear_x={lx}, angular_z={az}"}]
+                except Exception:
+                    pass
+                return [{"type": "text", "text": "Move failed: no rosbridge connection"}]
+
+            if name == "execute_skill":
+                skill = args.get("skill", "")
+                skill_args = args.get("args", {})
+                task_id = uuid.uuid4().hex
+                with _MCP_TASKS_LOCK:
+                    _MCP_TASKS[task_id] = {"status": "pending", "name": skill, "started": time.time()}
+                threading.Thread(target=_run_mcp_task, args=(task_id, skill, skill_args), daemon=True).start()
+                for _ in range(60):
+                    time.sleep(0.5)
+                    with _MCP_TASKS_LOCK:
+                        state = dict(_MCP_TASKS.get(task_id, {}))
+                    if state.get("status") == "done":
+                        return [{"type": "text", "text": state.get("result", "Done.")}]
+                    if state.get("status") == "error":
+                        return [{"type": "text", "text": f"Error: {state.get('error')}"}]
+                return [{"type": "text", "text": "Skill timed out"}]
+
+            if name == "memory_search":
+                query = args.get("query", "")
+                top_k = int(args.get("top_k", 5))
+                try:
+                    mem = _get_memory()
+                    wc = _get_webcam()
+                    if wc._clip is None:
+                        from roborun.models import CLIPMatcher
+                        wc._clip = CLIPMatcher()
+                    emb = wc._clip.embed_text(query)
+                    results = mem.search_clip(emb, top_k=top_k)
+                    if not results:
+                        return [{"type": "text", "text": "No matching memories."}]
+                    lines = []
+                    for r in results:
+                        loc = f"({r.get('x', '?'):.1f}, {r.get('y', '?'):.1f})" if r.get("x") is not None else "unknown"
+                        dets = r.get("detections") or []
+                        if isinstance(dets, str):
+                            try: dets = json.loads(dets)
+                            except Exception: dets = []
+                        labels = [d.get("label", "") for d in dets[:4] if isinstance(d, dict)]
+                        lines.append(f"{loc} — {', '.join(labels) or 'no labels'}")
+                    return [{"type": "text", "text": "\n".join(lines)}]
+                except Exception as exc:
+                    return [{"type": "text", "text": f"Search failed: {exc}"}]
+
+            if name == "ros_topics":
+                profile = load_profile()
+                host = profile.get("robotIp", "")
+                try:
+                    from roborun.rosbridge import get_client
+                    client = get_client(host) if host else None
+                    if not client:
+                        return [{"type": "text", "text": "Not connected to rosbridge"}]
+                    topics = client.list_topics()
+                    text = "\n".join(f"{t['topic']} [{t['type']}]" for t in topics)
+                    return [{"type": "text", "text": text or "No topics found"}]
+                except Exception as exc:
+                    return [{"type": "text", "text": f"Failed: {exc}"}]
+
+            if name == "ros_publish":
+                profile = load_profile()
+                host = profile.get("robotIp", "")
+                try:
+                    from roborun.rosbridge import get_client
+                    client = get_client(host) if host else None
+                    if not client:
+                        return [{"type": "text", "text": "Not connected to rosbridge"}]
+                    client.publish(args["topic"], args["type"], args["message"])
+                    return [{"type": "text", "text": "Published."}]
+                except Exception as exc:
+                    return [{"type": "text", "text": f"Failed: {exc}"}]
+
+            if name == "ros_subscribe_once":
+                profile = load_profile()
+                host = profile.get("robotIp", "")
+                try:
+                    from roborun.rosbridge import get_client
+                    client = get_client(host) if host else None
+                    if not client:
+                        return [{"type": "text", "text": "Not connected to rosbridge"}]
+                    timeout = float(args.get("timeout_ms", 5000)) / 1000.0
+                    msg = client.subscribe_once(args["topic"], args.get("type", ""), timeout=timeout)
+                    return [{"type": "text", "text": json.dumps(msg) if msg else "No message received"}]
+                except Exception as exc:
+                    return [{"type": "text", "text": f"Failed: {exc}"}]
+
+            return [{"type": "text", "text": f"Unknown tool: {name}"}]
+
+        except Exception as exc:
+            return [{"type": "text", "text": f"Tool error: {exc}"}]
+
+    def _mcp_camera(self) -> list[dict]:
+        """Return camera frame as MCP image content block."""
+        for p in (_HACKATHON_FRAME_PATH, _WEBCAM_FRAME_PATH, _CAMERA_FRAME_PATH):
+            if p.exists() and (time.time() - p.stat().st_mtime) < 5.0:
+                try:
+                    data = base64.b64encode(p.read_bytes()).decode()
+                    return [{"type": "image", "data": data, "mimeType": "image/jpeg"}]
+                except Exception:
+                    pass
+        return [{"type": "text", "text": "No camera frame available — start webcam or connect robot"}]
+
     def do_GET(self) -> None:
         path_only = self.path.split("?", 1)[0]
+
+        # ── MCP server discovery (SSE transport handshake) ──
+        if path_only == "/mcp":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            # Send endpoint event so MCP clients know where to POST
+            msg = f"data: {{\"type\":\"endpoint\",\"url\":\"http://127.0.0.1:{PORT}/mcp\"}}\n\n"
+            try:
+                self.wfile.write(msg.encode())
+                self.wfile.flush()
+                # Keep alive until client disconnects
+                while True:
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+                    time.sleep(15)
+            except Exception:
+                pass
+            return
 
         # ── MJPEG stream (webcam or robot camera) ──
         if path_only == "/api/camera/stream":
@@ -856,10 +1169,57 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path == "/api/agent/status":
             agent = _get_agent()
             if agent == "unavailable":
-                self.send_json(200, {"ok": True, "alive": False, "available": False})
+                self.send_json(200, {"ok": True, "alive": False, "available": False, "mode": None})
             else:
-                self.send_json(200, {"ok": True, "alive": agent.is_alive, "session": agent._session_id is not None})
+                from roborun.agent import FastRobotAgent
+                mode = "fast" if isinstance(agent, FastRobotAgent) else "subprocess"
+                session = getattr(agent, "_session_id", None)
+                self.send_json(200, {"ok": True, "alive": agent.is_alive,
+                                     "available": True, "mode": mode,
+                                     "session": session is not None})
             return
+        if self.path == "/api/agent/gemini/status":
+            import os
+            has_key = bool(os.environ.get("GEMINI_API_KEY"))
+            agent = _get_gemini_agent()
+            self.send_json(200, {"ok": True, "available": agent != "unavailable",
+                                 "alive": agent != "unavailable" and agent.is_alive,
+                                 "has_key": has_key})
+            return
+
+        # ── ROS bridge GET ──
+        if self.path == "/api/ros/topics":
+            from urllib.parse import parse_qs, urlparse
+            qs = parse_qs(urlparse(self.path).query)
+            host = qs.get("host", [None])[0] or load_profile().get("robotIp", "")
+            if not host:
+                self.send_json(400, {"ok": False, "error": "No robot IP configured"})
+                return
+            try:
+                from roborun.rosbridge import get_client
+                client = get_client(host)
+                if not client:
+                    self.send_json(503, {"ok": False, "error": "Could not connect to rosbridge"})
+                    return
+                topics = client.list_topics()
+                self.send_json(200, {"ok": True, "topics": topics, "count": len(topics)})
+            except Exception as exc:
+                self.send_json(500, {"ok": False, "error": str(exc)})
+            return
+
+        if self.path.startswith("/api/ros/status"):
+            from urllib.parse import parse_qs, urlparse
+            qs = parse_qs(urlparse(self.path).query)
+            host = qs.get("host", [None])[0] or load_profile().get("robotIp", "")
+            try:
+                from roborun.rosbridge import get_client
+                client = get_client(host) if host else None
+                connected = client is not None and client.is_connected
+                self.send_json(200, {"ok": True, "connected": connected, "host": host or None})
+            except Exception as exc:
+                self.send_json(200, {"ok": True, "connected": False, "error": str(exc)})
+            return
+
         # ── Simulator GET ──
         if self.path == "/api/sim/robots":
             self.send_json(200, {"ok": True, "robots": _get_simulator().list_robots()})
@@ -871,6 +1231,31 @@ class Handler(SimpleHTTPRequestHandler):
         # ── Spatial Memory GET ──
         if self.path == "/api/memory/stats":
             self.send_json(200, {"ok": True, **_get_memory().stats()})
+            return
+
+        # ── ZK proof endpoints ──
+        if self.path == "/api/zk/status":
+            from roborun.zk_prover import get_prover
+            prover = get_prover()
+            self.send_json(200, {
+                "ok": True,
+                "ezkl_available": prover.is_available(),
+                "circuit_ready": prover._ready,
+                "circuit_path": str(prover._circuit) if prover._ready else None,
+            })
+            return
+
+        if self.path.startswith("/api/zk/verify/"):
+            shard_id = self.path.split("/api/zk/verify/")[1]
+            from roborun.zk_prover import get_prover
+            prover = get_prover()
+            proof_bytes, meta = prover.load_proof(shard_id)
+            if not proof_bytes:
+                self.send_json(404, {"ok": False, "error": f"No proof found for shard {shard_id}"})
+                return
+            verified = prover.verify(proof_bytes)
+            self.send_json(200, {"ok": True, "shard_id": shard_id,
+                                 "verified": verified, "meta": meta})
             return
         if self.path.startswith("/api/memory/list"):
             from urllib.parse import parse_qs, urlparse
@@ -896,7 +1281,24 @@ class Handler(SimpleHTTPRequestHandler):
             self.path = "/index.html"
         super().do_GET()
 
+    def do_OPTIONS(self) -> None:
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+
     def do_POST(self) -> None:
+        # ── MCP server (JSON-RPC 2.0) ──
+        if self.path == "/mcp":
+            try:
+                payload = read_json(self)
+            except Exception as exc:
+                self._mcp_error(None, -32700, f"Parse error: {exc}")
+                return
+            self._handle_mcp(payload)
+            return
+
         try:
             payload = read_json(self)
 
@@ -1013,6 +1415,68 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json(200, {"ok": ok})
                 return
 
+            # ── ZK proof POST ──
+            if self.path == "/api/zk/setup":
+                force = bool(payload.get("force", False))
+                from roborun.zk_prover import get_prover
+                prover = get_prover()
+                if not prover.is_available():
+                    self.send_json(503, {"ok": False, "error": "ezkl not installed — pip install ezkl"})
+                    return
+                def _do_setup():
+                    result = prover.setup(force=force)
+                    log_event("zk_setup", "ZK circuit setup complete" if result.get("ok") else "ZK setup failed",
+                              data=result, level="info" if result.get("ok") else "error")
+                threading.Thread(target=_do_setup, daemon=True).start()
+                self.send_json(202, {"ok": True, "message": "ZK circuit setup started (background). Check /api/zk/status."})
+                return
+
+            if self.path == "/api/zk/prove":
+                shard_id = str(payload.get("shard_id", "")).strip()
+                if not shard_id:
+                    raise ApiError(400, "shard_id required")
+                from roborun.zk_prover import get_prover
+                prover = get_prover()
+                if not prover.is_available():
+                    self.send_json(503, {"ok": False, "error": "ezkl not installed"})
+                    return
+                self.send_json(202, {"ok": True, "message": "Proof generation started (background). This takes 30-120s.",
+                                     "shard_id": shard_id})
+                def _do_prove():
+                    try:
+                        mem = _get_memory()
+                        records = [r for r in mem.list_memories(limit=1000)
+                                   if r.get("shard_id") == shard_id]
+                        if not records:
+                            log_event("zk_prove", f"Shard {shard_id} not found", level="error")
+                            return
+                        import cv2
+                        frames = []
+                        embeddings = []
+                        for rec in records:
+                            thumb = mem.get_thumbnail(rec["id"])
+                            if thumb:
+                                arr = cv2.imdecode(np.frombuffer(thumb, np.uint8), cv2.IMREAD_COLOR)
+                                if arr is not None:
+                                    frames.append(arr)
+                                    if rec.get("embedding"):
+                                        embeddings.append(np.frombuffer(bytes(rec["embedding"]), np.float32))
+                        if not frames:
+                            log_event("zk_prove", f"No frames found in shard {shard_id}", level="error")
+                            return
+                        proof = prover.prove(frames, embeddings)
+                        if proof and "proof" in proof:
+                            prover.save_proof(proof, shard_id)
+                            log_event("zk_prove", f"Proof generated for shard {shard_id}",
+                                      data={"proof_hash": proof["proof_hash"], "frames": len(frames)})
+                        else:
+                            log_event("zk_prove", f"Proof failed for shard {shard_id}",
+                                      data=proof or {}, level="error")
+                    except Exception as exc:
+                        log_event("zk_prove", f"Proof exception: {exc}", level="error")
+                threading.Thread(target=_do_prove, daemon=True).start()
+                return
+
             # ── Dataset ──
             if self.path == "/api/dataset/start":
                 result = _get_dataset().start_recording(str(payload.get("name", "default")).strip())
@@ -1111,6 +1575,38 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json(200, {"ok": True})
                 return
 
+            # ── Gemini agent chat (SSE) ──
+            if self.path == "/api/agent/gemini":
+                agent = _get_gemini_agent()
+                if agent == "unavailable":
+                    self.send_json(200, {"ok": False, "error": "Gemini agent not available — set GEMINI_API_KEY"})
+                    return
+                message = str(payload.get("message", "")).strip()
+                if not message:
+                    self.send_json(400, {"ok": False, "error": "message required"})
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("X-Accel-Buffering", "no")
+                self.end_headers()
+                def sse(data: dict) -> None:
+                    self.wfile.write(f"data: {json.dumps(data)}\n\n".encode())
+                    self.wfile.flush()
+                try:
+                    for chunk in agent.send(message):
+                        sse(chunk)
+                        if chunk.get("type") in ("done", "error"): break
+                except Exception as exc:
+                    try: sse({"type": "error", "error": str(exc)})
+                    except Exception: pass
+                return
+            if self.path == "/api/agent/gemini/clear":
+                agent = _get_gemini_agent()
+                if agent != "unavailable": agent.clear_session()
+                self.send_json(200, {"ok": True})
+                return
+
             # ── Ping ──
             if self.path == "/api/ping":
                 ip = str(payload.get("robotIp", "")).strip()
@@ -1144,6 +1640,209 @@ class Handler(SimpleHTTPRequestHandler):
                 return
             if self.path == "/api/fleet/deploy":
                 self.send_json(200, deploy_blueprint(payload))
+                return
+
+            # ── ROS bridge POST ──
+            if self.path == "/api/ros/connect":
+                host = str(payload.get("host", "")).strip() or load_profile().get("robotIp", "")
+                if not host:
+                    raise ApiError(400, "host required")
+                port = int(payload.get("port", 9090))
+                try:
+                    from roborun.rosbridge import reset_client, get_client
+                    reset_client()
+                    client = get_client(host, port)
+                    if not client:
+                        self.send_json(503, {"ok": False, "error": "Connection failed"})
+                    else:
+                        self.send_json(200, {"ok": True, "host": host, "port": port})
+                except Exception as exc:
+                    self.send_json(503, {"ok": False, "error": str(exc)})
+                return
+
+            if self.path == "/api/ros/disconnect":
+                from roborun.rosbridge import reset_client
+                reset_client()
+                self.send_json(200, {"ok": True})
+                return
+
+            if self.path == "/api/ros/publish":
+                topic = str(payload.get("topic", "")).strip()
+                msg_type = str(payload.get("type", "")).strip()
+                message = payload.get("message", {})
+                if not topic:
+                    raise ApiError(400, "topic required")
+                host = load_profile().get("robotIp", "")
+                try:
+                    from roborun.rosbridge import get_client
+                    client = get_client(host)
+                    if not client:
+                        raise ApiError(503, "Not connected to rosbridge")
+                    client.publish(topic, msg_type, message)
+                    self.send_json(200, {"ok": True})
+                except ApiError:
+                    raise
+                except Exception as exc:
+                    self.send_json(500, {"ok": False, "error": str(exc)})
+                return
+
+            if self.path == "/api/ros/subscribe-once":
+                topic = str(payload.get("topic", "")).strip()
+                msg_type = str(payload.get("type", "")).strip()
+                timeout = float(payload.get("timeout", 5000)) / 1000.0
+                if not topic:
+                    raise ApiError(400, "topic required")
+                host = load_profile().get("robotIp", "")
+                try:
+                    from roborun.rosbridge import get_client
+                    client = get_client(host)
+                    if not client:
+                        raise ApiError(503, "Not connected to rosbridge")
+                    msg = client.subscribe_once(topic, msg_type, timeout=timeout)
+                    self.send_json(200, {"ok": True, "message": msg})
+                except ApiError:
+                    raise
+                except Exception as exc:
+                    self.send_json(500, {"ok": False, "error": str(exc)})
+                return
+
+            if self.path == "/api/ros/service":
+                service = str(payload.get("service", "")).strip()
+                srv_type = str(payload.get("type", "")).strip()
+                args = payload.get("args", {})
+                timeout = float(payload.get("timeout", 10000)) / 1000.0
+                if not service:
+                    raise ApiError(400, "service required")
+                host = load_profile().get("robotIp", "")
+                try:
+                    from roborun.rosbridge import get_client
+                    client = get_client(host)
+                    if not client:
+                        raise ApiError(503, "Not connected to rosbridge")
+                    result = client.call_service(service, srv_type, args, timeout=timeout)
+                    self.send_json(200, {"ok": True, "result": result})
+                except ApiError:
+                    raise
+                except Exception as exc:
+                    self.send_json(500, {"ok": False, "error": str(exc)})
+                return
+
+            if self.path == "/api/ros/action":
+                action = str(payload.get("action", "")).strip()
+                action_type = str(payload.get("actionType", "")).strip()
+                goal = payload.get("goal", {})
+                timeout = float(payload.get("timeout", 30000)) / 1000.0
+                if not action or not action_type:
+                    raise ApiError(400, "action and actionType required")
+                host = load_profile().get("robotIp", "")
+                try:
+                    from roborun.rosbridge import get_client
+                    client = get_client(host)
+                    if not client:
+                        raise ApiError(503, "Not connected to rosbridge")
+                    result = client.send_action_goal(action, action_type, goal, timeout=timeout)
+                    self.send_json(200, {"ok": True, "result": result})
+                except ApiError:
+                    raise
+                except Exception as exc:
+                    self.send_json(500, {"ok": False, "error": str(exc)})
+                return
+
+            if self.path == "/api/ros/param/get":
+                node = str(payload.get("node", "")).strip()
+                parameter = str(payload.get("parameter", "")).strip()
+                if not node or not parameter:
+                    raise ApiError(400, "node and parameter required")
+                host = load_profile().get("robotIp", "")
+                try:
+                    from roborun.rosbridge import get_client
+                    client = get_client(host)
+                    if not client:
+                        raise ApiError(503, "Not connected to rosbridge")
+                    value = client.get_param(node, parameter)
+                    self.send_json(200, {"ok": True, "value": value})
+                except ApiError:
+                    raise
+                except Exception as exc:
+                    self.send_json(500, {"ok": False, "error": str(exc)})
+                return
+
+            if self.path == "/api/ros/param/set":
+                node = str(payload.get("node", "")).strip()
+                parameter = str(payload.get("parameter", "")).strip()
+                value = payload.get("value")
+                if not node or not parameter:
+                    raise ApiError(400, "node and parameter required")
+                host = load_profile().get("robotIp", "")
+                try:
+                    from roborun.rosbridge import get_client
+                    client = get_client(host)
+                    if not client:
+                        raise ApiError(503, "Not connected to rosbridge")
+                    ok = client.set_param(node, parameter, value)
+                    self.send_json(200, {"ok": ok})
+                except ApiError:
+                    raise
+                except Exception as exc:
+                    self.send_json(500, {"ok": False, "error": str(exc)})
+                return
+
+            if self.path == "/api/ros/camera":
+                topic = str(payload.get("topic", "/camera/image_raw/compressed")).strip()
+                timeout = float(payload.get("timeout", 10000)) / 1000.0
+                host = load_profile().get("robotIp", "")
+                try:
+                    from roborun.rosbridge import get_client
+                    client = get_client(host)
+                    if not client:
+                        raise ApiError(503, "Not connected to rosbridge")
+                    frame_bytes = client.camera_snapshot(topic, timeout=timeout)
+                    if not frame_bytes:
+                        self.send_json(404, {"ok": False, "error": "No frame received"})
+                        return
+                    import base64
+                    b64 = base64.b64encode(frame_bytes).decode()
+                    self.send_json(200, {"ok": True, "image": f"data:image/jpeg;base64,{b64}"})
+                except ApiError:
+                    raise
+                except Exception as exc:
+                    self.send_json(500, {"ok": False, "error": str(exc)})
+                return
+
+            if self.path == "/api/ros/depth":
+                topic = str(payload.get("topic", "/camera/depth/image_raw")).strip()
+                timeout = float(payload.get("timeout", 5000)) / 1000.0
+                host = load_profile().get("robotIp", "")
+                try:
+                    from roborun.rosbridge import get_client
+                    client = get_client(host)
+                    if not client:
+                        raise ApiError(503, "Not connected to rosbridge")
+                    dist = client.depth_distance(topic, timeout=timeout)
+                    self.send_json(200, {"ok": True, "distance_m": dist})
+                except ApiError:
+                    raise
+                except Exception as exc:
+                    self.send_json(500, {"ok": False, "error": str(exc)})
+                return
+
+            if self.path == "/api/ros/move":
+                linear_x = float(payload.get("linear_x", 0.0))
+                linear_y = float(payload.get("linear_y", 0.0))
+                angular_z = float(payload.get("angular_z", 0.0))
+                topic = str(payload.get("topic", "/cmd_vel"))
+                host = load_profile().get("robotIp", "")
+                try:
+                    from roborun.rosbridge import get_client
+                    client = get_client(host)
+                    if not client:
+                        raise ApiError(503, "Not connected to rosbridge")
+                    client.move(linear_x, linear_y, angular_z, topic)
+                    self.send_json(200, {"ok": True})
+                except ApiError:
+                    raise
+                except Exception as exc:
+                    self.send_json(500, {"ok": False, "error": str(exc)})
                 return
 
             # ── Blueprint CRUD ──
