@@ -987,7 +987,7 @@ class Handler(SimpleHTTPRequestHandler):
             self._mcp_reply(req_id, {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "roborun", "version": "0.5.0"},
+                "serverInfo": {"name": "roborun", "version": "0.7.0"},
             })
             return
 
@@ -1202,6 +1202,43 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as exc:
             return [{"type": "text", "text": f"Tool error: {exc}"}]
 
+    def _handle_openclaw_mcp(self, payload: dict) -> None:
+        req_id = payload.get("id")
+        method = payload.get("method", "")
+        params = payload.get("params", {})
+
+        if method == "initialize":
+            from roborun.openclaw_mcp import get_mcp_manifest
+            manifest = get_mcp_manifest()
+            self._mcp_reply(req_id, {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": manifest["name"], "version": manifest["version"]},
+            })
+            return
+
+        if method == "tools/list":
+            from roborun.openclaw_mcp import MCP_TOOLS
+            self._mcp_reply(req_id, {"tools": MCP_TOOLS})
+            return
+
+        if method == "tools/call":
+            from roborun.openclaw_mcp import handle_tool_call
+            name = params.get("name", "")
+            args = params.get("arguments", {})
+            result = handle_tool_call(name, args)
+            text = json.dumps(result, indent=2)
+            self._mcp_reply(req_id, {"content": [{"type": "text", "text": text}]})
+            return
+
+        if method == "notifications/initialized":
+            self.send_response(204)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            return
+
+        self._mcp_error(req_id, -32601, f"Method not found: {method}")
+
     def _mcp_camera(self) -> list[dict]:
         """Return camera frame as MCP image content block."""
         for p in (_HACKATHON_FRAME_PATH, _WEBCAM_FRAME_PATH, _CAMERA_FRAME_PATH):
@@ -1229,6 +1266,25 @@ class Handler(SimpleHTTPRequestHandler):
                 self.wfile.write(msg.encode())
                 self.wfile.flush()
                 # Keep alive until client disconnects
+                while True:
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+                    time.sleep(15)
+            except Exception:
+                pass
+            return
+
+        # ── OpenClaw MCP discovery (SSE) ──
+        if path_only == "/mcp/openclaw":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            msg = f"data: {{\"type\":\"endpoint\",\"url\":\"http://127.0.0.1:{PORT}/mcp/openclaw\"}}\n\n"
+            try:
+                self.wfile.write(msg.encode())
+                self.wfile.flush()
                 while True:
                     self.wfile.write(b": ping\n\n")
                     self.wfile.flush()
@@ -1564,6 +1620,16 @@ class Handler(SimpleHTTPRequestHandler):
                 self._mcp_error(None, -32700, f"Parse error: {exc}")
                 return
             self._handle_mcp(payload)
+            return
+
+        # ── OpenClaw MCP (direct DDS, no rosbridge) ──
+        if self.path == "/mcp/openclaw":
+            try:
+                payload = read_json(self)
+            except Exception as exc:
+                self._mcp_error(None, -32700, f"Parse error: {exc}")
+                return
+            self._handle_openclaw_mcp(payload)
             return
 
         try:
