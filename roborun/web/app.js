@@ -1,5 +1,4 @@
-/* RoboRun — app.js
-   Full dashboard: webcam, models, dataset, robot control, fleet, agent chat. */
+/* ros-agent — app.js */
 
 const activityList = document.querySelector("#activityList");
 const activeJob = { id: null, timer: null };

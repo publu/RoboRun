@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.9.2 — 2026-06-09
+
+### Fixed
+- Removed 80+ lines of dead CSS from old chat panel (`.chat-msgs`, `.msg-user`, `.msg-agent`, `.text-block`, `.thinking-block`, `.tool-call-card`, `.tool-result-card`, and related selectors)
+- Fixed undefined CSS variables `--fg` → `--ink`, `--r1` → `--r` in telemetry and drone control styles
+- Fixed old "RoboRun" branding in app.js header comment
+
 ## v0.7.0 — 2026-06-08
 
 ### Added
