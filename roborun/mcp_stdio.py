@@ -32,6 +32,7 @@ CAPABILITIES = {
     "tools": {},
     "resources": {},
     "prompts": {},
+    "logging": {},
 }
 
 RESOURCE_TEMPLATES = [
@@ -301,6 +302,19 @@ def _write(msg: dict) -> None:
     sys.stdout.flush()
 
 
+_log_level = "info"
+
+def _emit_log(level: str, data: Any, logger: str = "roborun") -> None:
+    levels = ["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"]
+    if levels.index(level) < levels.index(_log_level):
+        return
+    _write({
+        "jsonrpc": "2.0",
+        "method": "notifications/message",
+        "params": {"level": level, "logger": logger, "data": data},
+    })
+
+
 def _error_response(req_id: Any, code: int, message: str) -> dict:
     return {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
 
@@ -325,6 +339,11 @@ def _handle_request(method: str, params: dict | None, req_id: Any) -> dict | Non
     if method == "ping":
         return _result_response(req_id, {})
 
+    if method == "logging/setLevel":
+        global _log_level
+        _log_level = params.get("level", "info")
+        return _result_response(req_id, {})
+
     # ── Tools ────────────────────────────────────────────────────────────────
 
     if method == "tools/list":
@@ -340,9 +359,12 @@ def _handle_request(method: str, params: dict | None, req_id: Any) -> dict | Non
     if method == "tools/call":
         tool_name = params.get("name", "")
         arguments = params.get("arguments", {})
+        _emit_log("info", f"Calling tool: {tool_name}", "roborun.tools")
         result = handle_tool_call(tool_name, arguments)
 
         is_error = not result.get("ok", True)
+        if is_error:
+            _emit_log("warning", f"Tool {tool_name} failed: {result.get('error', 'unknown')}", "roborun.tools")
         content = [{"type": "text", "text": json.dumps(result, default=str)}]
 
         if "image" in result and isinstance(result["image"], str) and result["image"].startswith("data:image/"):
