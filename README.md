@@ -4,25 +4,25 @@
 
 # RoboRun — ros-agent
 
-### `pip install ros-agent` — give any AI full control of any ROS 2 robot
+### `pip install ros-agent` — let any AI control any robot
 
 <p align="center">
   <a href="https://pypi.org/project/ros-agent/"><img src="https://img.shields.io/pypi/v/ros-agent?style=for-the-badge&color=00d47e&label=PyPI" alt="PyPI"></a>
-  <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
-  <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP_Tools-49-00d47e?style=for-the-badge" alt="MCP Tools"></a>
-  <a href="https://ros.org"><img src="https://img.shields.io/badge/ROS_2-Supported-22314E?style=for-the-badge&logo=ros&logoColor=white" alt="ROS 2"></a>
+  <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.10+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="MIT License"></a>
+  <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP_Tools-49-00d47e?style=for-the-badge" alt="49 MCP Tools"></a>
+  <a href="https://ros.org"><img src="https://img.shields.io/badge/ROS-1_&_2-22314E?style=for-the-badge&logo=ros&logoColor=white" alt="ROS 1 and ROS 2"></a>
 </p>
 
-**The MCP agent layer for robots.** 49 tools that let Claude, Cursor, or any MCP client control a real ROS 2 robot. Plugin skills for autonomous behaviors. Real-time vision (YOLO + CLIP + JEPA). MuJoCo simulation. Fleet management. Two pip dependencies in the core — no ROS install required on your machine.
+**Open-source AI agent framework for robotics.** 49 [MCP](https://modelcontextprotocol.io) tools that let [Claude](https://claude.ai), [Cursor](https://cursor.com), or any AI control a real robot — ROS 1, ROS 2, or just a webcam. Plugin skills for autonomous behaviors (patrol, follow-me, object search). Real-time computer vision (YOLO, CLIP, JEPA). MuJoCo physics simulation. Multi-robot fleet management. Two pip dependencies — no ROS install required on your machine.
 
-Use any AI client you want — [Claude Desktop](https://claude.ai), [Claude Code](https://claude.ai/code), [Cursor](https://cursor.com), or any MCP-compatible host. Add one line to your config and your AI gets camera feeds, velocity control, sensor data, autonomous patrol, person following, object search, and full ROS 2 introspection. Switch robots by changing an IP address.
+Works with any MCP-compatible AI client: [Claude Desktop](https://claude.ai), [Claude Code](https://claude.ai/code), [Cursor](https://cursor.com), [Windsurf](https://codeium.com/windsurf), or your own. Add one line to your config and your AI gets camera feeds, velocity control, sensor data, autonomous patrol, person following, object search, and full ROS introspection. Connects over rosbridge (ROS 1 + ROS 2) or direct DDS (ROS 2). Switch robots by changing an IP address.
 
 <table>
 <tr><td><b>MCP-native from the ground up</b></td><td>49 tools, 8 guided prompts, 6 live resources, and a topic template — all exposed through standard MCP. HTTP+SSE and stdio transports. Works with any client that speaks the protocol.</td></tr>
 <tr><td><b>Skills plugin system</b></td><td>5 built-in skills (compose, inspect, follow-me, patrol, scan-detect). Write your own in 10 lines of Python. 4 loading paths: built-in, pip packages, filesystem, project config. Every skill becomes MCP tools automatically.</td></tr>
 <tr><td><b>Real-time vision stack</b></td><td>YOLO object detection + tracking, CLIP zero-shot search ("find the red cup"), JEPA self-supervised attention heatmaps, Cosmos 3 world model (16B, MLX 4-bit on Mac). Toggle models live from the UI.</td></tr>
-<tr><td><b>Any ROS 2 robot, no ROS needed</b></td><td>Connects over rosbridge WebSocket — no ROS installation on the host. Also supports direct DDS via CycloneDDS for zero-latency local transport. Tested with Unitree Go2, G1, TurtleBot, drones, arms.</td></tr>
+<tr><td><b>Any robot, no ROS install needed</b></td><td>Connects over rosbridge WebSocket (ROS 1 + ROS 2) — no ROS installation on the host. Also supports direct DDS via CycloneDDS for zero-latency ROS 2 transport. Works with Unitree Go2, G1, TurtleBot, drones, arms, or just a webcam.</td></tr>
 <tr><td><b>Built-in Claude + Gemini agent</b></td><td>Streaming tool use with dynamic ROS context injection. Safety velocity clamping. Persistent cross-session memory. Behavioral identity via SOUL.md.</td></tr>
 <tr><td><b>Simulation and fleet</b></td><td>MuJoCo headless physics with trained ONNX locomotion policies. Fleet dashboard for multi-robot management. Blueprint system for robot configurations. CLIP-indexed spatial memory with geo-search.</td></tr>
 </table>
@@ -168,11 +168,14 @@ Point `ROBORUN_SKILL_PATHS` at the directory. Done.
 
 ## Connect a Robot
 
-ros-agent connects to any robot running `rosbridge_server` over WebSocket. No ROS installation needed on your machine.
+ros-agent connects to any robot running `rosbridge_server` (ROS 1 or ROS 2) over WebSocket. No ROS installation needed on your machine.
 
 ```bash
-# On the robot
+# On a ROS 2 robot
 ros2 launch rosbridge_server rosbridge_websocket_launch.xml
+
+# On a ROS 1 robot
+roslaunch rosbridge_server rosbridge_websocket_launch.launch
 
 # From ros-agent — set IP in the UI, or:
 curl -X POST http://localhost:8765/api/ros/connect \
