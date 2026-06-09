@@ -1,4 +1,4 @@
-"""Run routes — seal, verify, replay, and tamper the chained journal.
+"""Run routes: seal, verify, replay, and tamper the chained journal.
 
 The event bus journals every event to disk as it happens (hash-chained).
 Sealing closes the current journal, Merkle-seals + signs it, and starts
@@ -48,7 +48,7 @@ def seal(h, payload):
     result = integrity.seal_run(run_dir)
     bus.record_sealed(run_dir.name, result["merkle_root"])
     bus.emit("system", "integrity",
-             f"RUN SEALED — {result['event_count']} events",
+             f"RUN SEALED · {result['event_count']} events",
              {"run": run_dir.name, "merkle_root": result["merkle_root"],
               "signed": result["signed"]})
     send_json(h, 200, {**result, "run": run_dir.name,
@@ -65,11 +65,11 @@ def verify(h, payload):
     if result.get("verified"):
         chain = "chain intact · " if result.get("chain_intact") else ""
         bus.emit("system", "integrity",
-                 f"VERIFIED — {result['event_count']} events · {chain}untampered",
+                 f"VERIFIED · {result['event_count']} events · {chain}untampered",
                  {"run": run_dir.name, "merkle_root": result["merkle_root"]})
     else:
         bus.emit("system", "integrity",
-                 f"VERIFICATION FAILED — {result.get('reason', 'unknown')}",
+                 f"VERIFICATION FAILED · {result.get('reason', 'unknown')}",
                  {"run": run_dir.name})
     send_json(h, 200, {**result, "run": run_dir.name})
 
@@ -78,12 +78,12 @@ def verify(h, payload):
 def tamper(h, payload):
     run_dir = _resolve(payload)
     if run_dir is None:
-        send_json(h, 200, {"ok": False, "error": "no sealed runs to tamper — seal first"})
+        send_json(h, 200, {"ok": False, "error": "no sealed runs to tamper: seal first"})
         return
     result = integrity.tamper_run(run_dir, payload.get("event"))
     if result.get("ok"):
         bus.emit("system", "integrity",
-                 f"run tampered — event {result['tampered_event']:04d} modified",
+                 f"run tampered · event {result['tampered_event']:04d} modified",
                  {"run": run_dir.name})
     send_json(h, 200, {**result, "run": run_dir.name})
 
