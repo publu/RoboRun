@@ -316,21 +316,54 @@ document.querySelector("#recToggle")?.addEventListener("click", async () => {
   refreshDashboard(true);
 });
 
-// ── Webcam start (from Control tab placeholder + stream button) ────────────
+// ── Source switcher (webcam / sim robots) ──────────────────────────────────
+
+let simActive = false;
+const sourceSelect = document.querySelector("#sourceSelect");
+
+async function populateSources() {
+  if (!sourceSelect) return;
+  try {
+    const r = await api("/api/sim/robots");
+    const robots = (r.robots || []).filter(rb => rb.available);
+    const extra = robots.map(rb => {
+      const warn = (!rb.has_policy && rb.type !== "drone") ? " [no walk policy]" : "";
+      return `<option value="sim:${rb.id}">${rb.name} (${rb.type})${warn}</option>`;
+    }).join("");
+    sourceSelect.innerHTML = `<option value="webcam">Webcam</option>${extra}`;
+    if (simActive && robots.length) {
+      const state = await api("/api/sim/state");
+      if (state.running) sourceSelect.value = `sim:${state.robot}`;
+    }
+  } catch {}
+}
+
+async function switchSource(value) {
+  if (value === "webcam") {
+    if (simActive) { await api("/api/sim/stop", {}); simActive = false; }
+    const models = [...document.querySelectorAll("[data-model].active")].map(b => b.dataset.model);
+    const r = await api("/api/webcam/start", { camera: 0, models: models.length ? models : ["yolo"] });
+    append(r.ok ? "Webcam started" : "Webcam start failed.", r);
+    if (r.ok) { startStream(); refreshDashboard(true); }
+  } else if (value.startsWith("sim:")) {
+    const robot = value.slice(4);
+    await api("/api/webcam/stop", {});
+    if (simActive) await api("/api/sim/stop", {});
+    const r = await api("/api/sim/start", { robot });
+    append(r.ok ? `Sim started: ${robot}` : "Sim start failed.", r);
+    if (r.ok) { simActive = true; startStream(); refreshDashboard(true); }
+  }
+}
+
+sourceSelect?.addEventListener("change", () => switchSource(sourceSelect.value));
+populateSources();
 
 async function startWebcam() {
-  if (simActive) { await api("/api/sim/stop", {}); simActive = false; }
-  const models = [...document.querySelectorAll("[data-model].active")].map(b => b.dataset.model);
-  const r = await api("/api/webcam/start", { camera: 0, models: models.length ? models : ["yolo"] });
-  append(r.ok ? "Webcam started" : "Webcam start failed.", r);
-  if (r.ok) { startStream(); refreshDashboard(true); }
+  if (sourceSelect) sourceSelect.value = "webcam";
+  await switchSource("webcam");
 }
 
 document.querySelector("#camStartWebcam")?.addEventListener("click", startWebcam);
-
-// ── Simulator (from Control tab placeholder) ───────────────────────────────
-
-let simActive = false;
 
 document.querySelector("#camStartSim")?.addEventListener("click", async () => {
   const picker = document.querySelector("#simPicker");
@@ -349,14 +382,9 @@ document.querySelector("#camStartSim")?.addEventListener("click", async () => {
 
 document.querySelector("#simLaunchBtn")?.addEventListener("click", async () => {
   const robot = document.querySelector("#simRobotSelect").value;
-  const r = await api("/api/sim/start", { robot });
-  append(r.ok ? `Sim started: ${robot}` : "Sim start failed.", r);
-  if (r.ok) {
-    simActive = true;
-    document.querySelector("#simPicker").style.display = "none";
-    startStream();
-    refreshDashboard(true);
-  }
+  if (sourceSelect) sourceSelect.value = `sim:${robot}`;
+  await switchSource(`sim:${robot}`);
+  document.querySelector("#simPicker").style.display = "none";
 });
 
 // ── Dataset tab ─────────────────────────────────────────────────────────────
@@ -569,29 +597,21 @@ function preemptFor(skill) {
 async function mcpCall(name, args) {
   const a = args || {};
   if (MOVEMENT_SKILLS.has(name)) { preemptFor(name); lastMovement = name; }
-  addUserMessage(`▷ ${name}${Object.keys(a).length ? "  " + JSON.stringify(a) : ""}`);
-  startAgentTurn();
-  const toolId = "d-" + Date.now();
-  addToolCall(toolId, name, a);
   let taskId;
   try {
     const resp = await fetch("/api/mcp/call", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ name, args: a }) });
     const data = await resp.json();
-    if (!data.task_id) { addToolResult(toolId, data.error || "failed", true); return; }
+    if (!data.task_id) { append(`${name} failed`, { ok: false, error: data.error || "unknown" }); return; }
     taskId = data.task_id;
-  } catch (e) { addToolResult(toolId, String(e), true); return; }
+  } catch (e) { append(`${name} failed`, { ok: false, error: String(e) }); return; }
   let interval = 250;
-  const started = Date.now();
   while (true) {
     await new Promise(r => setTimeout(r, interval));
     interval = Math.min(2000, Math.round(interval * 1.4));
     try {
       const s = await (await fetch("/api/mcp/result?id=" + encodeURIComponent(taskId))).json();
-      if (s.status === "done") { addToolResult(toolId, s.result || "(ok)", false); return; }
-      if (s.status === "error") { addToolResult(toolId, s.error || "MCP error", true); return; }
-      const el = Math.round((Date.now() - started) / 1000);
-      const card = currentTurn?.toolCards.get(toolId);
-      if (card) { const st = card.querySelector(".tc-status"); if (st) st.textContent = `running... ${el}s`; }
+      if (s.status === "done") { append(`${name} done`, { ok: true }); return; }
+      if (s.status === "error") { append(`${name} error`, { ok: false, error: s.error }); return; }
     } catch {}
   }
 }
@@ -612,7 +632,7 @@ function submitSkillPrompt() {
   const result = spBuild ? spBuild(v) : v;
   closeSkillPrompt();
   if (result == null) return;
-  agentSendMessage(result);
+  append(`Skill prompt: ${result}`, { ok: true });
 }
 document.querySelector("#spCancel")?.addEventListener("click", closeSkillPrompt);
 document.querySelector("#spBackdrop")?.addEventListener("click", closeSkillPrompt);
@@ -642,7 +662,7 @@ document.querySelectorAll(".ab").forEach(btn => {
     const def = SKILL_PROMPTS[skill];
     if (!def) return;
     if (def.ask) { openSkillPrompt(def.ask, def.placeholder, def.build); }
-    else { agentSendMessage(def.msg); }
+    else { append(def.msg, { ok: true }); }
   });
 });
 
@@ -659,23 +679,38 @@ moveStepSlider?.addEventListener("input", () => {
   if (moveStepLabel) moveStepLabel.textContent = moveStep.toFixed(1) + "m";
 });
 
-function move(fwd, left, deg) {
+function move(fwd, left, turn) {
   if (simActive) {
-    api("/api/sim/move", { forward: fwd, left, turn: deg });
+    api("/api/sim/move", { forward: fwd, left, turn });
     return;
   }
-  mcpCall("relative_move", { forward: fwd, left, degrees: deg });
+  api("/api/sim/move", { forward: fwd, left, turn }).then(r => {
+    if (!r.ok) {
+      fetch("/mcp", { method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method: "tools/call",
+          params: { name: "move", arguments: { linear_x: fwd, linear_y: left, angular_z: turn * Math.PI / 180 } } })
+      }).catch(() => {});
+    }
+  }).catch(() => {});
+}
+
+function stopMove() {
+  api("/api/sim/move", { forward: 0, left: 0, turn: 0 });
+  fetch("/mcp", { method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method: "tools/call",
+      params: { name: "estop", arguments: {} } })
+  }).catch(() => {});
 }
 
 const MOVE_BTNS = {
   "mv-fwd": () => move(moveStep, 0, 0), "mv-back": () => move(-moveStep, 0, 0),
   "mv-left": () => move(0, moveStep, 0), "mv-right": () => move(0, -moveStep, 0),
   "mv-tl": () => move(0, 0, 30), "mv-tr": () => move(0, 0, -30),
-  "mv-stop": () => mcpCall("stop_navigation", {}),
+  "mv-stop": stopMove,
 };
 Object.entries(MOVE_BTNS).forEach(([id, fn]) => document.querySelector(`#${id}`)?.addEventListener("click", fn));
 
-const MOVE_KEYS = { "w": () => move(moveStep,0,0), "s": () => move(-moveStep,0,0), "a": () => move(0,moveStep,0), "d": () => move(0,-moveStep,0), "q": () => move(0,0,30), "e": () => move(0,0,-30), " ": () => mcpCall("stop_navigation", {}) };
+const MOVE_KEYS = { "w": () => move(moveStep,0,0), "s": () => move(-moveStep,0,0), "a": () => move(0,moveStep,0), "d": () => move(0,-moveStep,0), "q": () => move(0,0,30), "e": () => move(0,0,-30), " ": stopMove };
 document.addEventListener("keydown", (ev) => {
   if (new Set(["INPUT","TEXTAREA","SELECT"]).has(document.activeElement?.tagName)) return;
   const fn = MOVE_KEYS[ev.key.toLowerCase()] || MOVE_KEYS[ev.key];

@@ -40,11 +40,12 @@ vision = [
 cosmos = ["cosmos-tokenizer>=0.1"]
 depth = ["transformers>=4.30"]
 jepa = ["timm>=0.9"]
+sim = ["mujoco>=3.0", "onnxruntime>=1.16"]
 dimos = ["dimos"]
 gemini = ["google-generativeai>=0.8"]
 zk = ["ezkl>=10.0", "onnx>=1.14"]
 ros = ["ros_tap>=0.1", "cyclonedds>=0.10"]
-all = ["ros-agent[vision,cosmos,depth,jepa,dimos,gemini,zk,ros]"]
+all = ["ros-agent[vision,sim,cosmos,depth,jepa,dimos,gemini,zk,ros]"]
 
 [project.scripts]
 ros-agent = "roborun.server:main"

@@ -330,6 +330,21 @@ def _tool_move(args: dict) -> dict:
     topic = args.get("topic", "/cmd_vel")
     domain_id = int(args.get("domain_id", os.environ.get("ROS_DOMAIN_ID", "0")))
 
+    try:
+        from roborun.routes._singletons import get_simulator
+        sim = get_simulator()
+        if sim.is_running:
+            sim.set_cmd_vel(forward=lx, left=ly, turn=az)
+            if dur:
+                def _stop():
+                    time.sleep(dur)
+                    sim.set_cmd_vel(0, 0, 0)
+                threading.Thread(target=_stop, daemon=True).start()
+            return {"ok": True, "linear_x": lx, "linear_y": ly, "angular_z": az,
+                    "transport": "mujoco", "will_stop_after_s": dur}
+    except Exception:
+        pass
+
     rb = _get_rosbridge(_get_robot_host())
     if rb:
         try:
@@ -360,6 +375,14 @@ def _tool_move(args: dict) -> dict:
 
 def _tool_estop(args: dict) -> dict:
     topic = args.get("topic", "/cmd_vel")
+    try:
+        from roborun.routes._singletons import get_simulator
+        sim = get_simulator()
+        if sim.is_running:
+            sim.set_cmd_vel(0, 0, 0)
+            return {"ok": True, "transport": "mujoco"}
+    except Exception:
+        pass
     rb = _get_rosbridge(_get_robot_host())
     if rb:
         try:
@@ -514,7 +537,21 @@ def _tool_set_param(args: dict) -> dict:
 def _tool_camera_snapshot(args: dict) -> dict:
     topic = args.get("topic", "/camera/image_raw/compressed")
 
-    # Try local webcam first
+    # Try sim frame first
+    try:
+        from pathlib import Path
+        sim_frame = Path("/tmp/roborun_frame.jpg")
+        from roborun.routes._singletons import get_simulator
+        sim = get_simulator()
+        if sim.is_running and sim_frame.exists():
+            raw = sim_frame.read_bytes()
+            b64 = base64.b64encode(raw).decode()
+            return {"ok": True, "source": "mujoco",
+                    "image": f"data:image/jpeg;base64,{b64}"}
+    except Exception:
+        pass
+
+    # Try local webcam
     try:
         from roborun.webcam import WebcamProcessor
         wc = WebcamProcessor.get()
@@ -574,6 +611,23 @@ def _tool_navigate(args: dict) -> dict:
 
 
 def _tool_get_robot_info(args: dict) -> dict:
+    try:
+        from roborun.routes._singletons import get_simulator
+        sim = get_simulator()
+        if sim.is_running:
+            state = sim.get_state()
+            return {
+                "ok": True,
+                "type": state.get("robot_type", "simulated"),
+                "label": f"MuJoCo: {state.get('robot', 'unknown')}",
+                "transport": "mujoco",
+                "sim_time": state.get("sim_time", 0),
+                "position": state.get("position"),
+                "has_policy": state.get("has_policy", False),
+                "fps": state.get("fps", 0),
+            }
+    except Exception:
+        pass
     from roborun.robot_types import detect_type, get_profile
     disc = _discover()
     topic_names = [t["name"] for t in disc["topics"]]

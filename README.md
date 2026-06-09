@@ -57,6 +57,7 @@ npx ros-agent
 
 ```bash
 pip install ros-agent[vision]   # YOLO + CLIP + OpenCV
+pip install ros-agent[sim]      # MuJoCo physics simulation
 pip install ros-agent[ros]      # Direct DDS (CycloneDDS)
 pip install ros-agent[gemini]   # Gemini agent
 pip install ros-agent[all]      # Everything

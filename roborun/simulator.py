@@ -274,6 +274,7 @@ class SimulatorRunner:
                 except Exception:
                     self._policy = None
 
+        self._base_cmd = (0.0, 0.0, 0.0)
         if not self._policy and not self._drone_ctrl:
             self._model.opt.gravity[:] = 0
 
@@ -310,6 +311,8 @@ class SimulatorRunner:
             self._drone_ctrl.set_command(forward, left, turn)
         elif self._policy:
             self._policy.set_command(forward, left, turn)
+        else:
+            self._base_cmd = (forward, left, turn)
 
     def get_state(self) -> dict[str, Any]:
         pos = [0.0, 0.0, 0.0]
@@ -420,8 +423,19 @@ class SimulatorRunner:
                             mujoco.mj_step(self._model, self._data)
                         self._sim_time = self._data.time
                     else:
-                        mujoco.mj_forward(self._model, self._data)
-                        self._sim_time = self._sim_time + 1.0 / target_fps
+                        fwd, left, turn = self._base_cmd
+                        if fwd or left or turn:
+                            yaw = 0.0
+                            if len(self._data.qpos) >= 7:
+                                w, x, y, z = self._data.qpos[3:7]
+                                yaw = float(np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)))
+                            c, s = np.cos(yaw), np.sin(yaw)
+                            self._data.qvel[0] = (fwd * c - left * s) * 2.0
+                            self._data.qvel[1] = (fwd * s + left * c) * 2.0
+                            self._data.qvel[5] = turn * 1.5
+                        for _ in range(4):
+                            mujoco.mj_step(self._model, self._data)
+                        self._sim_time = self._data.time
 
                 quat = self._data.qpos[3:7]
                 w, x, y, z = quat
