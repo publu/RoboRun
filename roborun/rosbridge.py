@@ -23,10 +23,16 @@ import uuid
 from typing import Any, Callable
 
 
+import logging
+
+_log = logging.getLogger(__name__)
+
+
 class RosbridgeClient:
     DEFAULT_PORT = 9090
 
-    def __init__(self, host: str = "127.0.0.1", port: int = DEFAULT_PORT) -> None:
+    def __init__(self, host: str = "127.0.0.1", port: int = DEFAULT_PORT,
+                 auto_reconnect: bool = True) -> None:
         self._host = host
         self._port = port
         self._ws = None
@@ -35,6 +41,11 @@ class RosbridgeClient:
         self._subscribers: dict[str, list[Callable]] = {}
         self._connected = False
         self._recv_thread: threading.Thread | None = None
+        self._health_thread: threading.Thread | None = None
+        self._auto_reconnect = auto_reconnect
+        self._reconnect_delay = 1.0
+        self._max_reconnect_delay = 30.0
+        self._disconnect_count = 0
 
     # ── Connection ────────────────────────────────────────────────────────────
 
@@ -44,10 +55,16 @@ class RosbridgeClient:
         self._ws = websocket.WebSocket()
         self._ws.connect(url, timeout=timeout)
         self._connected = True
+        self._reconnect_delay = 1.0
         self._recv_thread = threading.Thread(target=self._recv_loop, daemon=True)
         self._recv_thread.start()
+        if self._auto_reconnect and self._health_thread is None:
+            self._health_thread = threading.Thread(target=self._health_loop, daemon=True)
+            self._health_thread.start()
+        _log.info("Connected to rosbridge at %s:%d", self._host, self._port)
 
     def disconnect(self) -> None:
+        self._auto_reconnect = False
         self._connected = False
         if self._ws:
             try:
@@ -56,9 +73,46 @@ class RosbridgeClient:
                 pass
             self._ws = None
 
+    def _reconnect(self) -> bool:
+        try:
+            import websocket
+            url = f"ws://{self._host}:{self._port}"
+            ws = websocket.WebSocket()
+            ws.connect(url, timeout=3.0)
+            self._ws = ws
+            self._connected = True
+            self._reconnect_delay = 1.0
+            self._recv_thread = threading.Thread(target=self._recv_loop, daemon=True)
+            self._recv_thread.start()
+            _log.info("Reconnected to rosbridge at %s:%d", self._host, self._port)
+            return True
+        except Exception:
+            self._reconnect_delay = min(self._reconnect_delay * 2, self._max_reconnect_delay)
+            return False
+
+    def _health_loop(self) -> None:
+        while self._auto_reconnect:
+            time.sleep(5.0)
+            if not self._connected and self._auto_reconnect:
+                self._disconnect_count += 1
+                _log.warning("Rosbridge disconnected (count=%d), retrying in %.1fs",
+                             self._disconnect_count, self._reconnect_delay)
+                time.sleep(self._reconnect_delay)
+                self._reconnect()
+
     @property
     def is_connected(self) -> bool:
         return self._connected and self._ws is not None
+
+    @property
+    def health(self) -> dict:
+        return {
+            "connected": self.is_connected,
+            "host": self._host,
+            "port": self._port,
+            "disconnect_count": self._disconnect_count,
+            "auto_reconnect": self._auto_reconnect,
+        }
 
     def _send(self, msg: dict) -> None:
         if not self._ws:

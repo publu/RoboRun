@@ -4,14 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "roborun"
-version = "0.7.0"
-description = "Agentic robot OS with direct ROS connectivity, vision AI, and MCP"
+version = "0.8.0"
+description = "Agentic robot OS — skills, fleet, vision AI, and MCP for any ROS robot"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [{name = "Pablo", email = "pablo@hashingsystems.com"}]
 
 dependencies = [
+    "websocket-client>=1.6",
+    "websockets>=12.0",
+]
+
+[project.optional-dependencies]
+vision = [
     "ultralytics>=8.0",
     "opencv-python>=4.8",
     "numpy>=1.24",
@@ -19,11 +25,7 @@ dependencies = [
     "torch>=2.0",
     "torchvision>=0.15",
     "open-clip-torch>=2.20",
-    "websocket-client>=1.6",
-    "websockets>=12.0",
 ]
-
-[project.optional-dependencies]
 cosmos = ["cosmos-tokenizer>=0.1"]
 depth = ["transformers>=4.30"]
 jepa = ["timm>=0.9"]
@@ -31,10 +33,11 @@ robot = ["dimos"]
 gemini = ["google-generativeai>=0.8"]
 zk = ["ezkl>=10.0", "onnx>=1.14"]
 ros = ["ros_tap>=0.1", "cyclonedds>=0.10"]
-all = ["roborun[cosmos,depth,jepa,robot,gemini,zk,ros]"]
+all = ["roborun[vision,cosmos,depth,jepa,robot,gemini,zk,ros]"]
 
 [project.scripts]
 roborun = "roborun.server:main"
+roborun-mcp = "roborun.mcp_stdio:main"
 
 [tool.setuptools.packages.find]
 include = ["roborun*"]

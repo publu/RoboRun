@@ -314,10 +314,18 @@ def _tool_publish(args: dict) -> dict:
     return {"ok": False, "error": "No transport available. Connect to robot first."}
 
 
+_MAX_LIN = float(os.environ.get("ROBORUN_MAX_LINEAR_VEL", "1.0"))
+_MAX_ANG = float(os.environ.get("ROBORUN_MAX_ANGULAR_VEL", "1.5"))
+
+
+def _clamp(v: float, limit: float) -> float:
+    return max(-limit, min(limit, v))
+
+
 def _tool_move(args: dict) -> dict:
-    lx = float(args.get("linear_x", 0))
-    ly = float(args.get("linear_y", 0))
-    az = float(args.get("angular_z", 0))
+    lx = _clamp(float(args.get("linear_x", 0)), _MAX_LIN)
+    ly = _clamp(float(args.get("linear_y", 0)), _MAX_LIN)
+    az = _clamp(float(args.get("angular_z", 0)), _MAX_ANG)
     dur = args.get("duration_s")
     topic = args.get("topic", "/cmd_vel")
     domain_id = int(args.get("domain_id", os.environ.get("ROS_DOMAIN_ID", "0")))
@@ -602,6 +610,138 @@ def _tool_telemetry_stream(args: dict) -> dict:
     return {"ok": False, "error": f"Unknown action: {action}"}
 
 
+# ── New introspection tools (Phase 4c — ros-mcp-server parity) ─────────────────
+
+def _tool_get_topic_details(args: dict) -> dict:
+    topic = args.get("topic", "")
+    rb = _get_rosbridge(_get_robot_host())
+    if not rb:
+        return {"ok": False, "error": "Requires rosbridge for topic details"}
+    try:
+        pubs = rb.call_service("/rosapi/publishers", args={"topic": topic}, timeout=3.0)
+        subs = rb.call_service("/rosapi/subscribers", args={"topic": topic}, timeout=3.0)
+        ttype = rb.call_service("/rosapi/topic_type", args={"topic": topic}, timeout=3.0)
+        return {
+            "ok": True, "topic": topic,
+            "type": ttype.get("type", "unknown") if ttype else "unknown",
+            "publishers": pubs.get("publishers", []) if pubs else [],
+            "subscribers": subs.get("subscribers", []) if subs else [],
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _tool_get_node_details(args: dict) -> dict:
+    node = args.get("node", "")
+    rb = _get_rosbridge(_get_robot_host())
+    if not rb:
+        disc = _discover()
+        for n in disc["nodes"]:
+            if n["name"] == node:
+                return {"ok": True, "node": node, "topics": n.get("topics", []),
+                        "source": "dds"}
+        return {"ok": False, "error": "Node not found via DDS"}
+    try:
+        details = rb.call_service("/rosapi/node_details", args={"node": node}, timeout=3.0)
+        if details:
+            return {"ok": True, "node": node,
+                    "publishing": details.get("publishing", []),
+                    "subscribing": details.get("subscribing", []),
+                    "services": details.get("services", [])}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": False, "error": f"Node {node} not found"}
+
+
+def _tool_get_service_details(args: dict) -> dict:
+    service = args.get("service", "")
+    rb = _get_rosbridge(_get_robot_host())
+    if not rb:
+        return {"ok": False, "error": "Requires rosbridge"}
+    try:
+        stype = rb.call_service("/rosapi/service_type", args={"service": service}, timeout=3.0)
+        if stype:
+            type_name = stype.get("type", "")
+            req_details = rb.call_service("/rosapi/service_request_details",
+                                          args={"type": type_name}, timeout=3.0)
+            resp_details = rb.call_service("/rosapi/service_response_details",
+                                           args={"type": type_name}, timeout=3.0)
+            return {"ok": True, "service": service, "type": type_name,
+                    "request": req_details, "response": resp_details}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": False, "error": f"Service {service} not found"}
+
+
+def _tool_publish_for_duration(args: dict) -> dict:
+    topic = args.get("topic", "")
+    msg_type = args.get("type", "")
+    message = args.get("message", {})
+    duration = float(args.get("duration_s", 1.0))
+    rate = float(args.get("rate_hz", 10.0))
+
+    rb = _get_rosbridge(_get_robot_host())
+    if not rb:
+        return {"ok": False, "error": "Requires rosbridge connection"}
+
+    if "Twist" in msg_type and "cmd_vel" in topic:
+        lin = message.get("linear", {})
+        ang = message.get("angular", {})
+        message["linear"]["x"] = _clamp(float(lin.get("x", 0)), _MAX_LIN)
+        message["linear"]["y"] = _clamp(float(lin.get("y", 0)), _MAX_LIN)
+        message["angular"]["z"] = _clamp(float(ang.get("z", 0)), _MAX_ANG)
+
+    count = 0
+    interval = 1.0 / rate
+    end_time = time.time() + min(duration, 10.0)
+    try:
+        while time.time() < end_time:
+            rb.publish(topic, msg_type, message)
+            count += 1
+            time.sleep(interval)
+        return {"ok": True, "topic": topic, "messages_sent": count,
+                "duration_s": duration, "rate_hz": rate}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "messages_sent": count}
+
+
+def _tool_cancel_action(args: dict) -> dict:
+    action = args.get("action", "")
+    rb = _get_rosbridge(_get_robot_host())
+    if not rb:
+        return {"ok": False, "error": "Requires rosbridge"}
+    try:
+        cancel_topic = f"{action}/cancel"
+        rb.publish(cancel_topic, "actionlib_msgs/GoalID", {})
+        return {"ok": True, "action": action, "cancelled": True}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _tool_has_parameter(args: dict) -> dict:
+    name = args.get("name", "")
+    rb = _get_rosbridge(_get_robot_host())
+    if not rb:
+        return {"ok": False, "error": "Requires rosbridge"}
+    try:
+        result = rb.call_service("/rosapi/has_param", args={"name": name}, timeout=3.0)
+        return {"ok": True, "name": name, "exists": result.get("exists", False) if result else False}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _tool_delete_parameter(args: dict) -> dict:
+    name = args.get("name", "")
+    rb = _get_rosbridge(_get_robot_host())
+    if not rb:
+        return {"ok": False, "error": "Requires rosbridge"}
+    try:
+        rb.call_service("/rosapi/delete_param", args={"name": name}, timeout=3.0)
+        return {"ok": True, "name": name, "deleted": True}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 # ── Image helpers ─────────────────────────────────────────────────────────────
 
 def _is_image_msg(msg: dict) -> bool:
@@ -871,6 +1011,77 @@ MCP_TOOLS = [
             "required": ["action"],
         },
     },
+    # --- Detailed introspection (Phase 4c) ---
+    {
+        "name": "get_topic_details",
+        "description": "Get detailed info about a topic: publishers, subscribers, and message type.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"topic": {"type": "string"}},
+            "required": ["topic"],
+        },
+    },
+    {
+        "name": "get_node_details",
+        "description": "Get detailed info about a node: what it publishes, subscribes to, and services it provides.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"node": {"type": "string"}},
+            "required": ["node"],
+        },
+    },
+    {
+        "name": "get_service_details",
+        "description": "Get the request/response field definitions for a service type.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"service": {"type": "string"}},
+            "required": ["service"],
+        },
+    },
+    # --- Extended publish/action/param (Phase 4d) ---
+    {
+        "name": "publish_for_duration",
+        "description": "Publish a message repeatedly at a given rate for N seconds. Useful for holding velocity commands or sending periodic data.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string"},
+                "type": {"type": "string", "description": "ROS message type"},
+                "message": {"type": "object", "description": "Message data"},
+                "duration_s": {"type": "number", "description": "How long to publish (default 1, max 10)"},
+                "rate_hz": {"type": "number", "description": "Publish rate (default 10)"},
+            },
+            "required": ["topic", "type", "message"],
+        },
+    },
+    {
+        "name": "cancel_action_goal",
+        "description": "Cancel an in-flight action goal.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"action": {"type": "string", "description": "Action server name"}},
+            "required": ["action"],
+        },
+    },
+    {
+        "name": "has_parameter",
+        "description": "Check if a ROS parameter exists without throwing an error.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "delete_parameter",
+        "description": "Delete a ROS parameter.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        },
+    },
 ]
 
 _TOOL_HANDLERS = {
@@ -897,23 +1108,51 @@ _TOOL_HANDLERS = {
     "get_nodes": _tool_get_nodes,
     "camera_snapshot": _tool_camera_snapshot,
     "telemetry_stream": _tool_telemetry_stream,
+    "get_topic_details": _tool_get_topic_details,
+    "get_node_details": _tool_get_node_details,
+    "get_service_details": _tool_get_service_details,
+    "publish_for_duration": _tool_publish_for_duration,
+    "cancel_action_goal": _tool_cancel_action,
+    "has_parameter": _tool_has_parameter,
+    "delete_parameter": _tool_delete_parameter,
 }
 
 
 def handle_tool_call(name: str, args: dict) -> dict:
     handler = _TOOL_HANDLERS.get(name)
-    if not handler:
-        return {"ok": False, "error": f"Unknown tool: {name}"}
+    if handler:
+        try:
+            return handler(args)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    # Fall through to skills registry
     try:
-        return handler(args)
-    except Exception as exc:
-        return {"ok": False, "error": str(exc)}
+        from roborun.skills import get_registry
+        result = get_registry().handle_tool_call(name, args)
+        if result is not None:
+            return result
+    except Exception:
+        pass
+
+    return {"ok": False, "error": f"Unknown tool: {name}"}
+
+
+def get_all_tools() -> list[dict]:
+    """All MCP tools: built-in + skills."""
+    tools = list(MCP_TOOLS)
+    try:
+        from roborun.skills import get_registry
+        tools.extend(get_registry().get_mcp_tools())
+    except Exception:
+        pass
+    return tools
 
 
 def get_mcp_manifest() -> dict:
     return {
         "name": "roborun-ros",
         "version": "0.7.0",
-        "description": "Direct ROS robot control — DDS + rosbridge, zero-config discovery, full topic/service/action/param access. No ROS install needed.",
-        "tools": MCP_TOOLS,
+        "description": "Direct ROS robot control — DDS + rosbridge, zero-config discovery, full topic/service/action/param access, extensible skills. No ROS install needed.",
+        "tools": get_all_tools(),
     }

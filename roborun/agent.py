@@ -3,12 +3,17 @@
 Claude agent: persistent subprocess using the claude CLI with MCP servers for
 dimOS robot control and the RoboRun workbench.
 
+Fast agent: direct Anthropic SDK with multimodal sensor injection, safety
+velocity limits, dynamic ROS context, and persistent memory.
+
 Gemini agent: stateless function-calling loop using google-generativeai. Exposes
 the same robot tool surface as agenticROS's MCP tools, no MCP required.
 """
 from __future__ import annotations
 
 import json
+import logging
+import os
 import subprocess
 import threading
 import time
@@ -16,8 +21,140 @@ import urllib.request
 from pathlib import Path
 from typing import Iterator
 
+log = logging.getLogger(__name__)
+
 ROOT = Path(__file__).resolve().parent.parent
 SESSION_FILE = ROOT / ".roborun" / "agent_session.txt"
+MEMORY_FILE = ROOT / ".roborun" / "agent_memory.json"
+SOUL_FILE = ROOT / ".roborun" / "SOUL.md"
+
+# ── Safety limits ──────────────────────────────────────────────────────────────
+
+MAX_LINEAR_VEL = float(os.environ.get("ROBORUN_MAX_LINEAR_VEL", "1.0"))
+MAX_ANGULAR_VEL = float(os.environ.get("ROBORUN_MAX_ANGULAR_VEL", "1.5"))
+
+
+def _clamp_velocity(linear_x: float = 0.0, linear_y: float = 0.0,
+                    angular_z: float = 0.0) -> tuple[float, float, float]:
+    clamped = False
+    lx = max(-MAX_LINEAR_VEL, min(MAX_LINEAR_VEL, linear_x))
+    ly = max(-MAX_LINEAR_VEL, min(MAX_LINEAR_VEL, linear_y))
+    az = max(-MAX_ANGULAR_VEL, min(MAX_ANGULAR_VEL, angular_z))
+    if lx != linear_x or ly != linear_y or az != angular_z:
+        clamped = True
+        log.warning("Velocity clamped: (%.2f,%.2f,%.2f) -> (%.2f,%.2f,%.2f)",
+                    linear_x, linear_y, angular_z, lx, ly, az)
+    return lx, ly, az
+
+
+# ── Persistent memory ──────────────────────────────────────────────────────────
+
+_memory_lock = threading.Lock()
+
+
+def _load_memory() -> list[dict]:
+    with _memory_lock:
+        try:
+            return json.loads(MEMORY_FILE.read_text()) if MEMORY_FILE.exists() else []
+        except Exception:
+            return []
+
+
+def _save_memory(facts: list[dict]) -> None:
+    with _memory_lock:
+        MEMORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        MEMORY_FILE.write_text(json.dumps(facts, indent=2))
+
+
+def memory_remember(fact: str, tags: list[str] | None = None) -> dict:
+    facts = _load_memory()
+    entry = {"id": len(facts), "fact": fact, "tags": tags or [], "ts": time.time()}
+    facts.append(entry)
+    _save_memory(facts)
+    return entry
+
+
+def memory_recall(query: str, top_k: int = 5) -> list[dict]:
+    facts = _load_memory()
+    q = query.lower()
+    scored = []
+    for f in facts:
+        text = f["fact"].lower()
+        tags = " ".join(f.get("tags", [])).lower()
+        score = sum(1 for w in q.split() if w in text or w in tags)
+        if score > 0:
+            scored.append((score, f))
+    scored.sort(key=lambda x: -x[0])
+    return [f for _, f in scored[:top_k]]
+
+
+def memory_forget(fact_id: int) -> bool:
+    facts = _load_memory()
+    before = len(facts)
+    facts = [f for f in facts if f.get("id") != fact_id]
+    if len(facts) < before:
+        _save_memory(facts)
+        return True
+    return False
+
+
+# ── Dynamic ROS context injection ──────────────────────────────────────────────
+
+_ros_context_cache: dict = {"text": "", "ts": 0}
+_ROS_CONTEXT_TTL = 60.0
+
+
+def _get_ros_context() -> str:
+    now = time.time()
+    if now - _ros_context_cache["ts"] < _ROS_CONTEXT_TTL and _ros_context_cache["text"]:
+        return _ros_context_cache["text"]
+    try:
+        from roborun.ros_mcp import _discover
+        disc = _discover()
+        topics = disc.get("topics", [])[:25]
+        nodes = disc.get("nodes", [])[:15]
+        transports = disc.get("transports", {})
+        parts = []
+        if transports.get("dds") or transports.get("rosbridge"):
+            parts.append(f"Transports: DDS={'yes' if transports.get('dds') else 'no'}, "
+                         f"rosbridge={'yes' if transports.get('rosbridge') else 'no'}")
+        if topics:
+            topic_lines = [f"  {t['name']} [{t['type']}]" for t in topics]
+            parts.append(f"Topics ({len(topics)}):\n" + "\n".join(topic_lines))
+        if nodes:
+            node_names = [n["name"] for n in nodes]
+            parts.append(f"Nodes: {', '.join(node_names)}")
+        text = "\n".join(parts)
+    except Exception:
+        text = ""
+    _ros_context_cache.update(text=text, ts=now)
+    return text
+
+
+# ── SOUL.md identity ──────────────────────────────────────────────────────────
+
+def _get_soul() -> str:
+    if SOUL_FILE.exists():
+        try:
+            return SOUL_FILE.read_text().strip()
+        except Exception:
+            pass
+    return ""
+
+
+def _ensure_soul() -> None:
+    if not SOUL_FILE.exists():
+        SOUL_FILE.parent.mkdir(parents=True, exist_ok=True)
+        SOUL_FILE.write_text(
+            "# RoboRun Agent Identity\n\n"
+            "1. **Safety first** — never exceed velocity limits, stop on uncertainty\n"
+            "2. **Observe before acting** — check camera/sensors before physical actions\n"
+            "3. **Verify after acting** — confirm actions succeeded via sensor feedback\n"
+            "4. **Be concise** — this is a control panel, not a chatbot\n"
+        )
+
+
+_ensure_soul()
 
 ROBOT_OPERATOR_CONTEXT = """You are the operator control agent for a robot running the dimOS stack.
 
@@ -298,6 +435,53 @@ _FAST_TOOLS = [
             "required": ["x", "y", "z"],
         },
     },
+    {
+        "name": "remember",
+        "description": "Store a fact in persistent memory. Facts persist across sessions and are shared between agents.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fact": {"type": "string", "description": "The fact to remember"},
+                "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags for retrieval"},
+            },
+            "required": ["fact"],
+        },
+    },
+    {
+        "name": "recall",
+        "description": "Search persistent memory for relevant facts by keyword.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query"},
+                "top_k": {"type": "integer", "description": "Max results (default 5)"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "forget",
+        "description": "Delete a fact from persistent memory by ID.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer", "description": "Fact ID to delete"},
+            },
+            "required": ["id"],
+        },
+    },
+    {
+        "name": "find_object",
+        "description": "Actively search for an object by rotating the robot and checking the camera at each step. Returns when found or after full rotation.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "label": {"type": "string", "description": "Object label to find (e.g. 'person', 'cup', 'chair')"},
+                "max_rotation_deg": {"type": "number", "description": "Max rotation before giving up (default 360)"},
+            },
+            "required": ["label"],
+        },
+    },
 ]
 
 
@@ -361,12 +545,12 @@ def _execute_fast_tool(name: str, args: dict) -> str:
         return "Skill timed out."
 
     elif name == "move":
-        lx = float(args.get("linear_x", 0.0))
-        az = float(args.get("angular_z", 0.0))
+        lx, _, az = _clamp_velocity(
+            float(args.get("linear_x", 0.0)), 0.0, float(args.get("angular_z", 0.0)))
         dur = float(args.get("duration_s", 0.0))
         result = _call_local_api("/api/ros/move", {"linear_x": lx, "angular_z": az})
         if dur > 0:
-            time.sleep(dur)
+            time.sleep(min(dur, 5.0))
             _call_local_api("/api/ros/move", {"linear_x": 0.0, "angular_z": 0.0})
         return "Move sent." if result.get("ok") else f"Move failed: {result.get('error')}"
 
@@ -418,7 +602,58 @@ def _execute_fast_tool(name: str, args: dict) -> str:
         result = _call_local_api("/api/sim/waypoint", {"x": x, "y": y, "z": z})
         return f"Waypoint ({x},{y},{z})" if result.get("ok") else f"Failed: {result.get('error')}"
 
+    elif name == "remember":
+        entry = memory_remember(args.get("fact", ""), args.get("tags"))
+        return f"Remembered (id={entry['id']}): {entry['fact'][:100]}"
+
+    elif name == "recall":
+        results = memory_recall(args.get("query", ""), int(args.get("top_k", 5)))
+        if not results:
+            return "No matching facts in memory."
+        return "\n".join(f"[{f['id']}] {f['fact']}" for f in results)
+
+    elif name == "forget":
+        ok = memory_forget(int(args.get("id", -1)))
+        return "Fact deleted." if ok else "Fact not found."
+
+    elif name == "find_object":
+        return _find_object(args.get("label", ""), float(args.get("max_rotation_deg", 360)))
+
     return f"Unknown tool: {name}"
+
+
+def _find_object(label: str, max_rotation_deg: float = 360) -> str:
+    """Rotate the robot incrementally, checking camera at each step."""
+    import math
+    step_deg = 30
+    steps = int(max_rotation_deg / step_deg)
+    label_lower = label.lower()
+
+    for i in range(steps):
+        # Check camera + state
+        for p in _STATE_PATHS:
+            try:
+                if p.exists() and (time.time() - p.stat().st_mtime) < 5.0:
+                    state = json.loads(p.read_text())
+                    for det in state.get("detections", []):
+                        if det.get("label", "").lower() == label_lower and det.get("confidence", 0) >= 0.4:
+                            bbox = det.get("bbox", [])
+                            cx = (bbox[0] + bbox[2]) / 2 if len(bbox) >= 4 else 0
+                            return (f"Found '{label}' at step {i} ({i*step_deg}deg rotation). "
+                                    f"Confidence: {det['confidence']:.2f}, "
+                                    f"bbox center x: {cx:.0f}")
+            except Exception:
+                pass
+
+        # Rotate by step_deg
+        az = math.radians(step_deg)
+        lx, _, az_clamped = _clamp_velocity(0, 0, az)
+        _call_local_api("/api/ros/move", {"linear_x": 0, "angular_z": az_clamped})
+        time.sleep(0.8)
+        _call_local_api("/api/ros/move", {"linear_x": 0, "angular_z": 0})
+        time.sleep(0.5)
+
+    return f"'{label}' not found after {max_rotation_deg}deg rotation."
 
 
 class FastRobotAgent:
@@ -470,12 +705,26 @@ class FastRobotAgent:
             accumulated = ""
 
             for _round in range(self.MAX_TOOL_ROUNDS):
+                # Build dynamic system prompt with ROS context + SOUL + memory
+                system_parts = [_FAST_SYSTEM]
+                soul = _get_soul()
+                if soul:
+                    system_parts.append(f"\n## Identity\n{soul}")
+                ros_ctx = _get_ros_context()
+                if ros_ctx:
+                    system_parts.append(f"\n## Live ROS Graph\n{ros_ctx}")
+                recent_mem = memory_recall("recent", top_k=5)
+                if recent_mem:
+                    mem_lines = [f"- {f['fact']}" for f in recent_mem]
+                    system_parts.append(f"\n## Memory\n" + "\n".join(mem_lines))
+                dynamic_system = "\n".join(system_parts)
+
                 # Stream the response
                 try:
                     with client.messages.stream(
                         model=self.MODEL,
                         max_tokens=2048,
-                        system=_FAST_SYSTEM,
+                        system=dynamic_system,
                         messages=self._history,
                         tools=_FAST_TOOLS,
                     ) as stream:
@@ -660,10 +909,12 @@ def _execute_gemini_tool(name: str, args: dict) -> str:
         return f"Camera unavailable: {result.get('error', 'no frame')}"
 
     elif name == "move_robot":
+        lx, ly, az = _clamp_velocity(
+            float(args.get("linear_x", 0.0)),
+            float(args.get("linear_y", 0.0)),
+            float(args.get("angular_z", 0.0)))
         result = _call_local_api("/api/ros/move", {
-            "linear_x": args.get("linear_x", 0.0),
-            "linear_y": args.get("linear_y", 0.0),
-            "angular_z": args.get("angular_z", 0.0),
+            "linear_x": lx, "linear_y": ly, "angular_z": az,
             "topic": args.get("topic", "/cmd_vel"),
         })
         return "Move command sent." if result.get("ok") else f"Move failed: {result.get('error')}"

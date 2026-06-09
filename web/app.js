@@ -11,11 +11,19 @@ function escapeHtml(v) {
   return String(v ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
 }
 
-async function api(path, payload) {
-  const opts = payload === undefined ? {} : {
-    method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload)
+const _inflight = new Map();
+
+async function api(path, payload, { timeout = 10000, dedupe = false, signal } = {}) {
+  if (dedupe && _inflight.has(path)) return _inflight.get(path);
+  const ac = new AbortController();
+  if (signal) signal.addEventListener("abort", () => ac.abort());
+  const timer = setTimeout(() => ac.abort(), timeout);
+  const opts = payload === undefined ? { signal: ac.signal } : {
+    method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload), signal: ac.signal
   };
-  return (await fetch(path, opts)).json();
+  const p = fetch(path, opts).then(r => r.json()).finally(() => { clearTimeout(timer); _inflight.delete(path); });
+  if (dedupe) _inflight.set(path, p);
+  return p;
 }
 
 function append(message, data = {}) {
@@ -521,7 +529,6 @@ document.querySelector("#mapStartReplay")?.addEventListener("click", async () =>
 });
 
 connectCommandCenter();
-setInterval(() => { if (!ccSocket || !ccSocket.connected) connectCommandCenter(); }, 10000);
 
 // ── Robot skill buttons (direct MCP) ────────────────────────────────────────
 
@@ -1378,6 +1385,78 @@ refreshDashboard = async function (quiet) {
 
 // ── Init ────────────────────────────────────────────────────────────────────
 
+// ── Unified Scheduler ─────────────────────────────────────────────────────
+// Single RAF-gated loop replaces 5+ independent setIntervals.
+// Auto-pauses when tab is hidden — no wasted requests or timer leaks.
+
+const _schedule = [
+  { fn: () => refreshDashboard(true), interval: 15000, last: 0 },
+  { fn: () => loadTasks(),            interval: 20000, last: 0 },
+  { fn: () => loadEvents(false),      interval: 10000, last: 0 },
+  { fn: () => loadFleet(),            interval: 30000, last: 0 },
+  { fn: () => refreshTimeline(),      interval:  4000, last: 0 },
+  { fn: () => { if (!ccSocket || !ccSocket.connected) connectCommandCenter(); }, interval: 10000, last: 0 },
+];
+
+let _schedActive = true;
+
+function schedulerTick() {
+  if (!_schedActive || document.hidden) { requestAnimationFrame(schedulerTick); return; }
+  const now = performance.now();
+  for (const job of _schedule) {
+    if (now - job.last >= job.interval) {
+      job.last = now;
+      try { job.fn(); } catch {}
+    }
+  }
+  requestAnimationFrame(schedulerTick);
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    for (const job of _schedule) job.last = 0;
+  }
+});
+
+// ── Gamepad Teleop ────────────────────────────────────────────────────────
+
+let _gamepadConnected = false;
+let _gamepadInterval = null;
+
+function pollGamepad() {
+  const gps = navigator.getGamepads();
+  if (!gps) return;
+  for (const gp of gps) {
+    if (!gp) continue;
+    const lx = Math.abs(gp.axes[1]) > 0.12 ? -gp.axes[1] : 0;
+    const az = Math.abs(gp.axes[2] ?? gp.axes[0]) > 0.12 ? -(gp.axes[2] ?? gp.axes[0]) : 0;
+    if (lx === 0 && az === 0) continue;
+    if (simActive) {
+      api("/api/sim/move", { forward: lx * moveStep, left: 0, turn: az * 30 });
+    } else {
+      api("/api/mcp/call", { name: "move", args: { linear_x: lx * 0.5, angular_z: az * 1.0, duration_s: 0.2 } });
+    }
+    break;
+  }
+}
+
+window.addEventListener("gamepadconnected", (e) => {
+  _gamepadConnected = true;
+  showToast(`Gamepad: ${e.gamepad.id.slice(0, 30)}`);
+  if (!_gamepadInterval) _gamepadInterval = setInterval(pollGamepad, 100);
+  const badge = document.getElementById("gamepadBadge");
+  if (badge) badge.style.display = "";
+});
+
+window.addEventListener("gamepaddisconnected", () => {
+  _gamepadConnected = false;
+  if (_gamepadInterval) { clearInterval(_gamepadInterval); _gamepadInterval = null; }
+  const badge = document.getElementById("gamepadBadge");
+  if (badge) badge.style.display = "none";
+});
+
+// ── Init ────────────────────────────────────────────────────────────────────
+
 refreshDashboard(true);
 loadTasks();
 loadEvents();
@@ -1387,8 +1466,4 @@ setupDetectionsPanel();
 refreshTimeline();
 autoStartIfNeeded();
 initV5();
-setInterval(() => refreshDashboard(true), 15000);
-setInterval(() => loadTasks(), 20000);
-setInterval(() => loadEvents(false), 10000);
-setInterval(() => loadFleet(), 30000);
-setInterval(() => refreshTimeline(), 4000);
+requestAnimationFrame(schedulerTick);

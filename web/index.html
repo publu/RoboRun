@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=4" />
+    <link rel="stylesheet" href="./styles.css?v=5" />
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
@@ -247,6 +247,7 @@
               <div class="ag-header">
                 <span class="ag-label">MOVE</span>
                 <span class="ag-hint">WASD / QE turn / step <span id="moveStepLabel">0.5m</span></span>
+                <span id="gamepadBadge" class="pill" style="display:none;font-size:9px;padding:2px 6px">🎮</span>
               </div>
               <div class="move-controls">
                 <div class="dpad">
