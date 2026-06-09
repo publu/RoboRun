@@ -82,7 +82,9 @@ class Robot:
 
     def __init__(self, behavior_name: str) -> None:
         self._name = behavior_name
-        self._last_cmd: tuple | None = None
+        self._last_cmd: tuple[float, float, float] = (0.0, 0.0, 0.0)
+        self._last_move_emit = 0.0
+        self._warned_no_actuator = False
         self._last_say = ""
         self.state: dict[str, Any] = {}
 
@@ -135,13 +137,26 @@ class Robot:
             except Exception:
                 pass
 
-        cmd = (round(forward, 1), round(strafe, 1), round(turn, 1))
-        if cmd != self._last_cmd:  # don't flood the black box at 10 Hz
+        if not sent:
+            # webcam-only mode: say it once, then stay quiet until an actuator shows up
+            if not self._warned_no_actuator:
+                self._warned_no_actuator = True
+                emit("system", self._name,
+                     "wants to move, but no actuator — start the sim or connect "
+                     "a robot (further move logs muted)", {})
+            return
+        self._warned_no_actuator = False
+
+        # Real actuator: log on sharp changes immediately, otherwise ≤1/sec.
+        cmd = (forward, strafe, turn)
+        delta = max(abs(a - b) for a, b in zip(cmd, self._last_cmd))
+        now = time.monotonic()
+        if delta >= 0.3 or (delta > 0.01 and now - self._last_move_emit >= 1.0):
             self._last_cmd = cmd
-            emit("ros", self._name,
-                 f"move fwd={forward:.2f} turn={turn:.2f}" + ("" if sent else " (no actuator)"),
+            self._last_move_emit = now
+            emit("ros", self._name, f"move fwd={forward:.2f} turn={turn:.2f}",
                  {"forward": round(forward, 2), "strafe": round(strafe, 2),
-                  "turn": round(turn, 2), "sent": sent})
+                  "turn": round(turn, 2)})
 
     def stop(self) -> None:
         self.move(0.0, 0.0, 0.0)
