@@ -14,19 +14,21 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 STATE_ROOT = ROOT / ".roborun"
 PROFILE_PATH = STATE_ROOT / "profile.json"
 
-_CAMERA_FRAME_PATH = Path("/tmp/go2_camera_frame.jpg")
-_HACKATHON_FRAME_PATH = Path("/tmp/go2_hackathon_frame.jpg")
-_HACKATHON_STATE_PATH = Path("/tmp/go2_hackathon_state.json")
-_WEBCAM_FRAME_PATH = Path("/tmp/roborun_frame.jpg")
-_WEBCAM_STATE_PATH = Path("/tmp/roborun_state.json")
+_FRAME_PATHS = [
+    Path("/tmp/roborun_frame.jpg"),
+    Path("/tmp/roborun_camera.jpg"),
+]
+_STATE_PATHS = [
+    Path("/tmp/roborun_state.json"),
+]
 
 
 def load_profile() -> dict:
     defaults = {
-        "deviceName": "RoboRun Station", "deviceType": "Webcam + Robot",
+        "deviceName": "RoboRun Station", "deviceType": "Robot",
         "serial": "", "group": "Robots", "robotIp": "",
-        "blueprint": "unitree-go2", "mode": "replay", "viewer": "rerun",
-        "daemon": True, "dimosPath": "", "cameraIndex": 0,
+        "blueprint": "generic-robot", "mode": "hardware", "viewer": "rerun",
+        "daemon": True, "cameraIndex": 0,
         "activeModels": ["yolo"],
     }
     if PROFILE_PATH.exists():
@@ -42,7 +44,7 @@ def load_profile() -> dict:
 def save_profile(payload: dict) -> dict:
     profile = load_profile()
     for key in ["deviceName", "deviceType", "serial", "group", "robotIp", "blueprint",
-                "mode", "viewer", "daemon", "dimosPath", "cameraIndex", "activeModels"]:
+                "mode", "viewer", "daemon", "cameraIndex", "activeModels"]:
         if key in payload:
             profile[key] = payload[key]
     STATE_ROOT.mkdir(parents=True, exist_ok=True)
@@ -51,14 +53,14 @@ def save_profile(payload: dict) -> dict:
 
 
 def camera_snapshot() -> dict:
-    for path in (_HACKATHON_FRAME_PATH, _WEBCAM_FRAME_PATH, _CAMERA_FRAME_PATH):
+    for path in _FRAME_PATHS:
         if path.exists() and (time.time() - path.stat().st_mtime) < 5.0:
             try:
                 data = base64.b64encode(path.read_bytes()).decode()
                 return {"ok": True, "image": f"data:image/jpeg;base64,{data}", "ts": path.stat().st_mtime}
             except Exception as exc:
                 return {"ok": False, "error": str(exc)}
-    return {"ok": False, "error": "No frame available — start webcam or dimOS"}
+    return {"ok": False, "error": "No frame available — start webcam or connect a robot camera"}
 
 
 def system_stats() -> dict:
@@ -83,7 +85,7 @@ def camera(h):
 
 @get("/api/scene")
 def scene(h):
-    for p in (_HACKATHON_STATE_PATH, _WEBCAM_STATE_PATH):
+    for p in _STATE_PATHS:
         if p.exists():
             try:
                 send_json(h, 200, json.loads(p.read_text()))
@@ -93,13 +95,16 @@ def scene(h):
     send_json(h, 200, {})
 
 
-@get("/api/hackathon/state")
-def hackathon_state(h):
-    try:
-        state = json.loads(_HACKATHON_STATE_PATH.read_text()) if _HACKATHON_STATE_PATH.exists() else {}
-    except Exception:
-        state = {}
-    send_json(h, 200, state)
+@get("/api/state")
+def robot_state(h):
+    for p in _STATE_PATHS:
+        try:
+            if p.exists():
+                send_json(h, 200, json.loads(p.read_text()))
+                return
+        except Exception:
+            pass
+    send_json(h, 200, {})
 
 
 @post("/api/profile")

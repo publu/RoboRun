@@ -224,3 +224,14 @@ def ros_move(h, payload):
         raise
     except Exception as exc:
         send_json(h, 500, {"ok": False, "error": str(exc)})
+
+
+@get("/api/ros/health")
+def ros_health(h):
+    from roborun.rosbridge import get_client
+    from roborun.ros_mcp import _check_dds
+    client = get_client(auto_connect=False)
+    health = client.health if client else {"connected": False}
+    health["dds_available"] = _check_dds()
+    health["ok"] = health.get("connected", False) or health["dds_available"]
+    send_json(h, 200, health)

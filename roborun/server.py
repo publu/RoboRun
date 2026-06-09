@@ -23,9 +23,10 @@ HOST = "127.0.0.1"
 PORT = int(os.environ.get("ROBORUN_PORT", "8765"))
 STATE_ROOT = ROOT / ".roborun"
 
-_CAMERA_FRAME_PATH = Path("/tmp/go2_camera_frame.jpg")
-_HACKATHON_FRAME_PATH = Path("/tmp/go2_hackathon_frame.jpg")
-_WEBCAM_FRAME_PATH = Path("/tmp/roborun_frame.jpg")
+_FRAME_PATHS = [
+    Path("/tmp/roborun_frame.jpg"),
+    Path("/tmp/roborun_camera.jpg"),
+]
 
 # Import route modules — registering all @get/@post handlers
 import roborun.routes.dashboard  # noqa: F401
@@ -124,7 +125,7 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception:
                 pass
             while time.monotonic() - started < 300:
-                for p in (_HACKATHON_FRAME_PATH, _WEBCAM_FRAME_PATH, _CAMERA_FRAME_PATH):
+                for p in _FRAME_PATHS:
                     if p.exists():
                         mtime = p.stat().st_mtime
                         if mtime != last_mtime:

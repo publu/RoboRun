@@ -1,3 +1,3 @@
-"""RoboRun — zero-terminal visual teleop, dataset collection, and one-click dimOS deployment."""
+"""RoboRun — agentic robot OS with skills, fleet, vision AI, and MCP for any ROS robot."""
 
-__version__ = "0.1.0"
+__version__ = "0.8.0"

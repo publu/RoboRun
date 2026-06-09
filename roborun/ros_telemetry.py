@@ -96,7 +96,7 @@ class RosTelemetryBridge:
         host = fallback_host
         if not host:
             try:
-                from roborun.server import load_profile
+                from roborun.routes.dashboard import load_profile
                 host = load_profile().get("robotIp", "")
             except Exception:
                 pass
