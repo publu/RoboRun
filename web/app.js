@@ -68,7 +68,7 @@ async function refreshDashboard(quiet = false) {
   try {
     const d = await api("/api/dashboard");
     const p = d.profile || {};
-    const dimos = d.dimos || {}; // legacy, kept for dashboard status
+    const stack = d.stack || {};
     const wc = d.webcam || {};
     const ds = d.dataset || {};
     const stats = d.stats || {};
@@ -97,7 +97,7 @@ async function refreshDashboard(quiet = false) {
     // Update robot actions section
     const rah = document.querySelector("#robotActionsHint");
     if (rah) {
-      const hasRobot = d.robotOnline || dimos.running || sim.running;
+      const hasRobot = d.robotOnline || stack.running || sim.running;
       rah.textContent = sim.running ? `Sim: ${sim.robot || ""}` : (hasRobot ? "Connected" : "No robot connected");
       rah.className = `rah-hint${hasRobot ? " connected" : ""}`;
       if (hasRobot && robotActionsBody?.classList.contains("collapsed")) {
@@ -110,8 +110,8 @@ async function refreshDashboard(quiet = false) {
     const sourceActive = wc.running || sim.running;
     setDot(document.querySelector("#sWebcam"), sourceActive ? "ok" : "warn");
     document.querySelector("#sWebcamVal").textContent = sim.running ? `SIM ${sim.fps || 0}fps` : (wc.running ? `${wc.fps || 0} fps` : "Off");
-    setDot(document.querySelector("#sdimOS"), sim.running ? "ok" : "warn");
-    document.querySelector("#sdimOSVal").textContent = sim.running ? "Sim" : "Idle";
+    setDot(document.querySelector("#sSim"), sim.running ? "ok" : "warn");
+    document.querySelector("#sSimVal").textContent = sim.running ? "Sim" : "Idle";
     const robotConnected = d.robotOnline || sim.running;
     setDot(document.querySelector("#sRobot"), robotConnected ? "ok" : (p.robotIp ? "bad" : "warn"));
     document.querySelector("#sRobotVal").textContent = sim.running ? (sim.robot || "Sim") : (d.robotOnline ? "Connected" : (p.robotIp ? "Unreach" : "No IP"));
@@ -413,14 +413,14 @@ document.querySelector("#saveProfile")?.addEventListener("click", async () => {
   refreshDashboard(true);
 });
 
-document.querySelector("#dimosReplay")?.addEventListener("click", async () => {
+document.querySelector("#stackReplay")?.addEventListener("click", async () => {
   append("Starting replay bot...");
   const r = await api("/api/demo", {});
   append(r.ok ? "Replay started." : "Start failed.", r);
   refreshDashboard(true);
 });
 
-document.querySelector("#dimosLaunch")?.addEventListener("click", async () => {
+document.querySelector("#stackLaunch")?.addEventListener("click", async () => {
   const ip = document.querySelector("#robotIp")?.value.trim();
   if (!ip) { append("Robot IP required.", { ok: false }); return; }
   const bp = document.querySelector("#blueprint")?.value;
@@ -429,12 +429,12 @@ document.querySelector("#dimosLaunch")?.addEventListener("click", async () => {
   refreshDashboard(true);
 });
 
-document.querySelector("#dimosStatus")?.addEventListener("click", async () => {
+document.querySelector("#stackStatus")?.addEventListener("click", async () => {
   const r = await api("/api/status", {});
   append("Status check.", r);
 });
 
-document.querySelector("#dimosStop")?.addEventListener("click", async () => {
+document.querySelector("#stackStop")?.addEventListener("click", async () => {
   const r = await api("/api/stop", {});
   append(r.ok ? "Robot stack stopped." : "Stop failed.", r);
   refreshDashboard(true);

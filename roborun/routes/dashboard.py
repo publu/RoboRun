@@ -152,7 +152,7 @@ def dashboard(h):
     send_json(h, 200, {
         "ok": True,
         "profile": profile,
-        "dimos": {"ok": False, "running": False, "label": "Not installed"},
+        "stack": {"ok": False, "running": False, "label": "Not installed"},
         "robotOnline": False,
         "robotIp": profile.get("robotIp", "").strip(),
         "commandCenter": {"ok": False, "url": "http://127.0.0.1:7779/command-center"},

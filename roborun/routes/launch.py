@@ -23,7 +23,7 @@ IP_PATTERN = re.compile(r"^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.:/@-]+$")
 
 JOBS: dict[str, dict[str, Any]] = {}
-ACTIVE_DIMOS_JOB_ID: str | None = None
+ACTIVE_STACK_JOB_ID: str | None = None
 
 # ── MCP async tasks ──────────────────────────────────────────────────────────
 
@@ -69,9 +69,9 @@ def _run_mcp_task(task_id: str, name: str, args: dict[str, Any]) -> None:
 
 def _command_env(env: dict[str, str] | None = None) -> dict[str, str]:
     merged = os.environ.copy()
-    dimos_path = load_profile().get("dimosPath", "").strip()
-    if dimos_path:
-        venv_bin = Path(dimos_path) / ".venv" / "bin"
+    stack_path = load_profile().get("stackPath", "").strip()
+    if stack_path:
+        venv_bin = Path(stack_path) / ".venv" / "bin"
         if venv_bin.exists():
             merged["PATH"] = f"{venv_bin}{os.pathsep}{merged.get('PATH', '')}"
     if env:
@@ -114,21 +114,23 @@ def _start_job(name: str, args: list[str], env: dict[str, str] | None = None) ->
 
 @post("/api/demo")
 def demo(h, payload):
-    global ACTIVE_DIMOS_JOB_ID
-    result = _start_job("dimos-go2-replay", ["dimos", "--replay", "run", "unitree-go2",
-                                              "-o", "rerunbridgemodule.rerun_open=none"])
-    ACTIVE_DIMOS_JOB_ID = result["job_id"]
+    global ACTIVE_STACK_JOB_ID
+    stack_cmd = load_profile().get("stackCommand", "dimos")
+    result = _start_job("stack-demo", [stack_cmd, "--replay", "run", "unitree-go2",
+                                       "-o", "rerunbridgemodule.rerun_open=none"])
+    ACTIVE_STACK_JOB_ID = result["job_id"]
     send_json(h, 200, result)
 
 
 @post("/api/launch")
 def launch(h, payload):
-    global ACTIVE_DIMOS_JOB_ID
+    global ACTIVE_STACK_JOB_ID
     mode = str(payload.get("mode", "hardware")).strip()
     robot_ip = str(payload.get("robotIp", "")).strip()
     blueprint = str(payload.get("blueprint", "unitree-go2")).strip()
     viewer = str(payload.get("viewer", "rerun")).strip()
-    args = ["dimos"]
+    stack_cmd = load_profile().get("stackCommand", "dimos")
+    args = [stack_cmd]
     if mode == "replay":
         args.append("--replay")
     elif mode == "simulation":
@@ -137,16 +139,16 @@ def launch(h, payload):
     if payload.get("daemon", True):
         args.append("--daemon")
     env = {"ROBOT_IP": robot_ip} if mode == "hardware" and robot_ip else {}
-    result = _start_job("go2-launch", args, env=env)
-    ACTIVE_DIMOS_JOB_ID = result["job_id"]
+    result = _start_job("stack-launch", args, env=env)
+    ACTIVE_STACK_JOB_ID = result["job_id"]
     send_json(h, 200, result)
 
 
 @post("/api/stop")
 def stop(h, payload):
-    global ACTIVE_DIMOS_JOB_ID
-    if ACTIVE_DIMOS_JOB_ID and ACTIVE_DIMOS_JOB_ID in JOBS:
-        job = JOBS[ACTIVE_DIMOS_JOB_ID]
+    global ACTIVE_STACK_JOB_ID
+    if ACTIVE_STACK_JOB_ID and ACTIVE_STACK_JOB_ID in JOBS:
+        job = JOBS[ACTIVE_STACK_JOB_ID]
         proc = job["process"]
         if proc.poll() is None:
             try:
@@ -158,15 +160,17 @@ def stop(h, payload):
                     proc.wait(timeout=5)
             except ProcessLookupError:
                 pass
-    ACTIVE_DIMOS_JOB_ID = None
-    result = _run_command(["dimos", "stop"], timeout=20)
-    send_json(h, 200, {"ok": result.get("ok", False), "command": "stop dimOS",
+    ACTIVE_STACK_JOB_ID = None
+    stack_cmd = load_profile().get("stackCommand", "dimos")
+    result = _run_command([stack_cmd, "stop"], timeout=20)
+    send_json(h, 200, {"ok": result.get("ok", False), "command": f"stop {stack_cmd}",
                         "stdout": result.get("stdout", ""), "stderr": result.get("stderr", "")})
 
 
 @post("/api/status")
 def status(h, payload):
-    send_json(h, 200, _run_command(["dimos", "status"], timeout=10))
+    stack_cmd = load_profile().get("stackCommand", "dimos")
+    send_json(h, 200, _run_command([stack_cmd, "status"], timeout=10))
 
 
 @post("/api/ping")
