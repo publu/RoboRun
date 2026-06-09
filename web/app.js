@@ -1,6 +1,5 @@
 /* RoboRun — app.js
-   Full dashboard: webcam + models + dataset + dimOS robot control + agent chat.
-   Adapted from dimOS/RobotClaw with webcam/model/dataset features added. */
+   Full dashboard: webcam, models, dataset, robot control, fleet, agent chat. */
 
 const activityList = document.querySelector("#activityList");
 const activeJob = { id: null, timer: null };
@@ -69,7 +68,7 @@ async function refreshDashboard(quiet = false) {
   try {
     const d = await api("/api/dashboard");
     const p = d.profile || {};
-    const dimos = d.dimos || {};
+    const dimos = d.dimos || {}; // legacy, kept for dashboard status
     const wc = d.webcam || {};
     const ds = d.dataset || {};
     const stats = d.stats || {};
@@ -111,8 +110,8 @@ async function refreshDashboard(quiet = false) {
     const sourceActive = wc.running || sim.running;
     setDot(document.querySelector("#sWebcam"), sourceActive ? "ok" : "warn");
     document.querySelector("#sWebcamVal").textContent = sim.running ? `SIM ${sim.fps || 0}fps` : (wc.running ? `${wc.fps || 0} fps` : "Off");
-    setDot(document.querySelector("#sdimOS"), dimos.running || sim.running ? "ok" : "warn");
-    document.querySelector("#sdimOSVal").textContent = sim.running ? "Sim" : (dimos.running ? "Online" : "Idle");
+    setDot(document.querySelector("#sdimOS"), sim.running ? "ok" : "warn");
+    document.querySelector("#sdimOSVal").textContent = sim.running ? "Sim" : "Idle";
     const robotConnected = d.robotOnline || sim.running;
     setDot(document.querySelector("#sRobot"), robotConnected ? "ok" : (p.robotIp ? "bad" : "warn"));
     document.querySelector("#sRobotVal").textContent = sim.running ? (sim.robot || "Sim") : (d.robotOnline ? "Connected" : (p.robotIp ? "Unreach" : "No IP"));
@@ -147,17 +146,16 @@ async function refreshDashboard(quiet = false) {
     if (el("#deviceName")) el("#deviceName").textContent = p.deviceName || "RoboRun Station";
     if (el("#robotIpValue")) el("#robotIpValue").textContent = p.robotIp || "Not set";
     if (el("#blueprintValue")) el("#blueprintValue").textContent = p.blueprint || "--";
-    if (el("#sourceValue")) el("#sourceValue").textContent = wc.running ? "webcam" : (dimos.running ? "robot" : "none");
+    if (el("#sourceValue")) el("#sourceValue").textContent = wc.running ? "webcam" : (sim.running ? "sim" : "none");
     if (el("#loadValue")) el("#loadValue").textContent = `Load ${(stats.load || []).join(" / ")}`;
     if (el("#diskMeter")) el("#diskMeter").value = stats.disk?.percent || 0;
     if (el("#diskText")) el("#diskText").textContent = `${stats.disk?.percent || "--"}%`;
     if (el("#deviceNameInput")) el("#deviceNameInput").value = p.deviceName || "";
     if (el("#robotIp")) el("#robotIp").value = p.robotIp || "";
-    if (el("#dimosPath")) el("#dimosPath").value = p.dimosPath || "";
-    if (el("#blueprint")) el("#blueprint").value = p.blueprint || "unitree-go2";
+    if (el("#blueprint")) el("#blueprint").value = p.blueprint || "generic-robot";
     if (el("#onlinePill")) {
-      el("#onlinePill").textContent = wc.running ? "Webcam" : (dimos.running ? "Online" : "Idle");
-      el("#onlinePill").className = `pill ${wc.running || dimos.running ? "" : "idle"}`.trim();
+      el("#onlinePill").textContent = wc.running ? "Webcam" : (sim.running ? "Sim" : "Idle");
+      el("#onlinePill").className = `pill ${wc.running || sim.running ? "" : "idle"}`.trim();
     }
 
     // Recording bar
@@ -408,7 +406,6 @@ document.querySelector("#saveProfile")?.addEventListener("click", async () => {
   const payload = {
     deviceName: document.querySelector("#deviceNameInput")?.value.trim() || "RoboRun Station",
     robotIp: document.querySelector("#robotIp")?.value.trim(),
-    dimosPath: document.querySelector("#dimosPath")?.value.trim(),
     blueprint: document.querySelector("#blueprint")?.value,
   };
   const r = await api("/api/profile", payload);
@@ -439,7 +436,7 @@ document.querySelector("#dimosStatus")?.addEventListener("click", async () => {
 
 document.querySelector("#dimosStop")?.addEventListener("click", async () => {
   const r = await api("/api/stop", {});
-  append(r.ok ? "dimOS stopped." : "Stop failed.", r);
+  append(r.ok ? "Robot stack stopped." : "Stop failed.", r);
   refreshDashboard(true);
 });
 
@@ -553,9 +550,9 @@ const SKILL_MCP = {
 };
 
 const SKILL_PROMPTS = {
-  where_am_i: { msg: "Where is the robot? Use daneel_where_am_i and report GPS and nearby landmarks." },
-  map_query:  { ask: "Find what place on the map?", placeholder: "nearest exit", build: v => `Use daneel_map_query to find "${v}".` },
-  status:     { msg: "Full status report: check dashboard status, robot state. Report battery, position, mode, errors." },
+  where_am_i: { msg: "Where is the robot? Check telemetry and report position, orientation, and landmarks." },
+  map_query:  { ask: "Find what place on the map?", placeholder: "nearest exit", build: v => `Search for "${v}" using spatial memory and navigation.` },
+  status:     { msg: "Full status report: run robot_brief, check battery, position, mode, errors." },
 };
 
 const MOVEMENT_SKILLS = new Set(["begin_exploration", "smart_follow_person", "smart_follow_object", "smart_approach", "smart_find", "navigate_with_text", "start_dog_mode", "start_patrol", "execute_sport_command"]);
@@ -739,7 +736,7 @@ function addThinkingBlock(thinking) {
   currentTurn.content.appendChild(card); scrollChat();
 }
 
-function prettyToolName(n) { return n.replace(/^mcp__/, "").replace(/^dimos_workbench_/, "workbench·").replace(/^daneel_/, "daneel·"); }
+function prettyToolName(n) { return n.replace(/^mcp__/, "").replace(/_/g, " "); }
 
 function addToolCall(toolId, name, input) {
   if (!currentTurn) startAgentTurn(); sealTextBlock();
@@ -967,7 +964,7 @@ function openRobotModal(robotId) {
   } else {
     title.textContent = "Add Robot";
     document.querySelector("#rmName").value = "";
-    document.querySelector("#rmDeviceType").value = "Unitree Go2";
+    document.querySelector("#rmDeviceType").value = "Robot";
     document.querySelector("#rmSerial").value = "";
     document.querySelector("#rmIp").value = "";
     document.querySelector("#rmGroup").value = "Default";
@@ -1002,7 +999,7 @@ function openBlueprintModal(bpId) {
     document.querySelector("#bpName").value = bp.name; document.querySelector("#bpName").disabled = !!bp.builtIn;
     document.querySelector("#bpSlug").value = bp.slug; document.querySelector("#bpSlug").disabled = !!bp.builtIn;
     document.querySelector("#bpDescription").value = bp.description || "";
-    document.querySelector("#bpBase").value = bp.base || "unitree-go2"; document.querySelector("#bpBase").disabled = !!bp.builtIn;
+    document.querySelector("#bpBase").value = bp.base || "generic-robot"; document.querySelector("#bpBase").disabled = !!bp.builtIn;
     document.querySelector("#bpIcon").value = bp.icon || "◈";
     document.querySelector("#bpColor").value = bp.color || "#4090e0";
     document.querySelector("#bpExtraArgs").value = bp.extraArgs || "";
@@ -1012,7 +1009,7 @@ function openBlueprintModal(bpId) {
     title.textContent = "Create Blueprint";
     ["#bpName","#bpSlug","#bpBase","#bpModules"].forEach(s => { const e = document.querySelector(s); if (e) e.disabled = false; });
     document.querySelector("#bpName").value = ""; document.querySelector("#bpSlug").value = "";
-    document.querySelector("#bpDescription").value = ""; document.querySelector("#bpBase").value = "unitree-go2";
+    document.querySelector("#bpDescription").value = ""; document.querySelector("#bpBase").value = "generic-robot";
     document.querySelector("#bpIcon").value = "◈"; document.querySelector("#bpColor").value = "#4090e0";
     document.querySelector("#bpExtraArgs").value = ""; document.querySelector("#bpModules").value = ""; document.querySelector("#bpTags").value = "";
   }

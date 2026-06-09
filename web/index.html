@@ -51,7 +51,7 @@
           </div>
           <div class="rs-row">
             <span class="rs-dot" id="sdimOS"></span>
-            <span class="rs-key">dimOS</span>
+            <span class="rs-key">Sim</span>
             <span class="rs-val" id="sdimOSVal">--</span>
           </div>
           <div class="rs-row">
@@ -484,7 +484,7 @@
                 <span class="pill" id="onlinePill">Idle</span>
               </div>
               <div class="sys-device-name" id="deviceName">RoboRun Station</div>
-              <div class="sys-device-sub" id="deviceSubtitle">Webcam + dimOS</div>
+              <div class="sys-device-sub" id="deviceSubtitle">Robot Control Station</div>
               <div class="sys-info-grid">
                 <span class="sig-key">IP</span><span class="sig-val" id="robotIpValue">--</span>
                 <span class="sig-key">Blueprint</span><span class="sig-val" id="blueprintValue">--</span>
@@ -504,29 +504,29 @@
               <div class="formGrid">
                 <label><span>Device name</span><input id="deviceNameInput" /></label>
                 <label><span>Robot IP</span><input id="robotIp" inputmode="decimal" placeholder="192.168.123.18" /></label>
-                <label><span>dimOS path (optional)</span><input id="dimosPath" placeholder="/path/to/dimos" /></label>
                 <label>
                   <span>Blueprint</span>
                   <select id="blueprint">
-                    <option value="unitree-go2-hackathon" selected>Full Dashboard</option>
-                    <option value="unitree-go2">Standard Go2</option>
-                    <option value="unitree-go2-basic">Basic</option>
-                    <option value="unitree-go2-spatial">Spatial Memory</option>
-                    <option value="unitree-go2-agentic">Agentic (Claude)</option>
-                    <option value="unitree-go2-agentic-ollama">Agentic (Ollama)</option>
-                    <option value="unitree-go2-security">Security Patrol</option>
+                    <option value="generic-robot" selected>Generic Robot</option>
+                    <option value="basic">Basic</option>
+                    <option value="agentic-claude">Agentic (Claude)</option>
+                    <option value="spatial-memory">Spatial Memory</option>
+                    <option value="security-patrol">Security Patrol</option>
+                    <option value="turtlebot3">TurtleBot3</option>
+                    <option value="unitree-go2">Unitree Go2</option>
+                    <option value="generic-drone">Quadrotor</option>
                   </select>
                 </label>
               </div>
             </div>
 
             <div class="sys-card">
-              <div class="sys-card-head"><span class="sc-label">dimOS RUNTIME</span></div>
+              <div class="sys-card-head"><span class="sc-label">ROBOT CONTROL</span></div>
               <div class="rt-btns">
-                <button id="dimosReplay" class="primary-btn">▷ Replay Bot</button>
+                <button id="dimosReplay" class="primary-btn">▷ Demo</button>
                 <button id="dimosLaunch" class="primary-btn">▷ Start Robot</button>
                 <button id="dimosStatus" class="sec-btn">Status</button>
-                <button id="dimosStop" class="sec-btn danger-btn">Stop dimOS</button>
+                <button id="dimosStop" class="sec-btn danger-btn">Stop</button>
               </div>
             </div>
 
@@ -565,12 +565,12 @@
         <div id="agentMessages" class="chat-msgs"></div>
 
         <div class="chat-shortcuts">
-          <button class="sc-btn" data-msg="Check robot status: call dimos_workbench_dashboard_status and dimos_workbench_get_robot_state. Report battery, position, mode, errors.">Status</button>
-          <button class="sc-btn" data-msg="Start autonomous frontier exploration. After 20 seconds report position and events.">Explore</button>
-          <button class="sc-btn" data-msg="Generate a mission brief: recent activity, current robot state, errors, and recommended next action.">Brief</button>
-          <button class="sc-btn" data-msg="Stop everything: stop exploration, dog mode, follow, patrol, and any active find mission. Confirm stopped.">Stop All</button>
-          <button class="sc-btn" data-msg="Start dog mode using daneel_start_dog_mode. Confirm it started.">Dog Mode</button>
-          <button class="sc-btn" data-msg="What do you see right now? Use daneel_query_scene and describe the scene.">Scene</button>
+          <button class="sc-btn" data-msg="Run robot_brief and give me a full status report — what's connected, battery, capabilities.">Status</button>
+          <button class="sc-btn" data-msg="Run scan_surroundings to do a 360-degree sweep and tell me what objects you see.">Scan</button>
+          <button class="sc-btn" data-msg="Take a camera_snapshot and describe what you see.">Camera</button>
+          <button class="sc-btn" data-msg="Emergency stop — run estop immediately.">E-Stop</button>
+          <button class="sc-btn" data-msg="Start follow_me — follow the nearest person.">Follow</button>
+          <button class="sc-btn" data-msg="List all available skills and workflows.">Skills</button>
         </div>
 
         <div class="chat-input-row">
@@ -617,8 +617,8 @@
         <div class="fm-body">
           <div class="formGrid">
             <label><span>Name</span><input id="rmName" placeholder="Lobby Guard" /></label>
-            <label><span>Device type</span><input id="rmDeviceType" value="Unitree Go2" /></label>
-            <label><span>Serial</span><input id="rmSerial" placeholder="GO2-001" /></label>
+            <label><span>Device type</span><input id="rmDeviceType" value="Robot" /></label>
+            <label><span>Serial</span><input id="rmSerial" placeholder="SN-001" /></label>
             <label><span>Robot IP</span><input id="rmIp" placeholder="192.168.12.1" inputmode="decimal" /></label>
             <label><span>Group</span><input id="rmGroup" placeholder="Security" value="Default" /></label>
             <label><span>Blueprint</span><select id="rmBlueprint"></select></label>
@@ -645,13 +645,14 @@
             <label>
               <span>Base blueprint</span>
               <select id="bpBase">
-                <option value="unitree-go2">unitree-go2</option>
-                <option value="unitree-go2-hackathon">unitree-go2-hackathon</option>
-                <option value="unitree-go2-basic">unitree-go2-basic</option>
-                <option value="unitree-go2-spatial">unitree-go2-spatial</option>
-                <option value="unitree-go2-agentic">unitree-go2-agentic</option>
-                <option value="unitree-go2-agentic-ollama">unitree-go2-agentic-ollama</option>
-                <option value="unitree-go2-security">unitree-go2-security</option>
+                <option value="generic-robot">Generic Robot</option>
+                <option value="basic">Basic</option>
+                <option value="agentic-claude">Agentic (Claude)</option>
+                <option value="spatial-memory">Spatial Memory</option>
+                <option value="security-patrol">Security Patrol</option>
+                <option value="turtlebot3">TurtleBot3</option>
+                <option value="unitree-go2">Unitree Go2</option>
+                <option value="generic-drone">Quadrotor</option>
               </select>
             </label>
             <label>
