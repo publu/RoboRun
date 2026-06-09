@@ -1,8 +1,10 @@
 <p align="center">
-  <img src="assets/demo-thumb.jpg" alt="ros-agent" width="100%">
+  <img src="assets/demo-thumb.jpg" alt="RoboRun" width="100%">
 </p>
 
-# ros-agent
+# RoboRun — ros-agent
+
+### `pip install ros-agent` — give any AI full control of any ROS 2 robot
 
 <p align="center">
   <a href="https://pypi.org/project/ros-agent/"><img src="https://img.shields.io/pypi/v/ros-agent?style=for-the-badge&color=00d47e&label=PyPI" alt="PyPI"></a>
@@ -10,7 +12,6 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP_Tools-49-00d47e?style=for-the-badge" alt="MCP Tools"></a>
   <a href="https://ros.org"><img src="https://img.shields.io/badge/ROS_2-Supported-22314E?style=for-the-badge&logo=ros&logoColor=white" alt="ROS 2"></a>
-  <a href="https://github.com/publu/RoboRun"><img src="https://img.shields.io/github/stars/publu/RoboRun?style=for-the-badge" alt="Stars"></a>
 </p>
 
 **The MCP agent layer for robots.** 49 tools that let Claude, Cursor, or any MCP client control a real ROS 2 robot. Plugin skills for autonomous behaviors. Real-time vision (YOLO + CLIP + JEPA). MuJoCo simulation. Fleet management. Two pip dependencies in the core — no ROS install required on your machine.
