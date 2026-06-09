@@ -10,7 +10,7 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [{name = "Pablo", email = "pablo@hashingsystems.com"}]
-keywords = ["robotics", "ros", "ros2", "mcp", "agent", "ai", "robot-control", "claude", "yolo", "clip", "fleet", "mujoco", "skills", "teleop", "computer-vision"]
+keywords = ["robotics", "ros", "ros2", "mcp", "agent", "ai", "robot-control", "claude", "yolo", "clip", "fleet", "mujoco", "isaac-sim", "gazebo", "skills", "teleop", "computer-vision"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",

@@ -14,7 +14,7 @@
   <a href="https://ros.org"><img src="https://img.shields.io/badge/ROS-1_&_2-22314E?style=for-the-badge&logo=ros&logoColor=white" alt="ROS 1 and ROS 2"></a>
 </p>
 
-**Open-source AI agent framework for robotics.** 49 [MCP](https://modelcontextprotocol.io) tools that let [Claude](https://claude.ai), [Cursor](https://cursor.com), or any AI control a real robot — ROS 1, ROS 2, or just a webcam. Plugin skills for autonomous behaviors (patrol, follow-me, object search). Real-time computer vision (YOLO, CLIP, JEPA). MuJoCo physics simulation. Multi-robot fleet management. Two pip dependencies — no ROS install required on your machine.
+**Open-source AI agent framework for robotics.** 49 [MCP](https://modelcontextprotocol.io) tools that let [Claude](https://claude.ai), [Cursor](https://cursor.com), or any AI control a real robot — ROS 1, ROS 2, NVIDIA Isaac Sim, or just a webcam. Plugin skills for autonomous behaviors (patrol, follow-me, object search). Real-time computer vision (YOLO, CLIP, JEPA). MuJoCo physics simulation. Multi-robot fleet management. Two pip dependencies — no ROS install required on your machine.
 
 Works with any MCP-compatible AI client: [Claude Desktop](https://claude.ai), [Claude Code](https://claude.ai/code), [Cursor](https://cursor.com), [Windsurf](https://codeium.com/windsurf), or your own. Add one line to your config and your AI gets camera feeds, velocity control, sensor data, autonomous patrol, person following, object search, and full ROS introspection. Connects over rosbridge (ROS 1 + ROS 2) or direct DDS (ROS 2). Switch robots by changing an IP address.
 
@@ -22,9 +22,9 @@ Works with any MCP-compatible AI client: [Claude Desktop](https://claude.ai), [C
 <tr><td><b>MCP-native from the ground up</b></td><td>49 tools, 8 guided prompts, 6 live resources, and a topic template — all exposed through standard MCP. HTTP+SSE and stdio transports. Works with any client that speaks the protocol.</td></tr>
 <tr><td><b>Skills plugin system</b></td><td>5 built-in skills (compose, inspect, follow-me, patrol, scan-detect). Write your own in 10 lines of Python. 4 loading paths: built-in, pip packages, filesystem, project config. Every skill becomes MCP tools automatically.</td></tr>
 <tr><td><b>Real-time vision stack</b></td><td>YOLO object detection + tracking, CLIP zero-shot search ("find the red cup"), JEPA self-supervised attention heatmaps, Cosmos 3 world model (16B, MLX 4-bit on Mac). Toggle models live from the UI.</td></tr>
-<tr><td><b>Any robot, no ROS install needed</b></td><td>Connects over rosbridge WebSocket (ROS 1 + ROS 2) — no ROS installation on the host. Also supports direct DDS via CycloneDDS for zero-latency ROS 2 transport. Works with Unitree Go2, G1, TurtleBot, drones, arms, or just a webcam.</td></tr>
+<tr><td><b>Any robot, no ROS install needed</b></td><td>Connects over rosbridge WebSocket (ROS 1 + ROS 2) or direct DDS (ROS 2) — no ROS installation on the host. Works with real hardware (Unitree Go2/G1, TurtleBot, drones, arms), NVIDIA Isaac Sim, Gazebo, or just a webcam.</td></tr>
 <tr><td><b>Built-in Claude + Gemini agent</b></td><td>Streaming tool use with dynamic ROS context injection. Safety velocity clamping. Persistent cross-session memory. Behavioral identity via SOUL.md.</td></tr>
-<tr><td><b>Simulation and fleet</b></td><td>MuJoCo headless physics with trained ONNX locomotion policies. Fleet dashboard for multi-robot management. Blueprint system for robot configurations. CLIP-indexed spatial memory with geo-search.</td></tr>
+<tr><td><b>Simulation and fleet</b></td><td>Built-in MuJoCo headless physics with ONNX locomotion policies. Also connects to NVIDIA Isaac Sim and Gazebo via rosbridge. Fleet dashboard for multi-robot management. Blueprint system. CLIP-indexed spatial memory with geo-search.</td></tr>
 </table>
 
 ---
