@@ -2,7 +2,7 @@
   <img src="assets/demo-thumb.jpg" alt="roborun" width="100%">
 </p>
 
-<h1 align="center">roborun</h1>
+<h1 align="center">RoboRun: ROS 1/2 Robot Control with MCP, AI Agents, YOLO Vision, and a Tamper-Evident Black Box</h1>
 
 <p align="center"><b>Quickly run and manage ROS 1/2 robots. Built-in MCP, vision, sim, and hot-reload Python behaviors.<br>Merkle proofs make every run tamper-evident.</b></p>
 
