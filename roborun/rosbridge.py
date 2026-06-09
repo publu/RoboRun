@@ -2,7 +2,7 @@
 
 Connects to a rosbridge_server (ws://robot_ip:9090) and exposes the same
 tool surface as agenticROS: topic pub/sub, services, actions, and param
-get/set. This lets RoboRun control any ROS 2 robot, not just dimOS robots.
+get/set. This lets RoboRun control any ROS 2 robot over the network.
 
 Usage:
     client = RosbridgeClient("192.168.1.100")

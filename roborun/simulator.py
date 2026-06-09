@@ -1,8 +1,8 @@
 """Lightweight MuJoCo simulator for RoboRun.
 
 Runs headless, renders camera frames to the same MJPEG path the webcam
-pipeline uses. Uses trained ONNX locomotion policies from dimOS to make
-robots actually walk. WASD sends velocity commands to the policy.
+pipeline uses. Supports trained ONNX locomotion policies to make
+robots walk. WASD sends velocity commands to the policy.
 """
 
 from __future__ import annotations
