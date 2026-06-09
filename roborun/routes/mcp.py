@@ -1,26 +1,18 @@
 """MCP server routes — unified HTTP + SSE transport.
 
-Replaces the old duplicated tool definitions. All tools come from
-ros_mcp.get_all_tools() which includes skills.
+Full MCP protocol: tools + resources + prompts. Shared implementation
+with mcp_stdio.py — both use the same prompts and resources.
 """
 from __future__ import annotations
 
-import base64
 import json
 import os
-import threading
 import time
-import uuid
-from pathlib import Path
 from typing import Any
 
 from roborun.routes import get, post, send_json
 
 PORT = int(os.environ.get("ROBORUN_PORT", "8765"))
-
-_CAMERA_FRAME_PATH = Path("/tmp/go2_camera_frame.jpg")
-_HACKATHON_FRAME_PATH = Path("/tmp/go2_hackathon_frame.jpg")
-_WEBCAM_FRAME_PATH = Path("/tmp/roborun_frame.jpg")
 
 
 def _mcp_reply(h, req_id: Any, result: Any) -> None:
@@ -46,18 +38,12 @@ def _mcp_error(h, req_id: Any, code: int, message: str) -> None:
     h.wfile.write(body)
 
 
-def _camera_content() -> list[dict]:
-    for p in (_HACKATHON_FRAME_PATH, _WEBCAM_FRAME_PATH, _CAMERA_FRAME_PATH):
-        if p.exists() and (time.time() - p.stat().st_mtime) < 5.0:
-            try:
-                data = base64.b64encode(p.read_bytes()).decode()
-                return [{"type": "image", "data": data, "mimeType": "image/jpeg"}]
-            except Exception:
-                pass
-    return [{"type": "text", "text": "No camera frame available"}]
-
-
 def handle_mcp_request(h, payload: dict) -> None:
+    from roborun.mcp_stdio import (
+        MCP_PROMPTS, PROMPT_MESSAGES, CAPABILITIES, SERVER_INFO,
+        _get_resources, _read_resource,
+    )
+
     req_id = payload.get("id")
     method = payload.get("method", "")
     params = payload.get("params", {})
@@ -65,8 +51,8 @@ def handle_mcp_request(h, payload: dict) -> None:
     if method == "initialize":
         _mcp_reply(h, req_id, {
             "protocolVersion": "2024-11-05",
-            "capabilities": {"tools": {}},
-            "serverInfo": {"name": "roborun", "version": "0.7.0"},
+            "capabilities": CAPABILITIES,
+            "serverInfo": SERVER_INFO,
         })
         return
 
@@ -103,26 +89,36 @@ def handle_mcp_request(h, payload: dict) -> None:
         return
 
     if method == "resources/list":
-        from roborun.ros_mcp import get_mcp_manifest
-        manifest = get_mcp_manifest()
-        _mcp_reply(h, req_id, {"resources": [{
-            "uri": "roborun://server-info",
-            "name": "RoboRun Server Info",
-            "description": manifest["description"],
-            "mimeType": "application/json",
-        }]})
+        _mcp_reply(h, req_id, {"resources": _get_resources()})
         return
 
     if method == "resources/read":
         uri = params.get("uri", "")
-        if uri == "roborun://server-info":
-            from roborun.ros_mcp import get_mcp_manifest
-            _mcp_reply(h, req_id, {"contents": [{
-                "uri": uri, "mimeType": "application/json",
-                "text": json.dumps(get_mcp_manifest(), default=str),
-            }]})
+        content = _read_resource(uri)
+        if content:
+            _mcp_reply(h, req_id, {"contents": [content]})
             return
         _mcp_error(h, req_id, -32602, f"Unknown resource: {uri}")
+        return
+
+    if method == "prompts/list":
+        _mcp_reply(h, req_id, {"prompts": MCP_PROMPTS})
+        return
+
+    if method == "prompts/get":
+        name = params.get("name", "")
+        messages = PROMPT_MESSAGES.get(name)
+        if messages is None:
+            _mcp_error(h, req_id, -32602, f"Unknown prompt: {name}")
+            return
+        prompt_args = params.get("arguments", {})
+        resolved = []
+        for msg in messages:
+            text = msg["content"]["text"]
+            for key, value in prompt_args.items():
+                text = text.replace(f"{{{key}}}", str(value))
+            resolved.append({"role": msg["role"], "content": {"type": "text", "text": text}})
+        _mcp_reply(h, req_id, {"messages": resolved})
         return
 
     _mcp_error(h, req_id, -32601, f"Method not found: {method}")
