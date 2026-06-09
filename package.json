@@ -4,7 +4,7 @@
   "description": "Open-source AI agent framework for robotics — 49 MCP tools for Claude, Cursor, or any AI to control ROS 1/2 robots, with YOLO+CLIP vision, MuJoCo sim, and fleet management",
   "keywords": ["robotics", "ros", "ros2", "mcp", "ai-agent", "robot-control", "claude", "yolo", "clip", "mujoco", "skills", "fleet", "teleop", "computer-vision", "autonomous"],
   "license": "MIT",
-  "author": "Pablo <pablo@hashingsystems.com>",
+  "author": "Manifest Intelligence, Inc <pablo@hashingsystems.com>",
   "homepage": "https://github.com/publu/RoboRun",
   "repository": {
     "type": "git",

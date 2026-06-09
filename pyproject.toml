@@ -9,7 +9,7 @@ description = "Quickly run and manage ROS 1/2 robots. Built-in MCP for Claude, C
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
-authors = [{name = "Pablo", email = "pablo@hashingsystems.com"}]
+authors = [{name = "Manifest Intelligence, Inc", email = "pablo@hashingsystems.com"}]
 keywords = ["robotics", "ros", "ros2", "mcp", "agent", "ai", "robot-control", "claude", "yolo", "clip", "fleet", "mujoco", "isaac-sim", "gazebo", "skills", "teleop", "computer-vision"]
 classifiers = [
     "Development Status :: 4 - Beta",

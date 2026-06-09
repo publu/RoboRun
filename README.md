@@ -125,4 +125,4 @@ python -m roborun.server
 pytest tests/
 ```
 
-MIT. Built by [Hashing Systems](https://hashingsystems.com).
+MIT. Built by Manifest Intelligence, Inc.
