@@ -41,7 +41,7 @@ def _mcp_error(h, req_id: Any, code: int, message: str) -> None:
 def handle_mcp_request(h, payload: dict) -> None:
     from roborun.mcp_stdio import (
         MCP_PROMPTS, PROMPT_MESSAGES, CAPABILITIES, SERVER_INFO,
-        _get_resources, _read_resource,
+        RESOURCE_TEMPLATES, _get_resources, _read_resource,
     )
 
     req_id = payload.get("id")
@@ -90,6 +90,10 @@ def handle_mcp_request(h, payload: dict) -> None:
 
     if method == "resources/list":
         _mcp_reply(h, req_id, {"resources": _get_resources()})
+        return
+
+    if method == "resources/templates/list":
+        _mcp_reply(h, req_id, {"resourceTemplates": RESOURCE_TEMPLATES})
         return
 
     if method == "resources/read":

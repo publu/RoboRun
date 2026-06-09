@@ -34,6 +34,15 @@ CAPABILITIES = {
     "prompts": {},
 }
 
+RESOURCE_TEMPLATES = [
+    {
+        "uriTemplate": "roborun://topic/{topic_path}",
+        "name": "Live ROS Topic",
+        "description": "Subscribe once to any ROS topic and read its latest message. Use topic path without leading slash (e.g. cmd_vel, camera/image_raw).",
+        "mimeType": "application/json",
+    },
+]
+
 # ── MCP Prompts ──────────────────────────────────────────────────────────────
 # Guided workflows that help LLMs interact with robots effectively.
 
@@ -208,6 +217,12 @@ def _get_resources() -> list[dict]:
             "description": "All available guided workflow prompts with descriptions and arguments",
             "mimeType": "application/json",
         },
+        {
+            "uri": "roborun://soul",
+            "name": "Agent Identity (SOUL.md)",
+            "description": "Behavioral guidelines for the robot agent — safety rules, interaction style, personality",
+            "mimeType": "text/markdown",
+        },
     ]
     return resources
 
@@ -259,6 +274,21 @@ def _read_resource(uri: str) -> dict | None:
             })
         return {"uri": uri, "mimeType": "application/json",
                 "text": json.dumps(catalog, indent=2)}
+
+    if uri == "roborun://soul":
+        from pathlib import Path
+        soul_path = Path.cwd() / ".roborun" / "SOUL.md"
+        if soul_path.exists():
+            return {"uri": uri, "mimeType": "text/markdown",
+                    "text": soul_path.read_text()}
+        return {"uri": uri, "mimeType": "text/markdown",
+                "text": "# No SOUL.md found\nCreate .roborun/SOUL.md to define agent behavioral guidelines."}
+
+    if uri.startswith("roborun://topic/"):
+        topic_name = "/" + uri[len("roborun://topic/"):]
+        result = handle_tool_call("subscribe_once", {"topic": topic_name, "timeout_ms": 3000})
+        return {"uri": uri, "mimeType": "application/json",
+                "text": json.dumps(result, default=str, indent=2)}
 
     return None
 
@@ -331,6 +361,9 @@ def _handle_request(method: str, params: dict | None, req_id: Any) -> dict | Non
 
     if method == "resources/list":
         return _result_response(req_id, {"resources": _get_resources()})
+
+    if method == "resources/templates/list":
+        return _result_response(req_id, {"resourceTemplates": RESOURCE_TEMPLATES})
 
     if method == "resources/read":
         uri = params.get("uri", "")
