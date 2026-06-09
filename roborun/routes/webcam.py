@@ -18,11 +18,13 @@ def detections(h):
 
 @post("/api/webcam/start")
 def start(h, payload):
-    cam = int(payload.get("camera", 0))
+    source = payload.get("source")  # video file path or stream URL
+    cam = str(source) if source else int(payload.get("camera", 0))
     models = payload.get("models", ["yolo"])
     result = get_webcam().start(camera_index=cam, models=models)
     if result.get("ok"):
-        log_event("webcam_started", f"Webcam started (cam {cam})")
+        label = f"Video source: {source}" if source else f"Webcam started (cam {cam})"
+        log_event("webcam_started", label)
     send_json(h, 200, result)
 
 
@@ -41,5 +43,9 @@ def models(h, payload):
 
 @post("/api/webcam/clip_query")
 def clip_query(h, payload):
-    result = get_webcam().set_clip_query(str(payload.get("query", "")))
+    query = str(payload.get("query", "")).strip()
+    result = get_webcam().set_clip_query(query)
+    if query:
+        from roborun.events import emit
+        emit("task", "operator", f"track: {query}", {"query": query})
     send_json(h, 200, result)

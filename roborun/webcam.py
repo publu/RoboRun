@@ -54,17 +54,25 @@ class WebcamPipeline:
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
-    def start(self, camera_index: int = 0, models: list[str] | None = None) -> dict[str, Any]:
+    def start(self, camera_index: int | str = 0, models: list[str] | None = None) -> dict[str, Any]:
+        """Source can be a camera index, a video file path, or a stream URL.
+        File sources loop forever and play at native FPS."""
         if self.is_running:
             return {"ok": True, "already_running": True}
 
         self._camera_index = camera_index
+        self._is_file_source = isinstance(camera_index, str)
         self._cap = cv2.VideoCapture(camera_index)
         if not self._cap.isOpened():
-            return {"ok": False, "error": f"Cannot open camera {camera_index}"}
+            return {"ok": False, "error": f"Cannot open source {camera_index}"}
 
-        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        if self._is_file_source:
+            native_fps = self._cap.get(cv2.CAP_PROP_FPS) or 30.0
+            self._source_frame_interval = 1.0 / min(max(native_fps, 1.0), 60.0)
+        else:
+            self._source_frame_interval = 0.0
+            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
         self._active_models = set(models or [])
 
@@ -149,6 +157,9 @@ class WebcamPipeline:
 
                 ret, frame = self._cap.read()
                 if not ret:
+                    if getattr(self, "_is_file_source", False):
+                        self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # loop footage
+                        continue
                     time.sleep(0.01)
                     continue
 
@@ -206,7 +217,7 @@ class WebcamPipeline:
                         except Exception:
                             self._active_models.discard("jepa")
 
-                annotated = self._annotate(frame, detections, clip_matches)
+                annotated = self._annotate(frame, detections, self._latest_clip_matches)
                 ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 if ok:
                     FRAME_PATH.write_bytes(buf.tobytes())
@@ -220,7 +231,8 @@ class WebcamPipeline:
                     fps_window.pop(0)
                 self._fps = 1.0 / (sum(fps_window) / len(fps_window)) if fps_window else 0
 
-                sleep_dur = max(0, (1.0 / 30.0) - elapsed)
+                target = getattr(self, "_source_frame_interval", 0.0) or (1.0 / 30.0)
+                sleep_dur = max(0, target - elapsed)
                 if sleep_dur > 0:
                     time.sleep(sleep_dur)
         except Exception:

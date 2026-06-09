@@ -42,6 +42,7 @@ import roborun.routes.launch  # noqa: F401
 import roborun.routes.skills  # noqa: F401
 import roborun.routes.zk  # noqa: F401
 import roborun.routes.run  # noqa: F401
+import roborun.routes.behaviors  # noqa: F401
 from roborun.routes import dispatch_get, dispatch_post, read_json, send_json, ApiError
 from roborun.routes.mcp import handle_mcp_request, handle_mcp_sse
 
@@ -215,6 +216,37 @@ def main() -> None:
 
     from roborun.trajectory import TrajectoryRecorder
     TrajectoryRecorder.get().start()
+
+    # Vibecode runtime: behaviors/*.py hot-reload while the robot runs
+    from roborun.behaviors import BehaviorRunner, write_examples
+    created = write_examples()
+    if created:
+        print(f"  Created {created}/ — edit follow_person.py and save. It reloads live.")
+    BehaviorRunner.get().start()
+
+    # First boot should be alive, not a NO SIGNAL screen: try the webcam
+    # with YOLO; fall back to the MuJoCo sim. ROBORUN_AUTOSTART=0 disables.
+    if os.environ.get("ROBORUN_AUTOSTART", "1") != "0":
+        def _autostart() -> None:
+            from roborun.events import emit
+            time.sleep(2.0)  # let a previous instance release the camera
+            try:
+                from roborun.routes._singletons import get_webcam
+                result = get_webcam().start(camera_index=0, models=["yolo"])
+                if result.get("ok"):
+                    emit("system", "server", "autostart: webcam live with YOLO")
+                    return
+            except Exception:
+                pass
+            try:
+                from roborun.routes._singletons import get_simulator
+                result = get_simulator().start()
+                if result.get("ok"):
+                    emit("system", "server",
+                         f"autostart: MuJoCo sim ({result.get('robot', 'robot')})")
+            except Exception:
+                pass
+        threading.Thread(target=_autostart, daemon=True, name="Autostart").start()
 
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"\n  ros-agent is live: http://{HOST}:{PORT}")

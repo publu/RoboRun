@@ -4,7 +4,7 @@
 
 <h1 align="center">roborun</h1>
 
-<p align="center"><b>Your AI drives any ROS robot in 5 minutes.<br>Every run is a replayable black box.</b></p>
+<p align="center"><b>Vibecode your robot. Save a Python file — the running robot changes.<br>Every action lands in a tamper-evident black box.</b></p>
 
 <p align="center">
   <a href="https://pypi.org/project/ros-agent/"><img src="https://img.shields.io/pypi/v/ros-agent?style=flat-square&color=00d47e&label=pip%20install%20ros-agent" alt="PyPI"></a>
@@ -15,81 +15,83 @@
 
 ---
 
-## 30 seconds
+## 60 seconds, no robot required
 
 ```bash
 pip install ros-agent
 ros-agent
 ```
 
-Browser opens. No robot? Your webcam starts with live object detection. Have a robot? Point it at the IP — ROS 1 or ROS 2 over rosbridge, **no ROS install needed on your machine**.
+The browser opens live: your webcam becomes the robot's eyes (YOLO autostarts), MuJoCo becomes its body, and a `behaviors/` folder appears with its brain:
 
-Then tell Claude (or Cursor, or any MCP client) to drive it:
+```python
+# behaviors/follow_person.py — already running
+from roborun.behaviors import behavior
+
+@behavior(hz=10)
+def follow_person(robot):
+    people = robot.see("person")
+    if not people:
+        return robot.stop()
+    robot.move(
+        forward=0.3 if people[0].h < 0.6 else 0.0,  # stop when close
+        turn=-1.2 * (people[0].cx - 0.5),           # steer toward center
+    )
+```
+
+Change `0.3` to `0.6`. Save. The robot speeds up — **while it's running**. No restart, no build, no launch files, no framework to learn. That's the whole loop: see → think → move, in a file you can read in ten seconds.
+
+## The robot handle
+
+| Call | Does |
+|---|---|
+| `robot.see("person")` | live detections, normalized `.cx .cy .w .h .label .conf` |
+| `robot.move(forward, strafe, turn)` | drives the sim or a real robot — safety-clamped |
+| `robot.ask("is the door open?", image=True)` | LLM with the camera frame — Anthropic API **or local Ollama** |
+| `robot.say(...)` / `robot.log(...)` | speak into the event timeline |
+| `robot.remember(k, v)` / `robot.recall(k)` | memory that survives restarts |
+| `robot.state` | dict that survives across loop ticks |
+
+`@behavior(hz=10)` for control loops, `@behavior(every=10.0)` for slow ones (LLM narration, patrol logic). Files hot-reload on save; broken files report into the timeline and never crash the runtime. A behavior that throws keeps its slot and tells you why.
+
+## LLMs, local or online
+
+`robot.ask()` uses the Anthropic API when `ANTHROPIC_API_KEY` is set, or a local [Ollama](https://ollama.com) otherwise (`OLLAMA_MODEL=llama3.2` by default). The shipped `narrator.py` behavior asks a vision model what the robot is looking at, every 10 seconds, and says it into the timeline.
+
+And the whole robot is also an MCP server — one line and Claude or Cursor drives it directly:
 
 ```json
 { "mcpServers": { "ros-agent": { "command": "ros-agent-mcp" } } }
 ```
 
-One line of config. Your AI can now see camera feeds, read sensors, and move the robot.
-
 ## The black box
 
-Everything the robot saw, decided, and did is recorded into one event timeline — operator commands, agent tool calls, velocity commands, detections. Seal it and it becomes evidence:
+Everything — your commands, behavior moves, agent tool calls, detections — is one event timeline. Seal it and it becomes evidence:
 
 ```bash
 python -m roborun.integrity seal   runs/run_20260609_153000
-# SEALED — 1,284 events
-# merkle root: 8f4a2c91…  signed: ed25519
+# SEALED — 1,284 events · merkle root 8f4a2c91… · signed ed25519
 
-python -m roborun.integrity verify runs/run_20260609_153000
-# VERIFIED — 1,284 events, signature valid
-```
-
-Now edit one byte of the log:
-
-```bash
 python -m roborun.integrity tamper runs/run_20260609_153000 --event 42
 python -m roborun.integrity verify runs/run_20260609_153000
 # FAILED — event 0042 hash mismatch
-# expected: sha256:91ac3be0…
-# found:    sha256:338e7d12…
 ```
 
-One changed byte, caught instantly. Same primitives as Git and Certificate Transparency: SHA-256 Merkle tree + Ed25519 signature. No cloud, no vendor, works offline.
+One changed byte, caught instantly. SHA-256 Merkle tree + Ed25519 — the same primitives as Git and Certificate Transparency. No cloud, works offline. When your robot does something weird at 3am, you replay the run and you can prove nobody edited it.
 
-## The flight deck
+There's also a mission-control view at `/demo` built for watching (and recording) all of this happen.
 
-`http://localhost:8765/demo` — a mission-control view built for watching (and recording) your robot work: live camera with detections, the black box streaming in real time, and a command bar wired to the agent.
-
-Press `S` to seal the run, `T` to tamper one byte, `V` to verify. Watch it fail.
-
-## Connect a robot
+## Connect a real robot
 
 ```bash
-# on the robot (ROS 2)
-ros2 launch rosbridge_server rosbridge_websocket_launch.xml
-
-# on the robot (ROS 1)
-roslaunch rosbridge_server rosbridge_websocket.launch
+# on the robot
+ros2 launch rosbridge_server rosbridge_websocket_launch.xml   # ROS 2
+roslaunch rosbridge_server rosbridge_websocket.launch          # ROS 1
 ```
 
-Set the IP in the UI, or `curl -X POST localhost:8765/api/ros/connect -d '{"host":"192.168.1.100"}'`. Works with real hardware (Unitree Go2/G1, TurtleBot, arms, drones), NVIDIA Isaac Sim, Gazebo, or the built-in MuJoCo sim.
+Point the UI at the robot's IP — **no ROS install on your machine**. The same `behaviors/*.py` files now drive real hardware: Unitree Go2/G1, TurtleBot, arms, drones, NVIDIA Isaac Sim, Gazebo. `robot.move()` goes to the sim if it's running, otherwise to the connected robot, always through the same safety clamps.
 
-## What your AI gets
-
-MCP tools for topic discovery, pub/sub, service calls, camera snapshots, depth, velocity control, and full graph introspection — plus skills (patrol, follow-me, object search) that load as plugins:
-
-```python
-SKILL_TOOLS = [{"name": "my_tool", "description": "Does a thing",
-                "inputSchema": {"type": "object", "properties": {}}}]
-
-def handle(name: str, args: dict) -> str:
-    return "done"
-```
-
-Drop the file in a directory, point `ROBORUN_SKILL_PATHS` at it. It becomes an MCP tool.
-
-Optional extras: `pip install ros-agent[vision]` (YOLO + CLIP), `[sim]` (MuJoCo), `[ros]` (direct DDS), `[all]`.
+Optional extras: `pip install ros-agent[vision]` (YOLO + CLIP), `[sim]` (MuJoCo), `[ros]` (direct DDS), `[crypto]` (Ed25519 signing), `[all]`.
 
 ## Configuration
 
@@ -97,13 +99,16 @@ Optional extras: `pip install ros-agent[vision]` (YOLO + CLIP), `[sim]` (MuJoCo)
 |----------|---------|---|
 | `ROBORUN_PORT` | `8765` | Server port |
 | `ROBOT_IP` | — | Robot IP (or set in UI) |
-| `ANTHROPIC_API_KEY` | — | Enables the built-in Claude agent |
+| `ANTHROPIC_API_KEY` | — | `robot.ask()` + built-in Claude agent |
+| `OLLAMA_MODEL` | `llama3.2` | Local model for `robot.ask()` |
+| `ROBORUN_BEHAVIOR_PATHS` | — | Extra behavior directories (comma-separated) |
+| `ROBORUN_AUTOSTART` | `1` | Autostart camera/sim on boot |
 | `ROBORUN_MAX_LINEAR_VEL` | `1.0` | Safety clamp, m/s |
 | `ROBORUN_MAX_ANGULAR_VEL` | `1.5` | Safety clamp, rad/s |
 
-## Why
+## Why this instead of a robot framework
 
-Everyone is wiring LLMs to robots. Nobody can prove what the robot actually did. roborun does both: natural-language control on the way in, tamper-evident evidence on the way out. When your robot does something weird at 3am, you replay the run — and you can prove nobody edited it.
+Robot frameworks make you learn their world first — module systems, typed streams, blueprints, launch graphs — before the robot does anything. roborun inverts it: the robot is already running, and you change its mind by saving a file. Python you already know, hot-reloaded, with vision, an LLM, and motion in one handle — and a cryptographic record of everything it did.
 
 ## Contributing
 
@@ -111,6 +116,7 @@ Everyone is wiring LLMs to robots. Nobody can prove what the robot actually did.
 git clone https://github.com/publu/RoboRun.git && cd RoboRun
 pip install -e ".[all]"
 python -m roborun.server
+pytest tests/
 ```
 
 MIT — built by [Hashing Systems](https://hashingsystems.com).

@@ -85,6 +85,14 @@ async function pollHud() {
     const models = (st.models || []).map((m) => m.toUpperCase()).join("+") || "RAW";
     $("hudModels").textContent = models;
     $("hudDet").textContent = `${st.detections ?? 0} OBJECT${st.detections === 1 ? "" : "S"}`;
+    if (st.clip_query) {
+      $("hudTrack").textContent = `TRACKING: ${st.clip_query.toUpperCase()}` +
+        (st.clip_matches ? ` · LOCK` : ` · SEARCHING`);
+      $("hudTrack").classList.toggle("lock", !!st.clip_matches);
+      $("hudTrack").classList.add("on");
+    } else {
+      $("hudTrack").classList.remove("on", "lock");
+    }
   } catch {}
   setTimeout(pollHud, 1000);
 }
@@ -104,8 +112,19 @@ input.addEventListener("keydown", (e) => {
   const message = input.value.trim();
   if (!message) return;
   input.value = "";
+
+  /* "track the white car" / "find the red truck" / "follow that bus"
+     → zero-shot CLIP lock-on, instant. Everything else goes to the agent. */
+  const m = message.match(/^(?:track|find|follow)\s+(?:the\s+|that\s+|a\s+)?(.+)$/i);
+  if (m) { setTracking(m[1]); return; }
   sendCommand(message);
 });
+
+async function setTracking(query) {
+  await api("/api/webcam/clip_query", { query });
+  $("hudTrack").textContent = `TRACKING: ${query.toUpperCase()}`;
+  $("hudTrack").classList.add("on");
+}
 
 async function sendCommand(message) {
   const strip = $("agentStrip");
@@ -250,6 +269,11 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".director")) input.focus();
 });
+
+/* ?do=seal|verify — runs the real seal/verify API on load (for screenshots) */
+const act = new URLSearchParams(location.search).get("do");
+if (act === "seal") setTimeout(doSeal, 1500);
+if (act === "verify") setTimeout(doVerify, 1500);
 
 /* ?stamp=verified|failed|sealed — layout preview only, clearly labeled */
 const preview = new URLSearchParams(location.search).get("stamp");

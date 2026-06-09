@@ -36,3 +36,4 @@ datasets/
 *.onnx
 *.safetensors
 MUJOCO_LOG.TXT
+/behaviors/

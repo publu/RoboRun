@@ -1,0 +1,458 @@
+"""Vibecode runtime — drop a Python file in behaviors/, save, robot changes live.
+
+A behavior is a decorated function that gets called in a loop with a `robot`
+handle. Files are hot-reloaded on save while the robot is running — no
+restart, no build step, no framework to learn:
+
+    # behaviors/follow_person.py
+    from roborun.behaviors import behavior
+
+    @behavior(hz=10)
+    def follow_person(robot):
+        people = robot.see("person")
+        if not people:
+            return robot.stop()
+        robot.move(forward=0.3, turn=-1.2 * (people[0].cx - 0.5))
+
+The `robot` handle:
+    robot.see(label=None)    detections (normalized .cx .cy .w .h .label .conf)
+    robot.move(forward=0, strafe=0, turn=0)   sim or real robot, safety-clamped
+    robot.stop()
+    robot.say(text)          speaks into the event timeline
+    robot.ask(prompt, image=False)   LLM — Anthropic API or local Ollama
+    robot.remember(k, v) / robot.recall(k)    persistent key-value memory
+    robot.log(msg)           write to the black box
+    robot.state              dict that survives across loop ticks (not reloads)
+
+Every move/say/log lands in the tamper-evident event timeline.
+"""
+from __future__ import annotations
+
+import base64
+import importlib.util
+import json
+import os
+import threading
+import time
+import traceback
+from pathlib import Path
+from typing import Any, Callable
+
+from roborun.events import emit
+
+MAX_LINEAR = float(os.environ.get("ROBORUN_MAX_LINEAR_VEL", "1.0"))
+MAX_ANGULAR = float(os.environ.get("ROBORUN_MAX_ANGULAR_VEL", "1.5"))
+_MEMORY_PATH = Path(".roborun") / "behavior_memory.json"
+
+
+def behavior(hz: float | None = None, every: float | None = None,
+             name: str | None = None, autostart: bool = True) -> Callable:
+    """Mark a function as a behavior loop. `hz` for control loops,
+    `every` (seconds) for slow loops. Defaults to 2 Hz."""
+    period = (1.0 / hz) if hz else (every if every else 0.5)
+
+    def mark(fn: Callable) -> Callable:
+        fn._behavior = {"period": max(0.02, period),
+                        "name": name or fn.__name__,
+                        "autostart": autostart}
+        return fn
+    return mark
+
+
+class Thing:
+    """A detection, normalized to [0,1] coordinates."""
+    __slots__ = ("label", "conf", "track_id", "cx", "cy", "w", "h")
+
+    def __init__(self, det: dict, fw: float, fh: float) -> None:
+        x1, y1, x2, y2 = det["bbox"]
+        self.label = det["label"]
+        self.conf = det["confidence"]
+        self.track_id = det.get("track_id", -1)
+        self.cx = ((x1 + x2) / 2) / fw
+        self.cy = ((y1 + y2) / 2) / fh
+        self.w = (x2 - x1) / fw
+        self.h = (y2 - y1) / fh
+
+    def __repr__(self) -> str:
+        return f"<{self.label} {self.conf:.0%} at ({self.cx:.2f},{self.cy:.2f})>"
+
+
+class Robot:
+    """The handle a behavior receives. One per behavior loop."""
+
+    def __init__(self, behavior_name: str) -> None:
+        self._name = behavior_name
+        self._last_cmd: tuple | None = None
+        self._last_say = ""
+        self.state: dict[str, Any] = {}
+
+    # ---- perception ----
+
+    def see(self, label: str | None = None, min_conf: float = 0.4) -> list[Thing]:
+        try:
+            from roborun.routes._singletons import get_webcam
+            wc = get_webcam()
+            frame = wc.snapshot()
+            fh, fw = frame.shape[:2] if frame is not None else (720, 1280)
+            things = [Thing(d, fw, fh) for d in wc.get_detections()
+                      if d["confidence"] >= min_conf]
+        except Exception:
+            return []
+        if label:
+            things = [t for t in things if t.label == label]
+        return sorted(things, key=lambda t: -t.conf)
+
+    def frame_jpeg(self) -> bytes | None:
+        p = Path("/tmp/roborun_frame.jpg")
+        try:
+            return p.read_bytes() if p.exists() else None
+        except Exception:
+            return None
+
+    # ---- action ----
+
+    def move(self, forward: float = 0.0, strafe: float = 0.0, turn: float = 0.0) -> None:
+        forward = max(-MAX_LINEAR, min(MAX_LINEAR, forward))
+        strafe = max(-MAX_LINEAR, min(MAX_LINEAR, strafe))
+        turn = max(-MAX_ANGULAR, min(MAX_ANGULAR, turn))
+
+        sent = False
+        try:
+            from roborun.routes._singletons import get_simulator
+            sim = get_simulator()
+            if sim.is_running:
+                sim.set_cmd_vel(forward, strafe, turn)
+                sent = True
+        except Exception:
+            pass
+        if not sent:
+            try:
+                from roborun.rosbridge import get_client
+                client = get_client(auto_connect=False)
+                if client and client.health.get("connected"):
+                    client.move(forward, strafe, turn)
+                    sent = True
+            except Exception:
+                pass
+
+        cmd = (round(forward, 1), round(strafe, 1), round(turn, 1))
+        if cmd != self._last_cmd:  # don't flood the black box at 10 Hz
+            self._last_cmd = cmd
+            emit("ros", self._name,
+                 f"move fwd={forward:.2f} turn={turn:.2f}" + ("" if sent else " (no actuator)"),
+                 {"forward": round(forward, 2), "strafe": round(strafe, 2),
+                  "turn": round(turn, 2), "sent": sent})
+
+    def stop(self) -> None:
+        self.move(0.0, 0.0, 0.0)
+
+    def say(self, text: str) -> None:
+        text = str(text).strip()
+        if text and text != self._last_say:
+            self._last_say = text
+            emit("agent", self._name, text, {})
+
+    def log(self, msg: str, **detail: Any) -> None:
+        emit("task", self._name, str(msg), detail)
+
+    # ---- memory ----
+
+    def remember(self, key: str, value: Any) -> None:
+        data = self._load_memory()
+        data[key] = value
+        _MEMORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _MEMORY_PATH.write_text(json.dumps(data, default=str, indent=1))
+
+    def recall(self, key: str, default: Any = None) -> Any:
+        return self._load_memory().get(key, default)
+
+    @staticmethod
+    def _load_memory() -> dict:
+        try:
+            return json.loads(_MEMORY_PATH.read_text())
+        except Exception:
+            return {}
+
+    # ---- LLM (online or local) ----
+
+    def ask(self, prompt: str, image: bool = False, system: str | None = None,
+            max_tokens: int = 300) -> str:
+        """Ask an LLM. Uses the Anthropic API when ANTHROPIC_API_KEY is set,
+        otherwise a local Ollama at OLLAMA_HOST (default 127.0.0.1:11434).
+        `image=True` attaches the current camera frame (Anthropic only)."""
+        backend = os.environ.get("ROBORUN_LLM") or (
+            "anthropic" if os.environ.get("ANTHROPIC_API_KEY") else "ollama")
+        try:
+            if backend == "anthropic":
+                return self._ask_anthropic(prompt, image, system, max_tokens)
+            return self._ask_ollama(prompt, system)
+        except Exception as exc:
+            emit("system", self._name, f"ask() failed: {exc}", {})
+            return f"[ask failed: {exc}]"
+
+    def _ask_anthropic(self, prompt: str, image: bool, system: str | None,
+                       max_tokens: int) -> str:
+        import urllib.request
+        content: list[dict] = []
+        if image:
+            jpeg = self.frame_jpeg()
+            if jpeg:
+                content.append({"type": "image", "source": {
+                    "type": "base64", "media_type": "image/jpeg",
+                    "data": base64.b64encode(jpeg).decode()}})
+        content.append({"type": "text", "text": prompt})
+        body: dict[str, Any] = {
+            "model": os.environ.get("ROBORUN_MODEL", "claude-haiku-4-5-20251001"),
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": content}],
+        }
+        if system:
+            body["system"] = system
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=json.dumps(body).encode(),
+            headers={"x-api-key": os.environ["ANTHROPIC_API_KEY"],
+                     "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read())
+        return "".join(b.get("text", "") for b in data.get("content", [])).strip()
+
+    def _ask_ollama(self, prompt: str, system: str | None) -> str:
+        import urllib.request
+        host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
+        if not host.startswith("http"):
+            host = f"http://{host}"
+        body = {"model": os.environ.get("OLLAMA_MODEL", "llama3.2"),
+                "prompt": prompt, "stream": False}
+        if system:
+            body["system"] = system
+        req = urllib.request.Request(
+            f"{host}/api/generate", data=json.dumps(body).encode(),
+            headers={"content-type": "application/json"})
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return json.loads(resp.read()).get("response", "").strip()
+
+
+class _Loop:
+    """One running behavior: its thread, its robot handle, its stats."""
+
+    def __init__(self, name: str, fn: Callable, period: float, source: str) -> None:
+        self.name = name
+        self.fn = fn
+        self.period = period
+        self.source = source
+        self.robot = Robot(name)
+        self.enabled = True
+        self.runs = 0
+        self.errors = 0
+        self.last_error: str | None = None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True,
+                                        name=f"behavior:{name}")
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def halt(self) -> None:
+        self._stop.set()
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            if not self.enabled:
+                time.sleep(0.2)
+                continue
+            t0 = time.monotonic()
+            try:
+                self.fn(self.robot)
+                self.runs += 1
+            except Exception as exc:
+                self.errors += 1
+                self.last_error = f"{type(exc).__name__}: {exc}"
+                line = traceback.format_exc().strip().splitlines()[-1]
+                emit("system", self.name, f"behavior error: {line}", {})
+                time.sleep(2.0)  # don't spin on a broken loop
+            elapsed = time.monotonic() - t0
+            self._stop.wait(max(0.0, self.period - elapsed))
+        try:
+            self.robot.stop()
+        except Exception:
+            pass
+
+    def status(self) -> dict[str, Any]:
+        return {"name": self.name, "file": self.source, "enabled": self.enabled,
+                "period": self.period, "runs": self.runs, "errors": self.errors,
+                "last_error": self.last_error}
+
+
+class BehaviorRunner:
+    """Watches behaviors/ directories, hot-reloads files on save."""
+
+    _instance: "BehaviorRunner | None" = None
+
+    def __init__(self) -> None:
+        self.dirs = [Path("behaviors")]
+        for extra in os.environ.get("ROBORUN_BEHAVIOR_PATHS", "").split(","):
+            if extra.strip():
+                self.dirs.append(Path(extra.strip()).expanduser())
+        self._mtimes: dict[Path, float] = {}
+        self._loops: dict[Path, list[_Loop]] = {}
+        self._watcher: threading.Thread | None = None
+        self._stop = threading.Event()
+
+    @classmethod
+    def get(cls) -> "BehaviorRunner":
+        if cls._instance is None:
+            cls._instance = BehaviorRunner()
+        return cls._instance
+
+    def start(self) -> None:
+        if self._watcher:
+            return
+        self._watcher = threading.Thread(target=self._watch, daemon=True,
+                                         name="BehaviorWatcher")
+        self._watcher.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        for loops in self._loops.values():
+            for loop in loops:
+                loop.halt()
+
+    def statuses(self) -> list[dict]:
+        out = []
+        for loops in self._loops.values():
+            out.extend(loop.status() for loop in loops)
+        return sorted(out, key=lambda s: s["name"])
+
+    def set_enabled(self, name: str, enabled: bool) -> bool:
+        for loops in self._loops.values():
+            for loop in loops:
+                if loop.name == name:
+                    loop.enabled = enabled
+                    if not enabled:
+                        loop.robot.stop()
+                    emit("system", "behaviors",
+                         f"{name} {'enabled' if enabled else 'disabled'}", {})
+                    return True
+        return False
+
+    def _watch(self) -> None:
+        while not self._stop.is_set():
+            try:
+                self._scan()
+            except Exception:
+                pass
+            self._stop.wait(1.0)
+
+    def _scan(self) -> None:
+        seen: set[Path] = set()
+        for d in self.dirs:
+            if not d.is_dir():
+                continue
+            for path in sorted(d.glob("*.py")):
+                if path.name.startswith("_"):
+                    continue
+                seen.add(path)
+                mtime = path.stat().st_mtime
+                if self._mtimes.get(path) != mtime:
+                    self._mtimes[path] = mtime
+                    self._load(path, reload=path in self._loops)
+        # files deleted → halt their loops
+        for path in [p for p in self._loops if p not in seen]:
+            for loop in self._loops.pop(path):
+                loop.halt()
+            self._mtimes.pop(path, None)
+            emit("system", "behaviors", f"unloaded {path.name}", {})
+
+    def _load(self, path: Path, reload: bool = False) -> None:
+        for loop in self._loops.pop(path, []):
+            loop.halt()
+        try:
+            spec = importlib.util.spec_from_file_location(
+                f"roborun_behavior_{path.stem}_{int(time.time() * 1000)}", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        except Exception as exc:
+            line = traceback.format_exc().strip().splitlines()[-1]
+            emit("system", "behaviors", f"{path.name} failed to load: {line}", {})
+            return
+
+        loops: list[_Loop] = []
+        for attr in vars(module).values():
+            meta = getattr(attr, "_behavior", None)
+            if meta and callable(attr):
+                loop = _Loop(meta["name"], attr, meta["period"], str(path))
+                loop.enabled = meta["autostart"]
+                loop.start()
+                loops.append(loop)
+        if loops:
+            self._loops[path] = loops
+            names = ", ".join(l.name for l in loops)
+            emit("system", "behaviors",
+                 f"{'reloaded' if reload else 'loaded'} {path.name} → {names}", {})
+
+
+# ---- starter behaviors written on first boot ----
+
+EXAMPLES: dict[str, str] = {
+    "follow_person.py": '''\
+"""Follow whoever the camera sees. Edit the numbers, save, watch it change."""
+from roborun.behaviors import behavior
+
+
+@behavior(hz=10)
+def follow_person(robot):
+    people = robot.see("person")
+    if not people:
+        return robot.stop()
+    target = people[0]
+    robot.move(
+        forward=0.3 if target.h < 0.6 else 0.0,   # stop when close
+        turn=-1.2 * (target.cx - 0.5),            # steer toward center
+    )
+''',
+    "patrol.py": '''\
+"""Square patrol in the sim. `ros-agent` autostarts MuJoCo if there's no camera."""
+import time
+from roborun.behaviors import behavior
+
+
+@behavior(hz=5, autostart=False)
+def patrol(robot):
+    leg = robot.state.setdefault("leg", {"mode": "walk", "until": time.time() + 3})
+    if time.time() > leg["until"]:
+        leg["mode"] = "turn" if leg["mode"] == "walk" else "walk"
+        leg["until"] = time.time() + (1.6 if leg["mode"] == "turn" else 3)
+        robot.log(f"patrol: {leg['mode']}")
+    robot.move(forward=0.4 if leg["mode"] == "walk" else 0.0,
+               turn=0.9 if leg["mode"] == "turn" else 0.0)
+''',
+    "narrator.py": '''\
+"""Every 10s, ask an LLM what the robot is looking at. Needs ANTHROPIC_API_KEY
+(or a local Ollama). The answer lands in the event timeline."""
+from roborun.behaviors import behavior
+
+
+@behavior(every=10.0, autostart=False)
+def narrator(robot):
+    seen = ", ".join(t.label for t in robot.see()) or "nothing"
+    answer = robot.ask(
+        f"You are a robot. Your camera detects: {seen}. "
+        "In one short dry sentence, say what you make of the scene.",
+        image=True,
+    )
+    robot.say(answer)
+''',
+}
+
+
+def write_examples(target: Path | None = None) -> Path | None:
+    """Create behaviors/ with starter files if it doesn't exist."""
+    target = target or Path("behaviors")
+    if target.exists():
+        return None
+    target.mkdir(parents=True)
+    for name, source in EXAMPLES.items():
+        (target / name).write_text(source)
+    return target

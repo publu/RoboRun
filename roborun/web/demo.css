@@ -169,6 +169,22 @@ body::before {
   backdrop-filter: blur(4px);
 }
 
+.hud-track { display: none; }
+.hud-track.on {
+  display: inline-block;
+  color: var(--amber);
+  border-color: rgba(255, 180, 84, 0.4);
+  animation: rec-pulse 1.4s ease-in-out infinite;
+}
+.hud-track.on.lock {
+  color: #061008;
+  background: var(--phos);
+  border-color: var(--phos);
+  animation: none;
+  text-shadow: none;
+  box-shadow: 0 0 18px rgba(0, 255, 157, 0.5);
+}
+
 .scanlines {
   position: absolute; inset: 0; z-index: 2; pointer-events: none;
   background: repeating-linear-gradient(
