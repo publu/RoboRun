@@ -77,8 +77,13 @@ def handle_mcp_request(h, payload: dict) -> None:
         name = params.get("name", "")
         args = params.get("arguments", {})
         from roborun.ros_mcp import handle_tool_call
+        from roborun.events import emit
         result = handle_tool_call(name, args)
         is_error = not result.get("ok", True)
+        emit("mcp_tool", "mcp", name, {
+            "args": args,
+            "status": "error" if is_error else "done",
+        })
         content = [{"type": "text", "text": json.dumps(result, default=str)}]
         if "image" in result and isinstance(result["image"], str) and result["image"].startswith("data:image/"):
             parts = result["image"].split(",", 1)

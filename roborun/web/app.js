@@ -682,134 +682,88 @@ document.addEventListener("keydown", (ev) => {
   if (fn) { ev.preventDefault(); fn(); }
 });
 
-// ── Agent chat ──────────────────────────────────────────────────────────────
+// ── Event timeline (SSE) ──────────────────────────────────────────────────
 
-const agentMessages = document.querySelector("#agentMessages");
-const agentInput = document.querySelector("#agentInput");
-const agentSend = document.querySelector("#agentSend");
-const agentStop = document.querySelector("#agentStop");
-const agentStatus = document.querySelector("#agentStatus");
-let agentStreaming = false;
-let currentTurn = null;
+const evtTimeline = document.querySelector("#evtTimeline");
+const evtCount = document.querySelector("#evtCount");
+let evtSource = null;
+let evtFilter = "all";
+let evtItems = [];
+const EVT_MAX = 200;
 
-function renderMarkdown(text) {
-  if (typeof marked !== "undefined") { try { return marked.parse(text); } catch {} }
-  return escapeHtml(text).replace(/\n/g, "<br>");
+const EVT_ICONS = { mcp_tool: "⚙", detection: "◉", ros: "⬡", agent: "✦", system: "◆", task: "▶" };
+const EVT_COLORS = { mcp_tool: "var(--blue)", detection: "var(--amber)", ros: "#22314E", agent: "var(--green)", system: "var(--muted)", task: "var(--green)" };
+
+function evtFormatTime(ts) {
+  const d = new Date(ts * 1000);
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-function scrollChat() { agentMessages.scrollTop = agentMessages.scrollHeight; }
-
-function addUserMessage(text) {
-  const div = document.createElement("div"); div.className = "msg-user";
-  div.innerHTML = `<div class="msg-label">You</div><div class="msg-user-bubble"></div>`;
-  div.querySelector(".msg-user-bubble").textContent = text;
-  agentMessages.appendChild(div); scrollChat();
+function evtRenderItem(evt) {
+  const el = document.createElement("div");
+  el.className = `evt-item evt-${evt.type}`;
+  el.dataset.type = evt.type;
+  const icon = EVT_ICONS[evt.type] || "●";
+  const color = EVT_COLORS[evt.type] || "var(--muted)";
+  const status = evt.detail?.status || evt.detail?.action;
+  const statusBadge = status ? `<span class="evt-status evt-status-${status}">${status}</span>` : "";
+  el.innerHTML = `<span class="evt-icon" style="color:${color}">${icon}</span><div class="evt-body"><div class="evt-title">${escapeHtml(evt.title)}${statusBadge}</div>${evt.detail?.args ? `<div class="evt-detail">${escapeHtml(JSON.stringify(evt.detail.args)).slice(0, 120)}</div>` : ""}</div><span class="evt-time">${evtFormatTime(evt.ts)}</span>`;
+  el.addEventListener("click", () => el.classList.toggle("expanded"));
+  return el;
 }
 
-function startAgentTurn() {
-  const container = document.createElement("div"); container.className = "msg-agent";
-  const label = document.createElement("div"); label.className = "msg-label"; label.textContent = "Agent";
-  const content = document.createElement("div"); content.className = "turn-content";
-  container.appendChild(label); container.appendChild(content);
-  agentMessages.appendChild(container);
-  currentTurn = { container, content, textBlock: null, toolCards: new Map() };
-  scrollChat(); return currentTurn;
+function evtApplyFilter() {
+  if (!evtTimeline) return;
+  const nodes = evtTimeline.children;
+  for (const node of nodes) {
+    node.style.display = (evtFilter === "all" || node.dataset.type === evtFilter) ? "" : "none";
+  }
 }
 
-function ensureTextBlock(streaming = true) {
-  if (!currentTurn) startAgentTurn();
-  const last = currentTurn.content.lastElementChild;
-  if (last && last.classList.contains("text-block")) { currentTurn.textBlock = last; return last; }
-  const tb = document.createElement("div");
-  tb.className = "text-block" + (streaming ? " streaming" : "");
-  currentTurn.content.appendChild(tb); currentTurn.textBlock = tb; return tb;
+function evtAddEvent(evt) {
+  evtItems.push(evt);
+  if (evtItems.length > EVT_MAX) evtItems.shift();
+  if (!evtTimeline) return;
+  const el = evtRenderItem(evt);
+  if (evtFilter !== "all" && evt.type !== evtFilter) el.style.display = "none";
+  evtTimeline.prepend(el);
+  while (evtTimeline.children.length > EVT_MAX) evtTimeline.lastElementChild.remove();
+  if (evtCount) evtCount.textContent = evtTimeline.querySelectorAll('.evt-item:not([style*="display: none"])').length;
 }
 
-function sealTextBlock() { if (currentTurn?.textBlock) { currentTurn.textBlock.classList.remove("streaming"); currentTurn.textBlock = null; } }
-
-function addThinkingBlock(thinking) {
-  if (!currentTurn) startAgentTurn(); sealTextBlock();
-  const card = document.createElement("div"); card.className = "thinking-block";
-  card.innerHTML = `<div class="th-header"><span><span class="th-chevron">▸</span> thinking</span></div><div class="th-body"></div>`;
-  card.querySelector(".th-body").textContent = thinking;
-  card.querySelector(".th-header").addEventListener("click", () => card.classList.toggle("open"));
-  currentTurn.content.appendChild(card); scrollChat();
+function evtConnect() {
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  evtSource = new EventSource("/api/events/stream");
+  evtSource.onmessage = (e) => {
+    try {
+      const evt = JSON.parse(e.data);
+      evtAddEvent(evt);
+    } catch {}
+  };
+  evtSource.onerror = () => {
+    evtSource.close();
+    evtSource = null;
+    setTimeout(evtConnect, 3000);
+  };
 }
 
-function prettyToolName(n) { return n.replace(/^mcp__/, "").replace(/_/g, " "); }
-
-function addToolCall(toolId, name, input) {
-  if (!currentTurn) startAgentTurn(); sealTextBlock();
-  const card = document.createElement("div"); card.className = "tool-call-card";
-  card.innerHTML = `<div class="tc-header"><span class="tc-icon">⚙</span><span class="tc-name">${escapeHtml(prettyToolName(name))}</span><span class="tc-status">running...</span><span class="tc-chevron">▸</span></div><div class="tc-body"><pre class="tc-json"></pre></div>`;
-  const hasInput = input && Object.keys(input).length > 0;
-  card.querySelector(".tc-json").textContent = hasInput ? JSON.stringify(input, null, 2) : "(no arguments)";
-  card.querySelector(".tc-header").addEventListener("click", () => card.classList.toggle("open"));
-  currentTurn.content.appendChild(card);
-  if (toolId) currentTurn.toolCards.set(toolId, card);
-  scrollChat();
-}
-
-function addToolResult(toolUseId, resultText, isError) {
-  if (!currentTurn) startAgentTurn();
-  const callCard = toolUseId ? currentTurn.toolCards.get(toolUseId) : null;
-  if (callCard) { const s = callCard.querySelector(".tc-status"); if (s) { s.textContent = isError ? "error" : "done"; s.style.color = isError ? "var(--red)" : "var(--green)"; } }
-  sealTextBlock();
-  const card = document.createElement("div");
-  card.className = "tool-result-card open" + (isError ? " result-error" : "");
-  card.innerHTML = `<div class="tr-header"><span class="tr-icon">${isError ? "✕" : "✓"}</span><span class="tr-label">${isError ? "tool error" : "tool result"}</span><span class="tr-chevron">▸</span></div><div class="tr-body"><pre></pre></div>`;
-  card.querySelector("pre").textContent = resultText || "(empty)";
-  card.querySelector(".tr-header").addEventListener("click", () => card.classList.toggle("open"));
-  currentTurn.content.appendChild(card); scrollChat();
-}
-
-function agentSetBusy(busy) {
-  agentStreaming = busy;
-  agentSend.disabled = busy; agentInput.disabled = busy;
-  agentStop.style.display = busy ? "" : "none"; agentSend.style.display = busy ? "none" : "";
-  agentStatus.textContent = busy ? "thinking..." : "idle";
-  agentStatus.className = `agent-badge ${busy ? "busy" : ""}`;
-}
-
-async function agentSendMessage(message) {
-  const text = (message ?? agentInput.value).trim();
-  if (!text || agentStreaming) return;
-  agentInput.value = "";
-  addUserMessage(text); agentSetBusy(true); startAgentTurn();
-  try {
-    const resp = await fetch("/api/agent/chat", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ message: text }) });
-    if (!resp.ok) { ensureTextBlock(false).textContent = "Request failed: " + resp.status; agentSetBusy(false); return; }
-    const reader = resp.body.getReader(); const decoder = new TextDecoder(); let buf = "";
-    while (true) {
-      const { done, value } = await reader.read(); if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split("\n"); buf = lines.pop();
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        let chunk; try { chunk = JSON.parse(line.slice(6)); } catch { continue; }
-        if (chunk.type === "text") { const tb = ensureTextBlock(true); tb.innerHTML = renderMarkdown(chunk.accumulated); tb.classList.add("streaming"); scrollChat(); }
-        else if (chunk.type === "thinking") { addThinkingBlock(chunk.thinking); }
-        else if (chunk.type === "tool_use") { addToolCall(chunk.tool_id, chunk.tool_name, chunk.tool_input); }
-        else if (chunk.type === "tool_result") { addToolResult(chunk.tool_use_id, chunk.result, chunk.is_error); }
-        else if (chunk.type === "done") { sealTextBlock(); if (chunk.cost) { const c = document.createElement("div"); c.className = "turn-cost"; c.textContent = `$${chunk.cost.toFixed(4)}`; currentTurn.container.appendChild(c); } scrollChat(); }
-        else if (chunk.type === "error") { sealTextBlock(); ensureTextBlock(false).textContent = "Error: " + chunk.error; currentTurn.container.classList.add("msg-error"); }
-      }
-    }
-  } catch (e) { sealTextBlock(); ensureTextBlock(false).textContent = "Error: " + e.message; currentTurn.container.classList.add("msg-error"); }
-  sealTextBlock(); agentSetBusy(false);
-}
-
-document.querySelectorAll(".sc-btn").forEach(btn => btn.addEventListener("click", () => agentSendMessage(btn.dataset.msg)));
-agentSend?.addEventListener("click", () => agentSendMessage());
-agentInput?.addEventListener("keydown", (e) => { if (e.key === "Enter") agentSendMessage(); });
-agentStop?.addEventListener("click", async () => {
-  await fetch("/api/agent/stop", { method: "POST", headers: {"Content-Type":"application/json"}, body: "{}" });
-  agentSetBusy(false);
+document.querySelectorAll(".tl-filter").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tl-filter").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    evtFilter = btn.dataset.filter;
+    evtApplyFilter();
+    if (evtCount) evtCount.textContent = evtTimeline.querySelectorAll('.evt-item:not([style*="display: none"])').length;
+  });
 });
-document.querySelector("#agentClear")?.addEventListener("click", async () => {
-  await fetch("/api/agent/clear", { method: "POST", headers: {"Content-Type":"application/json"}, body: "{}" });
-  agentMessages.innerHTML = ""; currentTurn = null; agentStatus.textContent = "idle";
+
+document.querySelector("#evtClear")?.addEventListener("click", () => {
+  evtItems = [];
+  if (evtTimeline) evtTimeline.innerHTML = "";
+  if (evtCount) evtCount.textContent = "0";
 });
+
+evtConnect();
 
 // ── Tasks ───────────────────────────────────────────────────────────────────
 
@@ -1050,7 +1004,7 @@ document.querySelector("#deployConfirm")?.addEventListener("click", async () => 
   if (r.ok) { closeModal("deployModal"); loadFleet(); }
 });
 
-// ── Chat panel toggle ──────────────────────────────────────────────────────
+// ── Timeline panel toggle ─────────────────────────────────────────────────
 
 const chatToggle = document.querySelector("#chatToggle");
 const appEl = document.querySelector(".app");

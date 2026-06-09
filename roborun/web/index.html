@@ -539,17 +539,24 @@
 
       </div><!-- .center -->
 
-      <!-- ── CHAT TOGGLE ────────────────────────────────────────── -->
-      <button id="chatToggle" class="chat-toggle" title="Toggle Agent panel">◀</button>
+      <!-- ── TIMELINE TOGGLE ──────────────────────────────────────── -->
+      <button id="chatToggle" class="chat-toggle" title="Toggle Timeline">◀</button>
 
-      <!-- ── CHAT PANEL ──────────────────────────────────────────── -->
+      <!-- ── EVENT TIMELINE ──────────────────────────────────────── -->
       <aside class="chat-panel" id="chatPanel">
         <div class="chat-head">
           <div class="chat-head-left">
-            <span class="ch-title">AGENT</span>
-            <span id="agentStatus" class="agent-badge">idle</span>
+            <span class="ch-title">TIMELINE</span>
+            <span id="evtCount" class="agent-badge">0</span>
           </div>
-          <button id="agentClear" class="sec-btn small-btn">New session</button>
+          <button id="evtClear" class="sec-btn small-btn">Clear</button>
+        </div>
+
+        <div class="tl-filters">
+          <button class="tl-filter active" data-filter="all">All</button>
+          <button class="tl-filter" data-filter="mcp_tool">⚙ MCP</button>
+          <button class="tl-filter" data-filter="detection">◉ Vision</button>
+          <button class="tl-filter" data-filter="system">◆ System</button>
         </div>
 
         <div class="detections-panel" id="detectionsPanel">
@@ -562,22 +569,7 @@
           <div class="det-timeline" id="detTimeline" style="display:none"></div>
         </div>
 
-        <div id="agentMessages" class="chat-msgs"></div>
-
-        <div class="chat-shortcuts">
-          <button class="sc-btn" data-msg="Run robot_brief and give me a full status report — what's connected, battery, capabilities.">Status</button>
-          <button class="sc-btn" data-msg="Run scan_surroundings to do a 360-degree sweep and tell me what objects you see.">Scan</button>
-          <button class="sc-btn" data-msg="Take a camera_snapshot and describe what you see.">Camera</button>
-          <button class="sc-btn" data-msg="Emergency stop — run estop immediately.">E-Stop</button>
-          <button class="sc-btn" data-msg="Start follow_me — follow the nearest person.">Follow</button>
-          <button class="sc-btn" data-msg="List all available skills and workflows.">Skills</button>
-        </div>
-
-        <div class="chat-input-row">
-          <input id="agentInput" type="text" placeholder="Tell the robot what to do..." autocomplete="off" />
-          <button id="agentSend" class="send-btn">↵</button>
-          <button id="agentStop" class="stop-btn" style="display:none">■</button>
-        </div>
+        <div id="evtTimeline" class="evt-timeline"></div>
       </aside>
     </div><!-- .app -->
 

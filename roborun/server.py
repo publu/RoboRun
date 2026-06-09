@@ -64,6 +64,11 @@ class Handler(SimpleHTTPRequestHandler):
             handle_mcp_sse(self)
             return
 
+        # Event timeline SSE stream
+        if path_only == "/api/events/stream":
+            self._event_stream()
+            return
+
         # MJPEG camera stream
         if path_only == "/api/camera/stream":
             self._mjpeg_stream()
@@ -110,6 +115,35 @@ class Handler(SimpleHTTPRequestHandler):
             raise ApiError(404, "Unknown API route")
         except ApiError as exc:
             send_json(self, exc.status, {"ok": False, "error": exc.message})
+
+    def _event_stream(self) -> None:
+        import queue as _queue
+        from roborun.events import subscribe, unsubscribe, recent
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+        q = subscribe()
+        try:
+            for evt in recent(50):
+                line = f"data: {json.dumps(evt, default=str)}\n\n"
+                self.wfile.write(line.encode())
+            self.wfile.flush()
+            while True:
+                try:
+                    evt = q.get(timeout=15)
+                    line = f"data: {json.dumps(evt, default=str)}\n\n"
+                    self.wfile.write(line.encode())
+                    self.wfile.flush()
+                except _queue.Empty:
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            unsubscribe(q)
 
     def _mjpeg_stream(self) -> None:
         self.send_response(200)
@@ -183,6 +217,8 @@ def main() -> None:
     print(f"\n  ros-agent is live: http://{HOST}:{PORT}")
     print(f"  Telemetry WS:    ws://127.0.0.1:8766")
     print(f"  MCP endpoint:    http://{HOST}:{PORT}/mcp\n")
+    from roborun.events import emit
+    emit("system", "server", "ros-agent started", {"port": PORT})
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -25,6 +25,8 @@ VALID_ACTIONS = {"navigate_gps", "navigate_map", "explore", "query"}
 # ── Events ───────────────────────────────────────────────────────────────────
 
 def log_event(event_type: str, message: str, data: dict | None = None, level: str = "info") -> dict:
+    from roborun.events import emit
+    emit("system", event_type, message, data or {})
     event = {"id": uuid.uuid4().hex[:8], "type": event_type, "level": level,
              "message": message, "data": data or {},
              "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}

@@ -47,6 +47,9 @@ class WebcamPipeline:
         self._timeline_interval: float = 3.0
         self._last_timeline_ts: float = 0.0
 
+        self._prev_yolo_labels: set[str] = set()
+        self._prev_clip_labels: set[str] = set()
+
     @property
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
@@ -174,6 +177,24 @@ class WebcamPipeline:
                                 self._clip_query, frame, targets, threshold=0.15,
                             )
                             self._latest_clip_matches = clip_matches
+                            cur_clip = {d.label for d in clip_matches}
+                            clip_in = cur_clip - self._prev_clip_labels
+                            clip_out = self._prev_clip_labels - cur_clip
+                            self._prev_clip_labels = cur_clip
+                            try:
+                                from roborun.events import emit
+                                if clip_in:
+                                    emit("detection", "clip", f"CLIP match: {self._clip_query}", {
+                                        "action": "in", "query": self._clip_query,
+                                        "labels": sorted(clip_in),
+                                    })
+                                if clip_out:
+                                    emit("detection", "clip", f"CLIP lost: {self._clip_query}", {
+                                        "action": "out", "query": self._clip_query,
+                                        "labels": sorted(clip_out),
+                                    })
+                            except Exception:
+                                pass
                         except Exception:
                             self._active_models.discard("clip")
 
@@ -294,6 +315,24 @@ class WebcamPipeline:
         self._last_timeline_ts = now
         frame_copy = frame.copy()
         det_dicts = [d.to_dict() for d in detections]
+        current_labels = {d["label"] for d in det_dicts}
+        entered = current_labels - self._prev_yolo_labels
+        exited = self._prev_yolo_labels - current_labels
+        self._prev_yolo_labels = current_labels
+        try:
+            from roborun.events import emit
+            if entered:
+                emit("detection", "yolo", ", ".join(sorted(entered)), {
+                    "action": "in",
+                    "labels": sorted(entered),
+                })
+            if exited:
+                emit("detection", "yolo", ", ".join(sorted(exited)), {
+                    "action": "out",
+                    "labels": sorted(exited),
+                })
+        except Exception:
+            pass
         Thread(target=self._store_timeline, args=(frame_copy, det_dicts), daemon=True).start()
 
     @staticmethod
