@@ -1,4 +1,4 @@
-"""dimOS launch/stop and MCP async call routes."""
+"""Launch/stop external robot stacks and MCP async call routes."""
 from __future__ import annotations
 
 import json
