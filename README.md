@@ -1,54 +1,132 @@
+<div align="center">
+
+<img width="900" alt="RoboRun Dashboard" src="assets/demo-thumb.jpg" />
+
+<br />
+
 # RoboRun
 
-**Agentic robot OS — skills, fleet, vision AI, and MCP for any ROS 2 robot.**
+### The lightweight robot agent layer.<br/>49 MCP tools. Any ROS 2 robot. One `pip install`.
 
+<br />
+
+[![PyPI](https://img.shields.io/pypi/v/roborun?style=flat-square&color=00d47e)](https://pypi.org/project/roborun/)
+[![Python](https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![MCP Tools](https://img.shields.io/badge/MCP_tools-49-00d47e?style=flat-square)](https://modelcontextprotocol.io)
+[![ROS 2](https://img.shields.io/badge/ROS_2-supported-22314E?style=flat-square&logo=ros&logoColor=white)](https://ros.org)
+
+<br />
+
+```bash
+pip install roborun && roborun
 ```
-pip install roborun
-roborun
-```
 
-Open **http://127.0.0.1:8765**. Your webcam starts with YOLO, CLIP, and JEPA running in real time. Add a robot IP and you get full fleet control, spatial memory, a Claude agent, MuJoCo simulation, and native ROS 2 transport — all from one browser tab.
+**That's it.** Browser opens. Webcam starts with YOLO + CLIP + JEPA running live.<br/>
+Add a robot IP and you get fleet control, spatial memory, MuJoCo sim, and a Claude agent — from one tab.
 
-**Works with any MCP client.** Claude Desktop, Claude Code, Cursor — add one line:
+<br />
+
+[Quick Start](#quick-start) · [MCP Server](#mcp-server) · [Skills](#skills) · [Vision](#vision-models) · [Architecture](#architecture)
+
+</div>
+
+---
+
+<br />
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### Works with any MCP client
+
+Claude Desktop, Claude Code, Cursor, Windsurf — add one line and your AI gets full robot control.
 
 ```json
-{ "mcpServers": { "roborun": { "type": "http", "url": "http://localhost:8765/mcp" } } }
+{
+  "mcpServers": {
+    "roborun": {
+      "type": "http",
+      "url": "http://localhost:8765/mcp"
+    }
+  }
+}
 ```
 
-Or use the stdio transport directly:
+Or use stdio for CLI clients:
 
 ```json
-{ "mcpServers": { "roborun": { "command": "roborun-mcp" } } }
+{
+  "mcpServers": {
+    "roborun": {
+      "command": "roborun-mcp"
+    }
+  }
+}
 ```
 
-Your AI gets: 49 tools, 8 guided prompts, 6 resources, live topic streaming, robot skills.
+</td>
+<td width="50%" valign="top">
+
+### What your AI gets
+
+| | Surface | Count |
+|---|---|---|
+| **Tools** | Topic pub/sub, services, actions, camera, velocity, introspection, skills | **49** |
+| **Prompts** | Guided workflows — explore, safety-check, patrol, debug, teach | **8** |
+| **Resources** | Server info, skills, ROS graph, workflows, soul | **6** |
+| **Template** | `roborun://topic/{path}` — live read from any ROS topic | **1** |
+
+<br/>
+
+Your AI can drive the robot, read sensors, chain tools into workflows, and run autonomous skills — all through the standard MCP protocol.
+
+</td>
+</tr>
+</table>
+
+<br />
 
 ---
 
 ## Quick Start
 
-### Option A — pip install
+<table>
+<tr>
+<td width="33%">
+
+### pip install
 
 ```bash
 pip install roborun
 roborun
 ```
 
-### Option B — from source
+</td>
+<td width="33%">
+
+### From source
 
 ```bash
 git clone https://github.com/publu/RoboRun.git
-cd roborun
-python3 -m venv .venv && source .venv/bin/activate
+cd RoboRun
 pip install -e .
 python -m roborun.server
 ```
 
-### Option C — npx (Node 18+)
+</td>
+<td width="33%">
+
+### npx
 
 ```bash
 npx roborun
 ```
+
+</td>
+</tr>
+</table>
 
 Open **http://127.0.0.1:8765**. Webcam starts automatically.
 
@@ -56,31 +134,31 @@ Open **http://127.0.0.1:8765**. Webcam starts automatically.
 
 ## MCP Server
 
-RoboRun exposes a full MCP server with two transports:
+Two transports, zero configuration:
 
 | Transport | Endpoint | Use case |
 |-----------|----------|----------|
-| HTTP+SSE | `http://localhost:8765/mcp` | Claude Desktop, Cursor, web clients |
-| stdio | `roborun-mcp` | Claude Code, CLI-based clients |
+| **HTTP+SSE** | `http://localhost:8765/mcp` | Claude Desktop, Cursor, web clients |
+| **stdio** | `roborun-mcp` | Claude Code, CLI-based clients |
 
-### 49 Tools
+### 30 Built-in ROS Tools
 
-30 built-in ROS tools (topic pub/sub, services, actions, params, camera, depth, velocity control, introspection) plus 19 skill tools from 5 built-in skills.
+Full robot control through MCP: topic discovery, pub/sub, service calls, action goals, parameter management, camera snapshots, depth images, velocity commands, and deep introspection of every node, topic, service, and action on the ROS graph.
 
-### 8 Prompts
+### 8 Guided Prompts
 
-| Prompt | Description |
+| Prompt | What it does |
 |--------|-------------|
-| `explore-robot` | Guided robot discovery workflow |
+| `explore-robot` | Walk through discovering a new robot's capabilities |
 | `safety-check` | Pre-operation safety verification |
-| `environment-scan` | Full environment survey |
-| `teach-waypoints` | Interactive waypoint teaching |
-| `debug-topic` | Diagnose a misbehaving topic |
-| `quick-start` | First-time user onboarding |
-| `fleet-sweep` | Multi-robot status check |
-| `build-workflow` | Create a reusable workflow |
+| `environment-scan` | Full environment survey with camera + sensors |
+| `teach-waypoints` | Interactive waypoint teaching for patrol routes |
+| `debug-topic` | Diagnose a misbehaving topic step by step |
+| `quick-start` | First-time onboarding in 60 seconds |
+| `fleet-sweep` | Multi-robot status check across your fleet |
+| `build-workflow` | Create a reusable tool chain |
 
-### 6 Resources + Templates
+### 6 Resources + Live Topic Template
 
 | Resource | Description |
 |----------|-------------|
@@ -89,33 +167,35 @@ RoboRun exposes a full MCP server with two transports:
 | `roborun://ros-graph` | Live ROS topic/service/node graph |
 | `roborun://workflows` | Saved compose workflows |
 | `roborun://prompts-catalog` | All available prompts |
-| `roborun://soul` | Agent behavioral identity (SOUL.md) |
-| `roborun://topic/{path}` | Live read from any ROS topic (template) |
+| `roborun://soul` | Agent behavioral identity |
+| `roborun://topic/{path}` | **Live** read from any ROS topic |
 
 ---
 
 ## Skills
 
-RoboRun uses a plugin-based skills system. Skills are loaded from 4 sources:
+Plugin-based skill system. Drop a Python file, get new MCP tools.
 
-1. **Built-in** — shipped with RoboRun
-2. **`ROBORUN_SKILL_PACKAGES`** — comma-separated pip packages
-3. **`ROBORUN_SKILL_PATHS`** — comma-separated filesystem paths
-4. **`.roborun/skills.yaml`** — project-level skill config
+**4 loading paths:**
+
+```
+Built-in skills                     → ships with RoboRun
+ROBORUN_SKILL_PACKAGES=pkg1,pkg2    → pip packages
+ROBORUN_SKILL_PATHS=/path/to/skills → filesystem directories
+.roborun/skills.yaml                → project-level config
+```
 
 ### Built-in Skills
 
-| Skill | Tools | Description |
-|-------|-------|-------------|
-| **compose** | `run_sequence`, `save_workflow`, `run_workflow`, `list_workflows`, `delete_workflow` | Chain tools into reusable workflows |
-| **inspect** | `robot_brief`, `watch_topic`, `diff_state` | High-level robot introspection |
-| **follow_me** | `follow_target_person` | Visual person-following with P-control |
-| **patrol** | `start_patrol`, `stop_patrol`, `add_patrol_waypoint` | Autonomous waypoint patrol |
-| **scan_detect** | `scan_and_detect`, `find_object` | Rotate-and-detect object search |
+| Skill | Tools | What it does |
+|-------|:-----:|-------------|
+| **compose** | 5 | Chain any tools into reusable workflows. `run_sequence` > `save_workflow` > `run_workflow` |
+| **inspect** | 3 | `robot_brief` (one-call overview), `watch_topic` (conditional monitoring), `diff_state` (detect graph changes) |
+| **follow_me** | 1 | Visual person-following with P-control on camera feed |
+| **patrol** | 5 | Autonomous waypoint patrol loop with configurable dwell times |
+| **scan_detect** | 2 | Rotate-and-detect object search using YOLO + CLIP fallback |
 
-### Writing a Skill
-
-Create a Python file with `SKILL_TOOLS` (list of MCP tool dicts) and `handle(name, args)`:
+### Write Your Own
 
 ```python
 SKILL_TOOLS = [
@@ -128,51 +208,52 @@ def handle(name: str, args: dict) -> str:
         return f"Got: {args.get('x')}"
 ```
 
-Drop it in a directory and set `ROBORUN_SKILL_PATHS=/path/to/skills`.
-
----
-
-## ROS 2 Transport
-
-RoboRun connects to any robot running `rosbridge_server` via WebSocket. No ROS installation needed on the RoboRun host.
-
-```bash
-# On the robot
-ros2 launch rosbridge_server rosbridge_websocket_launch.xml
-
-# Set Robot IP in the UI, or:
-curl -X POST http://localhost:8765/api/ros/connect -d '{"host":"192.168.1.100"}'
-
-# Use any tool
-curl -X POST http://localhost:8765/api/ros/topics
-curl -X POST http://localhost:8765/api/ros/publish \
-  -d '{"topic":"/cmd_vel","type":"geometry_msgs/Twist","message":{"linear":{"x":0.5}}}'
-```
-
-Also supports direct DDS via `ros_tap` + CycloneDDS (`pip install roborun[ros]`).
+Drop it anywhere, point `ROBORUN_SKILL_PATHS` at the directory. Done.
 
 ---
 
 ## Vision Models
 
-| Model | What it does | Live overlay | Install |
-|-------|-------------|:---:|---------|
+All models run in real-time on your webcam or robot camera. Toggle from the model bar in the UI.
+
+| Model | What it does | Overlay | Install |
+|-------|-------------|---------|---------|
 | **YOLO** | Object detection + tracking | Bounding boxes + IDs | `pip install roborun[vision]` |
 | **CLIP** | Zero-shot text-image search | Highlighted matches | `pip install roborun[vision]` |
 | **JEPA** | Self-supervised visual features | Attention heatmap | `pip install roborun[jepa]` |
 | **Cosmos 3** | 16B world model (MLX 4-bit) | API only | [cosmos-mac](https://github.com/publu/cosmos-mac) |
 
-Toggle models from the model bar in the UI. They run in real-time on your webcam or robot camera.
+---
+
+## ROS 2 Transport
+
+Connects to any robot running `rosbridge_server`. No ROS installation needed on the host machine.
+
+```bash
+# On the robot
+ros2 launch rosbridge_server rosbridge_websocket_launch.xml
+
+# From RoboRun — set robot IP in the UI, or:
+curl -X POST http://localhost:8765/api/ros/connect \
+  -d '{"host":"192.168.1.100"}'
+```
+
+Also supports **direct DDS** via CycloneDDS for zero-latency local transport:
+
+```bash
+pip install roborun[ros]
+```
 
 ---
 
 ## Agent
 
-Built-in Claude agent with tool use, streaming, and vision. Also supports Gemini.
+Built-in Claude + Gemini agent with streaming, tool use, and vision.
 
-The agent gets dynamic ROS context injection — live topics, services, and nodes are summarized in its system prompt. Safety velocity clamping prevents runaway commands. Persistent cross-agent memory stores facts across sessions.
-
-Agent behavioral identity is defined in `.roborun/SOUL.md` — safety rules, interaction style, tool preferences.
+- **Dynamic ROS context** — live topics, services, and nodes are injected into the system prompt automatically
+- **Safety velocity clamping** — configurable limits prevent runaway commands (`ROBORUN_MAX_LINEAR_VEL`, `ROBORUN_MAX_ANGULAR_VEL`)
+- **Persistent memory** — facts persist across sessions in `.roborun/agent_memory.json`
+- **Behavioral identity** — define safety rules and interaction style in `.roborun/SOUL.md`
 
 ---
 
@@ -184,7 +265,7 @@ Browser (RoboRun UI)
     +-- /api/webcam/*      -> WebcamPipeline (YOLO + CLIP + JEPA)
     +-- /api/dataset/*     -> DatasetCollector (episode recording)
     +-- /api/ros/*         -> RosbridgeClient (any ROS 2 robot)
-    +-- /api/agent/chat    -> Claude/Gemini agent with MCP tools
+    +-- /api/agent/chat    -> Claude / Gemini agent with MCP tools
     +-- /api/fleet/*       -> Fleet + Blueprint management
     +-- /api/tasks/*       -> Task scheduler
     +-- /api/memory/*      -> SpatialMemoryStore (CLIP search)
@@ -193,39 +274,31 @@ Browser (RoboRun UI)
     +-- roborun-mcp        -> MCP stdio transport
 ```
 
-### Project Structure
+<details>
+<summary>Project structure</summary>
 
 ```
 roborun/
 +-- server.py          # Thin HTTP shell, route dispatch
 +-- ros_mcp.py         # 30 built-in ROS MCP tools
-+-- mcp_stdio.py       # MCP stdio transport (prompts, resources, logging)
-+-- agent.py           # Claude + Gemini agent implementations
++-- mcp_stdio.py       # Stdio transport (prompts, resources, logging)
++-- agent.py           # Claude + Gemini agents
 +-- rosbridge.py       # WebSocket ROS 2 transport
 +-- simulator.py       # MuJoCo headless simulation
 +-- webcam.py          # Webcam capture + model pipeline
 +-- spatial_memory.py  # CLIP-indexed geo-searchable memory
 +-- skills/            # Plugin skill modules
 +-- routes/            # HTTP route handlers (12 modules)
-web/
-+-- index.html         # Dashboard UI
-+-- app.js             # Frontend logic
-+-- styles.css         # Dark HUD theme
 ```
+
+</details>
 
 ---
 
 ## Configuration
 
-Settings are in the UI under **System > Profile** and persist in `.roborun/profile.json`.
-
-| Setting | Description |
-|---------|-------------|
-| Device name | Display name for your station |
-| Robot IP | Robot's IP address (e.g., `192.168.123.18`) |
-| Blueprint | Robot blueprint to use |
-
-### Environment Variables
+<details>
+<summary>Environment variables</summary>
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -237,99 +310,84 @@ Settings are in the UI under **System > Profile** and persist in `.roborun/profi
 | `ROBORUN_SKILL_PATHS` | -- | Additional skill directories |
 | `ROBORUN_MAX_LINEAR_VEL` | `1.0` | Safety velocity limit (m/s) |
 | `ROBORUN_MAX_ANGULAR_VEL` | `1.5` | Safety angular limit (rad/s) |
-| `ROBORUN_S3_BUCKET` | -- | S3/R2 bucket for memory thumbnails |
+
+</details>
 
 ### Optional Dependencies
 
 ```bash
 pip install roborun[vision]   # YOLO + CLIP + OpenCV
-pip install roborun[ros]      # Direct DDS (ros_tap + CycloneDDS)
-pip install roborun[zk]       # ZK proofs (EZKL + ONNX)
+pip install roborun[ros]      # Direct DDS (CycloneDDS)
 pip install roborun[gemini]   # Gemini agent
+pip install roborun[zk]       # ZK proofs (EZKL + ONNX)
 pip install roborun[all]      # Everything
 ```
 
 ---
 
-## ZK-Verified Observations
-
-Generate cryptographic proofs that CLIP embeddings were correctly computed from original frames.
-
-```bash
-pip install "roborun[zk]"
-curl -X POST http://localhost:8765/api/zk/setup    # One-time circuit setup
-curl -X POST http://localhost:8765/api/zk/prove -d '{"shard_id": "abc123"}'
-curl http://localhost:8765/api/zk/verify/abc123
-```
-
----
-
-## Changelog
+<details>
+<summary><b>Full Changelog</b></summary>
 
 ### v0.8.0 — Skills, MCP prompts/resources, codebase overhaul
 
-- **Skills plugin system** — 4 loading paths (built-in, packages, paths, config), 5 built-in skills (compose, inspect, follow_me, patrol, scan_detect), skill template for easy authoring
-- **Compose skill** — chain any tools into reusable workflows with `run_sequence`, persist and replay with `save_workflow` / `run_workflow`
-- **Inspect skill** — `robot_brief` (one-call robot overview), `watch_topic` (conditional monitoring), `diff_state` (detect ROS graph changes)
-- **8 MCP prompts** — guided workflows: explore-robot, safety-check, environment-scan, teach-waypoints, debug-topic, quick-start, fleet-sweep, build-workflow
-- **6 MCP resources + 1 template** — server-info, skills, ros-graph, workflows, prompts-catalog, soul. Resource template: `roborun://topic/{path}` for live topic reads
-- **MCP logging** — real-time `notifications/message` on every tool call
-- **49 total tools** — 30 built-in ROS tools + 19 skill tools
-- **Route decomposition** — server.py shrunk from 2300 to 200 lines, 12 focused route modules
-- **Generic codebase** — removed all hardcoded dimOS/Go2 references, works with any ROS 2 robot
-- **Configurable stack integration** — `stackCommand` in profile settings, defaults to `dimos` for backwards compatibility
-- **Safety velocity clamping** — configurable via `ROBORUN_MAX_LINEAR_VEL` / `ROBORUN_MAX_ANGULAR_VEL`
-- **Dynamic ROS context** — agent system prompt auto-injects live topics, nodes, transports
-- **Persistent cross-agent memory** — facts persist across sessions in `.roborun/agent_memory.json`
-- **SOUL.md** — agent behavioral identity (safety rules, interaction style)
-- **Thin dependencies** — core requires only `websocket-client` + `websockets`
+- Skills plugin system — 4 loading paths, 5 built-in skills, skill template
+- Compose skill — chain tools into reusable workflows
+- Inspect skill — `robot_brief`, `watch_topic`, `diff_state`
+- 8 MCP prompts — guided workflows for exploration, safety, debugging
+- 6 MCP resources + topic template
+- MCP logging on every tool call
+- 49 total tools (30 ROS + 19 skill)
+- Route decomposition — server.py from 2300 to 200 lines
+- Removed all hardcoded vendor references — works with any ROS 2 robot
+- Safety velocity clamping, dynamic ROS context, persistent agent memory
 
 ### v0.7.0 — Unified ROS MCP, DDS + rosbridge
 
-- **30 ROS MCP tools** — full introspection (topic/node/service/action details), pub/sub, services, actions, params, camera, depth, velocity
-- **Dual transport** — rosbridge WebSocket + direct DDS via `ros_tap` + CycloneDDS
-- **MCP stdio transport** — `roborun-mcp` CLI for Claude Code, any stdio MCP client
+- 30 ROS MCP tools — full introspection, pub/sub, services, actions, params
+- Dual transport — rosbridge WebSocket + direct DDS via CycloneDDS
+- MCP stdio transport for CLI clients
 
 ### v0.6.0 — 3D scene builder, ROS telemetry
 
-- **3D scene builder** — depth-based point cloud reconstruction from webcam
-- **ROS telemetry bridge** — auto-subscribes to battery, IMU, odom, joint states
-- **WebSocket telemetry** — real-time charts at ws://127.0.0.1:8766
+- 3D scene builder — depth-based point cloud reconstruction
+- ROS telemetry bridge — battery, IMU, odom, joint states
+- WebSocket telemetry — real-time charts
 
-### v0.5.0 — 3D spatial perception, drone support, telemetry dashboard
+### v0.5.0 — 3D spatial perception, drone support
 
-- **Telemetry dashboard** — WebSocket-powered charts for battery, altitude, speed, orientation, joints
-- **3D trajectory** — Three.js path visualization with orbit controls
-- **Point cloud viewer** — colored depth/LiDAR point cloud
-- **Drone support** — MuJoCo quadrotor with PID controller, 6 new tools
-- **Robot type system** — UI adapts based on robot type (drone, quadruped, humanoid, webcam)
+- Telemetry dashboard with WebSocket-powered charts
+- 3D trajectory visualization with Three.js
+- Point cloud viewer, drone support with MuJoCo quadrotor
 
-### v0.4.0 — MCP server, native ROS 2, fast agent
+### v0.4.0 — MCP server, native ROS 2
 
-- **MCP HTTP server at `/mcp`** — any AI client connects and gets robot tools
-- **Native ROS 2 transport** — rosbridge WebSocket to any robot
-- **Fast SDK agent** — direct Anthropic SDK streaming with sensor pre-injection
-- **ZK proof layer** — EZKL proofs for CLIP embeddings
+- MCP HTTP server at `/mcp`
+- Native ROS 2 transport via rosbridge
+- ZK proof layer for CLIP embeddings
 
-### v0.3.0 — MuJoCo simulator, spatial memory, walking robots
+### v0.3.0 — MuJoCo simulator, spatial memory
 
-- **MuJoCo sim** — full physics, trained ONNX locomotion policies
-- **Spatial memory** — CLIP-searchable, geo-indexed, multi-robot
-- **Simulator in browser** — same camera feed, same WASD controls
+- MuJoCo physics with ONNX locomotion policies
+- CLIP-searchable, geo-indexed spatial memory
 
-### v0.2.0 — Cosmos 3, JEPA heatmaps, UX overhaul
+### v0.2.0 — Cosmos 3, JEPA heatmaps
 
-- **Cosmos 3 Nano** — 16B world model via MLX 4-bit
-- **JEPA attention heatmaps** — ViT activation overlay
-- **CLIP zero-shot search** — real-time detection highlighting
+- Cosmos 3 Nano 16B world model via MLX 4-bit
+- JEPA attention heatmaps, CLIP zero-shot search
 
 ### v0.1.0 — Initial release
 
 - WASD teleop, YOLO detection, CLIP search, dataset recording
-- AI agent chat with Claude, fleet management, task scheduler
+- Claude agent chat, fleet management, task scheduler
+
+</details>
 
 ---
 
-## License
+<div align="center">
 
-MIT
+MIT License
+
+**[GitHub](https://github.com/publu/RoboRun)** · **[PyPI](https://pypi.org/project/roborun/)** · **[npm](https://www.npmjs.com/package/roborun)**
+
+</div>
