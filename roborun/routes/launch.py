@@ -94,7 +94,10 @@ def _start_job(name: str, args: list[str], env: dict[str, str] | None = None) ->
 @post("/api/demo")
 def demo(h, payload):
     global ACTIVE_STACK_JOB_ID
-    stack_cmd = load_profile().get("stackCommand", "dimos")
+    stack_cmd = load_profile().get("stackCommand", "")
+    if not stack_cmd:
+        send_json(h, 200, {"ok": False, "error": "no external stack configured (set stackCommand in profile)"})
+        return
     result = _start_job("stack-demo", [stack_cmd, "--replay", "run", "unitree-go2",
                                        "-o", "rerunbridgemodule.rerun_open=none"])
     ACTIVE_STACK_JOB_ID = result["job_id"]
@@ -108,7 +111,10 @@ def launch(h, payload):
     robot_ip = str(payload.get("robotIp", "")).strip()
     blueprint = str(payload.get("blueprint", "generic-robot")).strip()
     viewer = str(payload.get("viewer", "rerun")).strip()
-    stack_cmd = load_profile().get("stackCommand", "dimos")
+    stack_cmd = load_profile().get("stackCommand", "")
+    if not stack_cmd:
+        send_json(h, 200, {"ok": False, "error": "no external stack configured (set stackCommand in profile)"})
+        return
     args = [stack_cmd]
     if mode == "replay":
         args.append("--replay")
@@ -140,7 +146,10 @@ def stop(h, payload):
             except ProcessLookupError:
                 pass
     ACTIVE_STACK_JOB_ID = None
-    stack_cmd = load_profile().get("stackCommand", "dimos")
+    stack_cmd = load_profile().get("stackCommand", "")
+    if not stack_cmd:
+        send_json(h, 200, {"ok": True, "note": "no external stack configured"})
+        return
     result = _run_command([stack_cmd, "stop"], timeout=20)
     send_json(h, 200, {"ok": result.get("ok", False), "command": f"stop {stack_cmd}",
                         "stdout": result.get("stdout", ""), "stderr": result.get("stderr", "")})
@@ -148,7 +157,10 @@ def stop(h, payload):
 
 @post("/api/status")
 def status(h, payload):
-    stack_cmd = load_profile().get("stackCommand", "dimos")
+    stack_cmd = load_profile().get("stackCommand", "")
+    if not stack_cmd:
+        send_json(h, 200, {"ok": False, "error": "no external stack configured"})
+        return
     send_json(h, 200, _run_command([stack_cmd, "status"], timeout=10))
 
 
