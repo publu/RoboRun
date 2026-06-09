@@ -67,6 +67,25 @@ MCP_PROMPTS = [
             {"name": "topic", "description": "Topic name to debug", "required": True},
         ],
     },
+    {
+        "name": "quick-start",
+        "description": "Zero-to-moving in 60 seconds. Connect, verify safety, take a photo, do a test move. Perfect for first-time users.",
+        "arguments": [
+            {"name": "robot_ip", "description": "Robot IP (default: auto-discover)", "required": False},
+        ],
+    },
+    {
+        "name": "fleet-sweep",
+        "description": "Multi-robot fleet check. Discover all robots on the network, check each one's status, and report which are ready.",
+        "arguments": [],
+    },
+    {
+        "name": "build-workflow",
+        "description": "Interactive workflow builder. Describe what you want the robot to do and build a reusable sequence of tool calls step by step.",
+        "arguments": [
+            {"name": "goal", "description": "What should the workflow accomplish?", "required": True},
+        ],
+    },
 ]
 
 PROMPT_MESSAGES = {
@@ -121,6 +140,38 @@ PROMPT_MESSAGES = {
             "5. Report: is this topic active? What's publishing to it? What does the data look like?"
         )}},
     ],
+    "quick-start": [
+        {"role": "user", "content": {"type": "text", "text": (
+            "Get me from zero to controlling this robot as fast as possible:\n\n"
+            "1. Run robot_brief to see what's connected and what we can do\n"
+            "2. If no robot found, try scan_robots then connect to the first one\n"
+            "3. Take a camera_snapshot so I can see what the robot sees\n"
+            "4. Send a tiny test move (0.1 m/s forward for 0.5s) to confirm movement works\n"
+            "5. Run estop to stop, then report: what robot, what it can do, ready to go\n\n"
+            "Keep it fast — I want to be driving in under a minute."
+        )}},
+    ],
+    "fleet-sweep": [
+        {"role": "user", "content": {"type": "text", "text": (
+            "Do a full sweep of all robots on my network:\n\n"
+            "1. Run scan_robots to discover everything\n"
+            "2. For each robot found, try to connect and run robot_brief\n"
+            "3. Check battery status on each (subscribe_once to battery topics)\n"
+            "4. Build a fleet status table: robot name/IP, type, battery %, topics, ready?\n"
+            "5. Recommend which robots are ready for tasking and which need attention"
+        )}},
+    ],
+    "build-workflow": [
+        {"role": "user", "content": {"type": "text", "text": (
+            "Help me build a reusable workflow for: {goal}\n\n"
+            "1. Break the goal into a sequence of tool calls\n"
+            "2. For each step, explain what it does and what args it needs\n"
+            "3. Test each step individually to make sure it works\n"
+            "4. Chain them together with run_sequence to verify the full workflow\n"
+            "5. Save it with save_workflow so I can replay it anytime with run_workflow\n\n"
+            "Start by listing the steps you think we need."
+        )}},
+    ],
 }
 
 # ── MCP Resources ────────────────────────────────────────────────────────────
@@ -143,6 +194,18 @@ def _get_resources() -> list[dict]:
             "uri": "roborun://ros-graph",
             "name": "Live ROS Graph",
             "description": "Current ROS nodes, topics, services — live from DDS/rosbridge",
+            "mimeType": "application/json",
+        },
+        {
+            "uri": "roborun://workflows",
+            "name": "Saved Workflows",
+            "description": "All saved tool-chain workflows that can be replayed with run_workflow",
+            "mimeType": "application/json",
+        },
+        {
+            "uri": "roborun://prompts-catalog",
+            "name": "Prompts Catalog",
+            "description": "All available guided workflow prompts with descriptions and arguments",
             "mimeType": "application/json",
         },
     ]
@@ -179,6 +242,23 @@ def _read_resource(uri: str) -> dict | None:
         graph.pop("ts", None)
         return {"uri": uri, "mimeType": "application/json",
                 "text": json.dumps(graph, indent=2, default=str)}
+
+    if uri == "roborun://workflows":
+        from roborun.skills.compose import _load_workflows
+        workflows = _load_workflows()
+        return {"uri": uri, "mimeType": "application/json",
+                "text": json.dumps(workflows, indent=2)}
+
+    if uri == "roborun://prompts-catalog":
+        catalog = []
+        for p in MCP_PROMPTS:
+            catalog.append({
+                "name": p["name"],
+                "description": p["description"],
+                "arguments": p.get("arguments", []),
+            })
+        return {"uri": uri, "mimeType": "application/json",
+                "text": json.dumps(catalog, indent=2)}
 
     return None
 
