@@ -264,6 +264,72 @@ curl http://localhost:8765/api/zk/verify/abc123
 
 ---
 
+## Changelog
+
+### v0.8.0 — Skills, MCP prompts/resources, codebase overhaul
+
+- **Skills plugin system** — 4 loading paths (built-in, packages, paths, config), 5 built-in skills (compose, inspect, follow_me, patrol, scan_detect), skill template for easy authoring
+- **Compose skill** — chain any tools into reusable workflows with `run_sequence`, persist and replay with `save_workflow` / `run_workflow`
+- **Inspect skill** — `robot_brief` (one-call robot overview), `watch_topic` (conditional monitoring), `diff_state` (detect ROS graph changes)
+- **8 MCP prompts** — guided workflows: explore-robot, safety-check, environment-scan, teach-waypoints, debug-topic, quick-start, fleet-sweep, build-workflow
+- **6 MCP resources + 1 template** — server-info, skills, ros-graph, workflows, prompts-catalog, soul. Resource template: `roborun://topic/{path}` for live topic reads
+- **MCP logging** — real-time `notifications/message` on every tool call
+- **49 total tools** — 30 built-in ROS tools + 19 skill tools
+- **Route decomposition** — server.py shrunk from 2300 to 200 lines, 12 focused route modules
+- **Generic codebase** — removed all hardcoded dimOS/Go2 references, works with any ROS 2 robot
+- **Configurable stack integration** — `stackCommand` in profile settings, defaults to `dimos` for backwards compatibility
+- **Safety velocity clamping** — configurable via `ROBORUN_MAX_LINEAR_VEL` / `ROBORUN_MAX_ANGULAR_VEL`
+- **Dynamic ROS context** — agent system prompt auto-injects live topics, nodes, transports
+- **Persistent cross-agent memory** — facts persist across sessions in `.roborun/agent_memory.json`
+- **SOUL.md** — agent behavioral identity (safety rules, interaction style)
+- **Thin dependencies** — core requires only `websocket-client` + `websockets`
+
+### v0.7.0 — Unified ROS MCP, DDS + rosbridge
+
+- **30 ROS MCP tools** — full introspection (topic/node/service/action details), pub/sub, services, actions, params, camera, depth, velocity
+- **Dual transport** — rosbridge WebSocket + direct DDS via `ros_tap` + CycloneDDS
+- **MCP stdio transport** — `roborun-mcp` CLI for Claude Code, any stdio MCP client
+
+### v0.6.0 — 3D scene builder, ROS telemetry
+
+- **3D scene builder** — depth-based point cloud reconstruction from webcam
+- **ROS telemetry bridge** — auto-subscribes to battery, IMU, odom, joint states
+- **WebSocket telemetry** — real-time charts at ws://127.0.0.1:8766
+
+### v0.5.0 — 3D spatial perception, drone support, telemetry dashboard
+
+- **Telemetry dashboard** — WebSocket-powered charts for battery, altitude, speed, orientation, joints
+- **3D trajectory** — Three.js path visualization with orbit controls
+- **Point cloud viewer** — colored depth/LiDAR point cloud
+- **Drone support** — MuJoCo quadrotor with PID controller, 6 new tools
+- **Robot type system** — UI adapts based on robot type (drone, quadruped, humanoid, webcam)
+
+### v0.4.0 — MCP server, native ROS 2, fast agent
+
+- **MCP HTTP server at `/mcp`** — any AI client connects and gets robot tools
+- **Native ROS 2 transport** — rosbridge WebSocket to any robot
+- **Fast SDK agent** — direct Anthropic SDK streaming with sensor pre-injection
+- **ZK proof layer** — EZKL proofs for CLIP embeddings
+
+### v0.3.0 — MuJoCo simulator, spatial memory, walking robots
+
+- **MuJoCo sim** — full physics, trained ONNX locomotion policies
+- **Spatial memory** — CLIP-searchable, geo-indexed, multi-robot
+- **Simulator in browser** — same camera feed, same WASD controls
+
+### v0.2.0 — Cosmos 3, JEPA heatmaps, UX overhaul
+
+- **Cosmos 3 Nano** — 16B world model via MLX 4-bit
+- **JEPA attention heatmaps** — ViT activation overlay
+- **CLIP zero-shot search** — real-time detection highlighting
+
+### v0.1.0 — Initial release
+
+- WASD teleop, YOLO detection, CLIP search, dataset recording
+- AI agent chat with Claude, fleet management, task scheduler
+
+---
+
 ## License
 
 MIT
