@@ -18,15 +18,14 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-
-[project.urls]
-Homepage = "https://github.com/hashingsystems/roborun"
-Repository = "https://github.com/hashingsystems/roborun"
-
 dependencies = [
     "websocket-client>=1.6",
     "websockets>=12.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/publu/RoboRun"
+Repository = "https://github.com/publu/RoboRun"
 
 [project.optional-dependencies]
 vision = [
@@ -53,3 +52,6 @@ roborun-mcp = "roborun.mcp_stdio:main"
 
 [tool.setuptools.packages.find]
 include = ["roborun*"]
+
+[tool.setuptools.package-data]
+roborun = ["web/**/*"]

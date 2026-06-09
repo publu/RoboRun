@@ -37,7 +37,7 @@ roborun
 ### Option B — from source
 
 ```bash
-git clone https://github.com/hashingsystems/roborun.git
+git clone https://github.com/publu/RoboRun.git
 cd roborun
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .

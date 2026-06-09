@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
-WEB_ROOT = ROOT / "web"
+WEB_ROOT = Path(__file__).resolve().parent / "web"
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("ROBORUN_PORT", "8765"))
 STATE_ROOT = ROOT / ".roborun"
