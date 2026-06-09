@@ -33,31 +33,10 @@ _MCP_TASK_TTL = 300.0
 
 
 def _run_mcp_task(task_id: str, name: str, args: dict[str, Any]) -> None:
-    import urllib.request
     try:
-        body = json.dumps({
-            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-            "params": {"name": name, "arguments": args},
-        }).encode()
-        req = urllib.request.Request(
-            "http://127.0.0.1:9990/mcp", data=body,
-            headers={"Content-Type": "application/json"}, method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode())
-        if "error" in data:
-            with _MCP_TASKS_LOCK:
-                _MCP_TASKS[task_id].update(status="error", error=str(data["error"]), finished=time.time())
-            return
-        content = data.get("result", {}).get("content")
-        if isinstance(content, list):
-            text = "\n".join(
-                (it.get("text", str(it)) if isinstance(it, dict) else str(it)) for it in content
-            )
-        elif isinstance(content, str):
-            text = content
-        else:
-            text = json.dumps(content) if content is not None else json.dumps(data.get("result", {}))
+        from roborun.ros_mcp import handle_tool_call
+        result = handle_tool_call(name, args)
+        text = json.dumps(result, default=str)
         with _MCP_TASKS_LOCK:
             _MCP_TASKS[task_id].update(status="done", result=text, finished=time.time())
     except Exception as exc:
@@ -127,7 +106,7 @@ def launch(h, payload):
     global ACTIVE_STACK_JOB_ID
     mode = str(payload.get("mode", "hardware")).strip()
     robot_ip = str(payload.get("robotIp", "")).strip()
-    blueprint = str(payload.get("blueprint", "unitree-go2")).strip()
+    blueprint = str(payload.get("blueprint", "generic-robot")).strip()
     viewer = str(payload.get("viewer", "rerun")).strip()
     stack_cmd = load_profile().get("stackCommand", "dimos")
     args = [stack_cmd]

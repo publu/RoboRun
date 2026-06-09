@@ -59,11 +59,11 @@ def add_robot(h, payload):
         raise ApiError(400, "Robot name required")
     robot = {
         "id": str(uuid.uuid4()), "name": name,
-        "deviceType": str(payload.get("deviceType", "Unitree Go2")).strip(),
+        "deviceType": str(payload.get("deviceType", "Robot")).strip(),
         "serial": str(payload.get("serial", "")).strip(),
         "robotIp": str(payload.get("robotIp", "")).strip(),
         "group": str(payload.get("group", "Default")).strip() or "Default",
-        "blueprint": str(payload.get("blueprint", "unitree-go2")).strip(),
+        "blueprint": str(payload.get("blueprint", "generic-robot")).strip(),
         "status": "offline", "tags": payload.get("tags", []),
         "notes": str(payload.get("notes", "")).strip(),
         "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

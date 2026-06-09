@@ -850,7 +850,8 @@ _GEMINI_TOOLS = [
 
 
 def _call_local_api(path: str, payload: dict | None = None, method: str = "POST") -> dict:
-    url = f"http://127.0.0.1:8765{path}"
+    port = int(os.environ.get("ROBORUN_PORT", "8765"))
+    url = f"http://127.0.0.1:{port}{path}"
     body = json.dumps(payload or {}).encode() if payload is not None else b"{}"
     req = urllib.request.Request(url, data=body,
                                   headers={"Content-Type": "application/json"}, method=method)

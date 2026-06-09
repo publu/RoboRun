@@ -62,7 +62,7 @@ _PROFILES: dict[RobotType, dict[str, Any]] = {
             "move", "explore", "follow_person", "follow_object",
             "find", "navigate", "patrol", "dog_mode", "stand", "sit",
             "camera_snapshot", "yolo_detections", "memory_search",
-            "get_telemetry", "get_trajectory", "execute_skill",
+            "get_telemetry", "get_trajectory",
         ],
         "ros_topics": {
             "odom": "/odom",
@@ -91,7 +91,7 @@ _PROFILES: dict[RobotType, dict[str, Any]] = {
         "skills": [
             "move", "explore", "follow_person", "camera_snapshot",
             "yolo_detections", "memory_search", "get_telemetry",
-            "get_trajectory", "execute_skill",
+            "get_trajectory",
         ],
         "ros_topics": {
             "odom": "/odom",
@@ -113,7 +113,7 @@ _PROFILES: dict[RobotType, dict[str, Any]] = {
         "control_scheme": "joint",
         "skills": [
             "camera_snapshot", "yolo_detections", "memory_search",
-            "get_telemetry", "execute_skill",
+            "get_telemetry",
         ],
         "ros_topics": {
             "joint_states": "/joint_states",

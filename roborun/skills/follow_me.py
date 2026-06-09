@@ -22,7 +22,6 @@ log = logging.getLogger(__name__)
 
 _FRAME_PATHS = [
     Path("/tmp/roborun_state.json"),
-    Path("/tmp/go2_hackathon_state.json"),
 ]
 
 _active = False
@@ -43,7 +42,8 @@ def _clamp(v: float, limit: float) -> float:
 
 def _call_api(path: str, payload: dict) -> dict:
     import urllib.request
-    url = f"http://127.0.0.1:8765{path}"
+    port = int(os.environ.get("ROBORUN_PORT", "8765"))
+    url = f"http://127.0.0.1:{port}{path}"
     body = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=body,
                                 headers={"Content-Type": "application/json"}, method="POST")
