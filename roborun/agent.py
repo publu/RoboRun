@@ -1,13 +1,12 @@
-"""Robot agents for RoboRun — Claude (stream-json/MCP) and Gemini (function calling).
+"""Robot agents for RoboRun — Claude, Fast (Anthropic SDK), and Gemini.
 
-Claude agent: persistent subprocess using the claude CLI with MCP servers for
-dimOS robot control and the RoboRun workbench.
+Three agent implementations:
+  1. RobotAgent — Claude CLI subprocess with MCP server connections
+  2. FastRobotAgent — Direct Anthropic SDK with sensor pre-injection
+  3. GeminiAgent — Google Gemini with function calling
 
-Fast agent: direct Anthropic SDK with multimodal sensor injection, safety
-velocity limits, dynamic ROS context, and persistent memory.
-
-Gemini agent: stateless function-calling loop using google-generativeai. Exposes
-the same robot tool surface as agenticROS's MCP tools, no MCP required.
+All agents share: safety velocity clamping, persistent cross-agent memory,
+dynamic ROS context injection, and SOUL.md behavioral identity.
 """
 from __future__ import annotations
 
@@ -154,33 +153,28 @@ def _ensure_soul() -> None:
         )
 
 
-_ensure_soul()
-
-ROBOT_OPERATOR_CONTEXT = """You are the operator control agent for a robot running the dimOS stack.
-
-## Architecture
-- The robot runs **Daneel**, dimOS's built-in AI agent.
-- You have MCP server connections to Daneel's live skill set (navigate, explore, speak, follow, patrol, etc.)
-- These call the robot directly via dimOS's MCP server at port 9990.
-
-## Key Skills
-- `navigate_with_text` — go to a named place
-- `begin_exploration` — autonomous frontier exploration
-- `smart_follow_person` — follow people by description (YOLO+CLIP)
-- `smart_follow_object` — follow objects by YOLO class
-- `smart_find` — explore and search for something
-- `query_scene` — what's visible right now
-- `execute_sport_command` — RecoveryStand, FrontFlip, sit, etc.
-- `speak` — robot speaks aloud
-- `tag_location` — remember current location
-- `where_am_i` — GPS and nearby landmarks
-
-## Rules
-1. Use skills for ALL physical actions — don't just describe, execute.
-2. After commands, verify they worked.
-3. Never claim the robot moved unless confirmed.
-4. Be concise — this is a control panel.
-"""
+def _build_operator_context() -> str:
+    parts = [
+        "You are the operator control agent for a robot powered by RoboRun.",
+        "",
+        "## Available Tools",
+        "You have MCP tools for direct robot control: move, navigate, estop, "
+        "publish/subscribe to any ROS topic, call services, send action goals, "
+        "camera snapshots, YOLO detection, patrol, follow-me, and more.",
+        "",
+        "Use `robot_brief` at the start to discover what's connected.",
+        "Use `run_sequence` to chain multiple tools together.",
+        "",
+        "## Rules",
+        "1. Use tools for ALL physical actions — don't describe, execute.",
+        "2. After commands, verify they worked via sensor feedback.",
+        "3. Never claim the robot moved unless confirmed.",
+        "4. Be concise — this is a control panel.",
+    ]
+    soul = _get_soul()
+    if soul:
+        parts.extend(["", "## Identity", soul])
+    return "\n".join(parts)
 
 
 class RobotAgent:
@@ -204,11 +198,13 @@ class RobotAgent:
         return self._proc is not None and self._proc.poll() is None
 
     def _start(self) -> None:
+        _ensure_soul()
+        port = int(os.environ.get("ROBORUN_PORT", "8765"))
         mcp_config = json.dumps({
             "mcpServers": {
-                "daneel": {
+                "roborun": {
                     "type": "http",
-                    "url": "http://127.0.0.1:9990/mcp",
+                    "url": f"http://127.0.0.1:{port}/mcp",
                 },
             }
         })
@@ -251,7 +247,8 @@ class RobotAgent:
                 return
 
             if self._session_id is None:
-                instructed = f"{ROBOT_OPERATOR_CONTEXT}\n\nOperator request:\n{message}"
+                context = _build_operator_context()
+                instructed = f"{context}\n\nOperator request:\n{message}"
             else:
                 instructed = message
 
@@ -331,48 +328,28 @@ class RobotAgent:
 
 # ── Fast agent (direct Anthropic SDK, sensor pre-injection) ───────────────────
 
-# Frame paths — must match server.py constants
 _FRAME_PATHS = [
-    Path("/tmp/go2_hackathon_frame.jpg"),
     Path("/tmp/roborun_frame.jpg"),
-    Path("/tmp/go2_camera_frame.jpg"),
+    Path("/tmp/roborun_camera.jpg"),
 ]
 _STATE_PATHS = [
-    Path("/tmp/go2_hackathon_state.json"),
     Path("/tmp/roborun_state.json"),
 ]
 _MAX_FRAME_AGE = 3.0  # seconds
 
-_FAST_SYSTEM = """You are a robot operator. The current camera frame and YOLO detections are injected into every message — you can see the robot's live view directly without calling any tools.
+_FAST_SYSTEM = """You are a robot operator powered by RoboRun. The current camera frame and YOLO detections are injected into every message — you can see the robot's live view directly.
 
-Use tools ONLY for physical actions or memory lookups:
-- execute_skill: high-level behaviors (navigate, explore, follow, find, speak, etc.)
-- move: direct velocity command — fast, no round-trip, use for nudges and short moves
+Use tools for physical actions and memory:
+- move: direct velocity command, fast, use for nudges and short moves
+- find_object: rotate and search for objects by label
 - memory_search: search past observations by text
+- remember/recall/forget: persistent cross-agent memory
+- get_telemetry: battery, position, velocity, joints
 
-Do NOT call query_scene or any perception tool — you already have the live frame.
-After actions, state what changed based on the updated frame in the next turn.
-Be concise."""
+You already have the live camera frame — don't call perception tools redundantly.
+After actions, verify via the updated frame in the next turn. Be concise."""
 
 _FAST_TOOLS = [
-    {
-        "name": "execute_skill",
-        "description": "Execute a dimOS robot skill. Handles navigation, exploration, following, finding, speaking, sport commands, and GPS.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "skill": {
-                    "type": "string",
-                    "description": "One of: navigate_with_text, begin_exploration, smart_follow_person, smart_follow_object, smart_find, query_scene, execute_sport_command, speak, tag_location, where_am_i",
-                },
-                "args": {
-                    "type": "object",
-                    "description": "Skill-specific arguments",
-                },
-            },
-            "required": ["skill"],
-        },
-    },
     {
         "name": "move",
         "description": "Send a direct velocity command to the robot (/cmd_vel). Fast — no MCP round-trip. linear_x: forward (+) / back (-). angular_z: left (+) / right (-).",
@@ -527,24 +504,7 @@ def _read_sensor_context() -> list[dict]:
 
 
 def _execute_fast_tool(name: str, args: dict) -> str:
-    if name == "execute_skill":
-        skill = args.get("skill", "")
-        skill_args = args.get("args", {})
-        result = _call_local_api("/api/mcp/call", {"name": skill, "args": skill_args})
-        if not result.get("ok"):
-            return f"Skill dispatch failed: {result.get('error')}"
-        task_id = result.get("task_id", "")
-        for _ in range(60):  # up to 30s
-            time.sleep(0.5)
-            poll = _call_local_api(f"/api/mcp/result?id={task_id}", method="GET")
-            status = poll.get("status", "pending")
-            if status == "done":
-                return poll.get("result", "Done.")
-            if status == "error":
-                return f"Skill error: {poll.get('error')}"
-        return "Skill timed out."
-
-    elif name == "move":
+    if name == "move":
         lx, _, az = _clamp_velocity(
             float(args.get("linear_x", 0.0)), 0.0, float(args.get("angular_z", 0.0)))
         dur = float(args.get("duration_s", 0.0))
@@ -781,12 +741,12 @@ class FastRobotAgent:
 
 # ── Gemini agent ──────────────────────────────────────────────────────────────
 
-_GEMINI_SYSTEM = """You are the operator control agent for a robot. You have tools to:
-- capture a camera frame and describe what the robot sees
-- move the robot (forward/back/turn)
-- call any dimOS skill (navigate, explore, follow, find, speak, patrol, etc.)
+_GEMINI_SYSTEM = """You are a robot operator powered by RoboRun. You have tools to:
+- capture camera frames and see what the robot sees
+- move the robot (forward/back/turn) with velocity commands
+- call any RoboRun skill (navigate, follow, patrol, find objects, etc.)
+- publish/subscribe to ROS 2 topics directly
 - search the robot's spatial memory for past observations
-- publish to ROS 2 topics directly
 
 Use tools for ALL physical actions. After each command, verify it worked.
 Be concise — this is a live control panel."""
@@ -850,12 +810,12 @@ _GEMINI_TOOLS = [
         },
     },
     {
-        "name": "call_dimos_skill",
-        "description": "Call a dimOS robot skill directly. Skills: navigate_with_text, begin_exploration, smart_follow_person, smart_follow_object, smart_find, query_scene, execute_sport_command, speak, tag_location, where_am_i.",
+        "name": "call_skill",
+        "description": "Call a RoboRun skill by name. Use ros_list_topics first to discover what's available. Skills include follow_me, patrol, scan, find_object, etc.",
         "parameters": {
             "type": "object",
             "properties": {
-                "skill": {"type": "string", "description": "Skill name e.g. navigate_with_text"},
+                "skill": {"type": "string", "description": "Skill name e.g. follow_me_start, patrol_start"},
                 "args": {"type": "object", "description": "Skill arguments"},
             },
             "required": ["skill"],
@@ -945,24 +905,14 @@ def _execute_gemini_tool(name: str, args: dict) -> str:
             return "\n".join(f"{t['topic']} [{t['type']}]" for t in topics[:30]) or "No topics found."
         return f"Failed: {result.get('error')}"
 
-    elif name == "call_dimos_skill":
-        result = _call_local_api("/api/mcp/call", {
-            "name": args["skill"],
-            "args": args.get("args", {}),
-        })
-        if result.get("ok"):
-            task_id = result.get("task_id", "")
-            # poll for result (max 15s)
-            for _ in range(30):
-                time.sleep(0.5)
-                poll = _call_local_api(f"/api/mcp/result?id={task_id}", method="GET")
-                status = poll.get("status", "pending")
-                if status == "done":
-                    return poll.get("result", "Done.")
-                elif status == "error":
-                    return f"Skill error: {poll.get('error')}"
-            return "Skill timed out."
-        return f"MCP call failed: {result.get('error')}"
+    elif name == "call_skill":
+        from roborun.ros_mcp import handle_tool_call
+        skill_name = args.get("skill", "")
+        skill_args = args.get("args", {})
+        result = handle_tool_call(skill_name, skill_args)
+        if result.get("ok", False):
+            return json.dumps(result, default=str)
+        return f"Skill failed: {result.get('error', 'unknown')}"
 
     elif name == "memory_search":
         result = _call_local_api("/api/memory/search", {
