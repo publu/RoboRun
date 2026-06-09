@@ -69,7 +69,7 @@ class SceneBuilder:
                 self._depth_estimator = DepthEstimator()
             self._available = True
         except ImportError:
-            return {"ok": False, "error": "transformers not installed — pip install roborun[depth]"}
+            return {"ok": False, "error": "transformers not installed — pip install ros-agent[depth]"}
 
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._build_loop, daemon=True, name="SceneBuilder")

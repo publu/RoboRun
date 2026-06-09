@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "roborun"
+name = "ros-agent"
 version = "0.8.0"
-description = "Agentic robot OS — skills, fleet, vision AI, and MCP for any ROS robot"
+description = "MCP agent layer for robots — 49 tools, skills, fleet, vision AI for any ROS 2 robot"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
@@ -44,11 +44,11 @@ dimos = ["dimos"]
 gemini = ["google-generativeai>=0.8"]
 zk = ["ezkl>=10.0", "onnx>=1.14"]
 ros = ["ros_tap>=0.1", "cyclonedds>=0.10"]
-all = ["roborun[vision,cosmos,depth,jepa,dimos,gemini,zk,ros]"]
+all = ["ros-agent[vision,cosmos,depth,jepa,dimos,gemini,zk,ros]"]
 
 [project.scripts]
-roborun = "roborun.server:main"
-roborun-mcp = "roborun.mcp_stdio:main"
+ros-agent = "roborun.server:main"
+ros-agent-mcp = "roborun.mcp_stdio:main"
 
 [tool.setuptools.packages.find]
 include = ["roborun*"]

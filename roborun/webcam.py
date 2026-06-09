@@ -235,7 +235,7 @@ class WebcamPipeline:
 
         model_tags = " + ".join(sorted(self._active_models)) or "no models"
         overlay_lines = [
-            f"RoboRun | {model_tags}",
+            f"ros-agent | {model_tags}",
             f"{self._fps:.0f} fps | {len(detections)} objects",
         ]
         if self._clip_query:

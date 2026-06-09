@@ -5,7 +5,7 @@
 # ros-agent
 
 <p align="center">
-  <a href="https://pypi.org/project/roborun/"><img src="https://img.shields.io/pypi/v/roborun?style=for-the-badge&color=00d47e&label=PyPI" alt="PyPI"></a>
+  <a href="https://pypi.org/project/ros-agent/"><img src="https://img.shields.io/pypi/v/ros-agent?style=for-the-badge&color=00d47e&label=PyPI" alt="PyPI"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP_Tools-49-00d47e?style=for-the-badge" alt="MCP Tools"></a>
@@ -31,7 +31,7 @@ Use any AI client you want — [Claude Desktop](https://claude.ai), [Claude Code
 ## Quick Install
 
 ```bash
-pip install roborun
+pip install ros-agent
 ros-agent
 ```
 
@@ -49,16 +49,16 @@ ros-agent
 ### npx (Node 18+)
 
 ```bash
-npx roborun
+npx ros-agent
 ```
 
 ### Optional extras
 
 ```bash
-pip install roborun[vision]   # YOLO + CLIP + OpenCV
-pip install roborun[ros]      # Direct DDS (CycloneDDS)
-pip install roborun[gemini]   # Gemini agent
-pip install roborun[all]      # Everything
+pip install ros-agent[vision]   # YOLO + CLIP + OpenCV
+pip install ros-agent[ros]      # Direct DDS (CycloneDDS)
+pip install ros-agent[gemini]   # Gemini agent
+pip install ros-agent[all]      # Everything
 ```
 
 ---
@@ -84,7 +84,7 @@ pip install roborun[all]      # Everything
 {
   "mcpServers": {
     "ros-agent": {
-      "command": "roborun-mcp"
+      "command": "ros-agent-mcp"
     }
   }
 }
@@ -181,7 +181,7 @@ curl -X POST http://localhost:8765/api/ros/connect \
 Direct DDS transport also available for zero-latency local use:
 
 ```bash
-pip install roborun[ros]   # adds CycloneDDS + ros_tap
+pip install ros-agent[ros]   # adds CycloneDDS + ros_tap
 ```
 
 ---
@@ -207,7 +207,7 @@ pip install roborun[ros]   # adds CycloneDDS + ros_tap
 git clone https://github.com/publu/RoboRun.git
 cd RoboRun
 pip install -e ".[all]"
-python -m roborun.server
+python -m roborun.server  # internal module name
 ```
 
 ---

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * npx roborun — zero-terminal launch for the RoboRun agentic robot OS.
+ * npx ros-agent — zero-terminal launch for the ros-agent MCP robot layer.
  *
- * Checks Python ≥ 3.10, installs roborun via pip if needed,
+ * Checks Python ≥ 3.10, installs ros-agent via pip if needed,
  * starts the server, and opens the browser automatically.
  */
 
@@ -11,7 +11,7 @@ import { createRequire } from "module";
 import { platform } from "os";
 
 const MIN_PYTHON_MINOR = 10;
-const PACKAGE = "roborun";
+const PACKAGE = "ros-agent";
 const SERVER_MODULE = "roborun.server";
 const DEFAULT_PORT = 8765;
 
@@ -38,8 +38,8 @@ function isInstalled(python) {
 }
 
 function install(python) {
-  console.log("Installing roborun...");
-  execSync(`${python} -m pip install roborun --quiet`, { stdio: "inherit" });
+  console.log("Installing ros-agent...");
+  execSync(`${python} -m pip install ros-agent --quiet`, { stdio: "inherit" });
 }
 
 function openBrowser(url) {
@@ -68,7 +68,7 @@ if (!isInstalled(python)) {
 const port = parseInt(process.env.ROBORUN_PORT || String(DEFAULT_PORT));
 const url = `http://127.0.0.1:${port}`;
 
-console.log(`\n  RoboRun — agentic robot OS`);
+console.log(`\n  ros-agent — MCP robot control`);
 console.log(`  Starting server at ${url}\n`);
 
 const server = spawn(python, ["-m", SERVER_MODULE], {

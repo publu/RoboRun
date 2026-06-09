@@ -7,11 +7,11 @@ Full MCP 2024-11-05 implementation with:
   - Image auto-extraction from tool results
 
 Usage:
-  roborun-mcp                  # run as stdio MCP server
-  echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | roborun-mcp
+  ros-agent-mcp                  # run as stdio MCP server
+  echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | ros-agent-mcp
 
 Claude Desktop config:
-  {"mcpServers": {"roborun": {"command": "roborun-mcp"}}}
+  {"mcpServers": {"ros-agent": {"command": "ros-agent-mcp"}}}
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from typing import Any
 from roborun.ros_mcp import get_all_tools, get_mcp_manifest, handle_tool_call
 
 SERVER_INFO = {
-    "name": "roborun",
+    "name": "ros-agent",
     "version": "0.8.0",
 }
 
@@ -37,7 +37,7 @@ CAPABILITIES = {
 
 RESOURCE_TEMPLATES = [
     {
-        "uriTemplate": "roborun://topic/{topic_path}",
+        "uriTemplate": "ros-agent://topic/{topic_path}",
         "name": "Live ROS Topic",
         "description": "Subscribe once to any ROS topic and read its latest message. Use topic path without leading slash (e.g. cmd_vel, camera/image_raw).",
         "mimeType": "application/json",
@@ -189,37 +189,37 @@ PROMPT_MESSAGES = {
 def _get_resources() -> list[dict]:
     resources = [
         {
-            "uri": "roborun://server-info",
+            "uri": "ros-agent://server-info",
             "name": "Server Info",
-            "description": "RoboRun server version, capabilities, and total tool count",
+            "description": "ros-agent server version, capabilities, and total tool count",
             "mimeType": "application/json",
         },
         {
-            "uri": "roborun://skills",
+            "uri": "ros-agent://skills",
             "name": "Installed Skills",
             "description": "All loaded skills with their tools and behaviors",
             "mimeType": "application/json",
         },
         {
-            "uri": "roborun://ros-graph",
+            "uri": "ros-agent://ros-graph",
             "name": "Live ROS Graph",
             "description": "Current ROS nodes, topics, services — live from DDS/rosbridge",
             "mimeType": "application/json",
         },
         {
-            "uri": "roborun://workflows",
+            "uri": "ros-agent://workflows",
             "name": "Saved Workflows",
             "description": "All saved tool-chain workflows that can be replayed with run_workflow",
             "mimeType": "application/json",
         },
         {
-            "uri": "roborun://prompts-catalog",
+            "uri": "ros-agent://prompts-catalog",
             "name": "Prompts Catalog",
             "description": "All available guided workflow prompts with descriptions and arguments",
             "mimeType": "application/json",
         },
         {
-            "uri": "roborun://soul",
+            "uri": "ros-agent://soul",
             "name": "Agent Identity (SOUL.md)",
             "description": "Behavioral guidelines for the robot agent — safety rules, interaction style, personality",
             "mimeType": "text/markdown",
@@ -229,13 +229,13 @@ def _get_resources() -> list[dict]:
 
 
 def _read_resource(uri: str) -> dict | None:
-    if uri == "roborun://server-info":
+    if uri == "ros-agent://server-info":
         manifest = get_mcp_manifest()
         manifest["version"] = SERVER_INFO["version"]
         return {"uri": uri, "mimeType": "application/json",
                 "text": json.dumps(manifest, default=str)}
 
-    if uri == "roborun://skills":
+    if uri == "ros-agent://skills":
         from roborun.skills import get_registry
         reg = get_registry()
         skills = []
@@ -252,20 +252,20 @@ def _read_resource(uri: str) -> dict | None:
         return {"uri": uri, "mimeType": "application/json",
                 "text": json.dumps(data, indent=2)}
 
-    if uri == "roborun://ros-graph":
+    if uri == "ros-agent://ros-graph":
         from roborun.ros_mcp import _discover
         graph = _discover()
         graph.pop("ts", None)
         return {"uri": uri, "mimeType": "application/json",
                 "text": json.dumps(graph, indent=2, default=str)}
 
-    if uri == "roborun://workflows":
+    if uri == "ros-agent://workflows":
         from roborun.skills.compose import _load_workflows
         workflows = _load_workflows()
         return {"uri": uri, "mimeType": "application/json",
                 "text": json.dumps(workflows, indent=2)}
 
-    if uri == "roborun://prompts-catalog":
+    if uri == "ros-agent://prompts-catalog":
         catalog = []
         for p in MCP_PROMPTS:
             catalog.append({
@@ -276,7 +276,7 @@ def _read_resource(uri: str) -> dict | None:
         return {"uri": uri, "mimeType": "application/json",
                 "text": json.dumps(catalog, indent=2)}
 
-    if uri == "roborun://soul":
+    if uri == "ros-agent://soul":
         from pathlib import Path
         soul_path = Path.cwd() / ".roborun" / "SOUL.md"
         if soul_path.exists():
@@ -285,8 +285,8 @@ def _read_resource(uri: str) -> dict | None:
         return {"uri": uri, "mimeType": "text/markdown",
                 "text": "# No SOUL.md found\nCreate .roborun/SOUL.md to define agent behavioral guidelines."}
 
-    if uri.startswith("roborun://topic/"):
-        topic_name = "/" + uri[len("roborun://topic/"):]
+    if uri.startswith("ros-agent://topic/"):
+        topic_name = "/" + uri[len("ros-agent://topic/"):]
         result = handle_tool_call("subscribe_once", {"topic": topic_name, "timeout_ms": 3000})
         return {"uri": uri, "mimeType": "application/json",
                 "text": json.dumps(result, default=str, indent=2)}
@@ -304,7 +304,7 @@ def _write(msg: dict) -> None:
 
 _log_level = "info"
 
-def _emit_log(level: str, data: Any, logger: str = "roborun") -> None:
+def _emit_log(level: str, data: Any, logger: str = "ros-agent") -> None:
     levels = ["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"]
     if levels.index(level) < levels.index(_log_level):
         return
@@ -359,12 +359,12 @@ def _handle_request(method: str, params: dict | None, req_id: Any) -> dict | Non
     if method == "tools/call":
         tool_name = params.get("name", "")
         arguments = params.get("arguments", {})
-        _emit_log("info", f"Calling tool: {tool_name}", "roborun.tools")
+        _emit_log("info", f"Calling tool: {tool_name}", "ros-agent.tools")
         result = handle_tool_call(tool_name, arguments)
 
         is_error = not result.get("ok", True)
         if is_error:
-            _emit_log("warning", f"Tool {tool_name} failed: {result.get('error', 'unknown')}", "roborun.tools")
+            _emit_log("warning", f"Tool {tool_name} failed: {result.get('error', 'unknown')}", "ros-agent.tools")
         content = [{"type": "text", "text": json.dumps(result, default=str)}]
 
         if "image" in result and isinstance(result["image"], str) and result["image"].startswith("data:image/"):
@@ -430,7 +430,7 @@ def main() -> None:
         pass
 
     tools = get_all_tools()
-    sys.stderr.write(f"roborun-mcp v{SERVER_INFO['version']} — "
+    sys.stderr.write(f"ros-agent-mcp v{SERVER_INFO['version']} — "
                      f"{len(tools)} tools, {len(MCP_PROMPTS)} prompts, "
                      f"{len(_get_resources())} resources\n")
     sys.stderr.flush()

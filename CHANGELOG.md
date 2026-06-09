@@ -18,7 +18,7 @@
 - `telemetry_stream` — ros_tap integration for data capture
 - Main `/mcp` endpoint now includes all ROS tools (38 total)
 - Dedicated `/mcp/ros` endpoint for ROS-only tools (23 total)
-- `ros` optional dependency group (`pip install roborun[ros]`)
+- `ros` optional dependency group (`pip install ros-agent[ros]`)
 
 ## v0.6.0 — 2026-06-08
 

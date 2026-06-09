@@ -289,7 +289,7 @@ class CosmosWorldModel:
 class DepthEstimator:
     """Monocular depth estimation via Depth Anything V2 Small.
 
-    Requires `transformers>=4.30` (optional dep: pip install roborun[depth]).
+    Requires `transformers>=4.30` (optional dep: pip install ros-agent[depth]).
     Returns relative depth as a float32 ndarray normalized to [0, 1].
     """
 

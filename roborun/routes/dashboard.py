@@ -25,7 +25,7 @@ _STATE_PATHS = [
 
 def load_profile() -> dict:
     defaults = {
-        "deviceName": "RoboRun Station", "deviceType": "Robot",
+        "deviceName": "ros-agent Station", "deviceType": "Robot",
         "serial": "", "group": "Robots", "robotIp": "",
         "blueprint": "generic-robot", "mode": "hardware", "viewer": "rerun",
         "daemon": True, "cameraIndex": 0,
@@ -75,7 +75,7 @@ def system_stats() -> dict:
 
 @get("/api/health")
 def health(h):
-    send_json(h, 200, {"ok": True, "name": "RoboRun"})
+    send_json(h, 200, {"ok": True, "name": "ros-agent"})
 
 
 @get("/api/camera")

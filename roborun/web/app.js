@@ -143,7 +143,7 @@ async function refreshDashboard(quiet = false) {
 
     // System tab
     const el = (id) => document.querySelector(id);
-    if (el("#deviceName")) el("#deviceName").textContent = p.deviceName || "RoboRun Station";
+    if (el("#deviceName")) el("#deviceName").textContent = p.deviceName || "ros-agent Station";
     if (el("#robotIpValue")) el("#robotIpValue").textContent = p.robotIp || "Not set";
     if (el("#blueprintValue")) el("#blueprintValue").textContent = p.blueprint || "--";
     if (el("#sourceValue")) el("#sourceValue").textContent = wc.running ? "webcam" : (sim.running ? "sim" : "none");
@@ -404,7 +404,7 @@ async function loadDatasets() {
 
 document.querySelector("#saveProfile")?.addEventListener("click", async () => {
   const payload = {
-    deviceName: document.querySelector("#deviceNameInput")?.value.trim() || "RoboRun Station",
+    deviceName: document.querySelector("#deviceNameInput")?.value.trim() || "ros-agent Station",
     robotIp: document.querySelector("#robotIp")?.value.trim(),
     blueprint: document.querySelector("#blueprint")?.value,
   };

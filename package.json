@@ -1,7 +1,7 @@
 {
-  "name": "roborun",
+  "name": "ros-agent",
   "version": "0.8.0",
-  "description": "Agentic robot OS — skills, fleet, vision AI, and MCP for any ROS robot",
+  "description": "MCP agent layer for robots — 49 tools, skills, fleet, vision AI for any ROS 2 robot",
   "keywords": ["robotics", "ros2", "mcp", "ai-agent", "yolo", "clip", "skills", "fleet", "robot-control"],
   "license": "MIT",
   "author": "Pablo <pablo@hashingsystems.com>",
@@ -11,7 +11,7 @@
     "url": "https://github.com/publu/RoboRun.git"
   },
   "bin": {
-    "roborun": "./bin/roborun.mjs"
+    "ros-agent": "./bin/roborun.mjs"
   },
   "files": [
     "bin/"

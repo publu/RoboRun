@@ -145,7 +145,7 @@ def _ensure_soul() -> None:
     if not SOUL_FILE.exists():
         SOUL_FILE.parent.mkdir(parents=True, exist_ok=True)
         SOUL_FILE.write_text(
-            "# RoboRun Agent Identity\n\n"
+            "# ros-agent Identity\n\n"
             "1. **Safety first** — never exceed velocity limits, stop on uncertainty\n"
             "2. **Observe before acting** — check camera/sensors before physical actions\n"
             "3. **Verify after acting** — confirm actions succeeded via sensor feedback\n"
@@ -155,7 +155,7 @@ def _ensure_soul() -> None:
 
 def _build_operator_context() -> str:
     parts = [
-        "You are the operator control agent for a robot powered by RoboRun.",
+        "You are the operator control agent for a robot powered by ros-agent.",
         "",
         "## Available Tools",
         "You have MCP tools for direct robot control: move, navigate, estop, "
@@ -202,7 +202,7 @@ class RobotAgent:
         port = int(os.environ.get("ROBORUN_PORT", "8765"))
         mcp_config = json.dumps({
             "mcpServers": {
-                "roborun": {
+                "ros-agent": {
                     "type": "http",
                     "url": f"http://127.0.0.1:{port}/mcp",
                 },
@@ -337,7 +337,7 @@ _STATE_PATHS = [
 ]
 _MAX_FRAME_AGE = 3.0  # seconds
 
-_FAST_SYSTEM = """You are a robot operator powered by RoboRun. The current camera frame and YOLO detections are injected into every message — you can see the robot's live view directly.
+_FAST_SYSTEM = """You are a robot operator powered by ros-agent. The current camera frame and YOLO detections are injected into every message — you can see the robot's live view directly.
 
 Use tools for physical actions and memory:
 - move: direct velocity command, fast, use for nudges and short moves
@@ -741,10 +741,10 @@ class FastRobotAgent:
 
 # ── Gemini agent ──────────────────────────────────────────────────────────────
 
-_GEMINI_SYSTEM = """You are a robot operator powered by RoboRun. You have tools to:
+_GEMINI_SYSTEM = """You are a robot operator powered by ros-agent. You have tools to:
 - capture camera frames and see what the robot sees
 - move the robot (forward/back/turn) with velocity commands
-- call any RoboRun skill (navigate, follow, patrol, find objects, etc.)
+- call any ros-agent skill (navigate, follow, patrol, find objects, etc.)
 - publish/subscribe to ROS 2 topics directly
 - search the robot's spatial memory for past observations
 
@@ -811,7 +811,7 @@ _GEMINI_TOOLS = [
     },
     {
         "name": "call_skill",
-        "description": "Call a RoboRun skill by name. Use ros_list_topics first to discover what's available. Skills include follow_me, patrol, scan, find_object, etc.",
+        "description": "Call a ros-agent skill by name. Use ros_list_topics first to discover what's available. Skills include follow_me, patrol, scan, find_object, etc.",
         "parameters": {
             "type": "object",
             "properties": {
