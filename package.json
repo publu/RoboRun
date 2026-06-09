@@ -1,6 +1,6 @@
 {
   "name": "ros-agent",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "MCP agent layer for robots — 49 tools, skills, fleet, vision AI for any ROS 2 robot",
   "keywords": ["robotics", "ros2", "mcp", "ai-agent", "yolo", "clip", "skills", "fleet", "robot-control"],
   "license": "MIT",
