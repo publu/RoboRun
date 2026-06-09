@@ -64,6 +64,8 @@ def chat(h, payload):
     if not message:
         send_json(h, 400, {"ok": False, "error": "message required"})
         return
+    from roborun.events import emit
+    emit("task", "operator", message, {})
     _sse_stream(h, agent, message)
 
 

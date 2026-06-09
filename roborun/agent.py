@@ -294,6 +294,9 @@ class RobotAgent:
                             accumulated += chunk
                             yield {"type": "text", "text": chunk, "accumulated": accumulated}
                         elif btype == "tool_use":
+                            from roborun.events import emit
+                            emit("agent", "claude", f"tool: {block.get('name', '')}",
+                                 dict(block.get("input") or {}))
                             yield {"type": "tool_use", "tool_id": block.get("id", ""),
                                    "tool_name": block.get("name", ""), "tool_input": block.get("input", {})}
                         elif btype == "thinking":
@@ -717,6 +720,8 @@ class FastRobotAgent:
                         continue
                     yield {"type": "tool_use", "tool_name": block.name,
                            "tool_input": block.input}
+                    from roborun.events import emit
+                    emit("agent", "claude", f"tool: {block.name}", dict(block.input or {}))
                     result_text = _execute_fast_tool(block.name, block.input)
                     yield {"type": "tool_result", "tool_name": block.name,
                            "result": result_text[:1200]}

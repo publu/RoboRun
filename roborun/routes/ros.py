@@ -84,6 +84,8 @@ def publish(h, payload):
     try:
         client = _get_ros_client()
         client.publish(topic, msg_type, message)
+        from roborun.events import emit
+        emit("ros", "rosbridge", f"publish {topic}", {"type": msg_type})
         send_json(h, 200, {"ok": True})
     except ApiError:
         raise
@@ -219,6 +221,10 @@ def ros_move(h, payload):
     try:
         client = _get_ros_client()
         client.move(linear_x, linear_y, angular_z, topic)
+        from roborun.events import emit
+        emit("ros", "rosbridge",
+             f"cmd_vel linear={linear_x:.2f} angular={angular_z:.2f}",
+             {"topic": topic, "linear_x": linear_x, "linear_y": linear_y, "angular_z": angular_z})
         send_json(h, 200, {"ok": True})
     except ApiError:
         raise

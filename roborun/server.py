@@ -41,6 +41,7 @@ import roborun.routes.dataset  # noqa: F401
 import roborun.routes.launch  # noqa: F401
 import roborun.routes.skills  # noqa: F401
 import roborun.routes.zk  # noqa: F401
+import roborun.routes.run  # noqa: F401
 from roborun.routes import dispatch_get, dispatch_post, read_json, send_json, ApiError
 from roborun.routes.mcp import handle_mcp_request, handle_mcp_sse
 
@@ -81,6 +82,8 @@ class Handler(SimpleHTTPRequestHandler):
         # Static files
         if self.path == "/":
             self.path = "/index.html"
+        elif path_only == "/demo":
+            self.path = "/demo.html"
         super().do_GET()
 
     def do_OPTIONS(self) -> None:

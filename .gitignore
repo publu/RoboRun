@@ -35,3 +35,4 @@ datasets/
 *.pt
 *.onnx
 *.safetensors
+MUJOCO_LOG.TXT

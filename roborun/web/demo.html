@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>roborun — flight deck</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./demo.css">
+</head>
+<body>
+  <div class="crt"></div>
+
+  <header class="deck-head">
+    <div class="head-left">
+      <span class="rec-dot"></span>
+      <span class="rec-label">REC</span>
+      <span class="run-id" id="runId">RUN —</span>
+    </div>
+    <div class="head-center">
+      <span class="wordmark">roborun</span>
+    </div>
+    <div class="head-right">
+      <span class="root-label">MERKLE ROOT</span>
+      <span class="root-hash" id="rootHash">— not sealed —</span>
+    </div>
+  </header>
+
+  <main class="deck">
+    <!-- CAMERA -->
+    <section class="cam">
+      <div class="cam-frame">
+        <img id="camStream" src="/api/camera/stream" alt="">
+        <div class="cam-offline" id="camOffline">
+          <span>NO SIGNAL</span>
+          <small>start the webcam or connect a robot</small>
+        </div>
+        <div class="bracket tl"></div><div class="bracket tr"></div>
+        <div class="bracket bl"></div><div class="bracket br"></div>
+        <div class="cam-tag">CAM 01 · LIVE</div>
+        <div class="cam-hud" id="camHud">
+          <span class="hud-chip" id="hudFps">— FPS</span>
+          <span class="hud-chip" id="hudModels">—</span>
+          <span class="hud-chip" id="hudDet">0 OBJECTS</span>
+        </div>
+        <div class="scanlines"></div>
+        <div class="vignette"></div>
+      </div>
+
+      <!-- AGENT RESPONSE STRIP -->
+      <div class="agent-strip" id="agentStrip">
+        <div class="agent-tools" id="agentTools"></div>
+        <div class="agent-text" id="agentText"></div>
+      </div>
+
+      <!-- COMMAND BAR -->
+      <div class="cmd-bar">
+        <span class="cmd-prompt">❯</span>
+        <input id="cmdInput" type="text" spellcheck="false" autocomplete="off"
+               placeholder="tell the robot what to do…">
+        <span class="cmd-hint" id="cmdHint">⏎ send</span>
+      </div>
+    </section>
+
+    <!-- BLACK BOX -->
+    <aside class="blackbox">
+      <div class="bb-head">
+        <span class="bb-title">BLACK BOX</span>
+        <span class="bb-status"><span class="bb-pulse"></span>RECORDING</span>
+      </div>
+      <div class="bb-feed" id="bbFeed"></div>
+      <div class="bb-foot">
+        <span id="bbCount">0 events</span>
+        <span class="bb-foot-right">sha-256 · merkle · ed25519</span>
+      </div>
+    </aside>
+  </main>
+
+  <!-- STAMP OVERLAY -->
+  <div class="stamp-layer" id="stampLayer">
+    <div class="stamp" id="stamp">
+      <div class="stamp-word" id="stampWord">VERIFIED</div>
+      <div class="stamp-sub" id="stampSub"></div>
+      <div class="stamp-meta" id="stampMeta"></div>
+    </div>
+  </div>
+
+  <!-- DIRECTOR HELP -->
+  <div class="director" id="director">
+    <b>director keys</b>
+    <span><kbd>S</kbd> seal run</span>
+    <span><kbd>V</kbd> verify</span>
+    <span><kbd>T</kbd> tamper one byte</span>
+    <span><kbd>Esc</kbd> clear stamp</span>
+    <span><kbd>?</kbd> hide this</span>
+  </div>
+
+<script src="./demo.js"></script>
+</body>
+</html>

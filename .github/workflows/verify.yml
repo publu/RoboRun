@@ -1,0 +1,30 @@
+name: verify
+
+on: [push, pull_request]
+
+jobs:
+  tamper-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e . pytest cryptography
+      - name: unit tests
+        run: pytest tests/ -v
+      - name: seal → verify → tamper → must fail
+        run: |
+          python - <<'EOF'
+          from roborun import integrity
+          events = [{"id": f"evt_{i}", "type": "ros", "source": "ci",
+                     "title": f"event {i}", "ts": 1749480000 + i} for i in range(200)]
+          integrity.snapshot_run(events, "ci-run")
+          integrity.seal_run("ci-run")
+          assert integrity.verify_run("ci-run")["verified"], "clean run must verify"
+          integrity.tamper_run("ci-run", 42)
+          r = integrity.verify_run("ci-run")
+          assert not r["verified"], "tampered run must fail"
+          assert r["failed_event"] == 42, "must pinpoint the exact event"
+          print("tamper test: one byte changed, caught at event 0042")
+          EOF
