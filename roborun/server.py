@@ -40,7 +40,6 @@ import roborun.routes.memory  # noqa: F401
 import roborun.routes.dataset  # noqa: F401
 import roborun.routes.launch  # noqa: F401
 import roborun.routes.skills  # noqa: F401
-import roborun.routes.zk  # noqa: F401
 import roborun.routes.run  # noqa: F401
 import roborun.routes.behaviors  # noqa: F401
 from roborun.routes import dispatch_get, dispatch_post, read_json, send_json, ApiError
@@ -80,11 +79,11 @@ class Handler(SimpleHTTPRequestHandler):
         if dispatch_get(self.path, self):
             return
 
-        # Static files
-        if self.path == "/":
-            self.path = "/index.html"
-        elif path_only == "/demo":
+        # Static files — the flight deck IS the UI; legacy dashboard at /classic
+        if self.path == "/" or path_only == "/demo":
             self.path = "/demo.html"
+        elif path_only == "/classic":
+            self.path = "/index.html"
         super().do_GET()
 
     def do_OPTIONS(self) -> None:
@@ -180,7 +179,11 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def _frame_recorder_loop() -> None:
+    import hashlib
+    from roborun.events import emit
     from roborun.routes._singletons import get_webcam, get_dataset
+    hash_interval = float(os.environ.get("ROBORUN_FRAME_HASH_INTERVAL", "2.0"))
+    last_hash_at = 0.0
     while True:
         try:
             ds = get_dataset()
@@ -189,6 +192,17 @@ def _frame_recorder_loop() -> None:
                 frame = wc.snapshot()
                 if frame is not None:
                     ds.record_frame(frame, detections=wc.get_detections())
+            # Visual evidence into the chain: hash the live frame periodically
+            if hash_interval > 0 and wc.is_running and time.monotonic() - last_hash_at >= hash_interval:
+                frame = wc.snapshot()
+                if frame is not None:
+                    last_hash_at = time.monotonic()
+                    digest = hashlib.sha256(frame.tobytes()).hexdigest()
+                    dets = wc.get_detections()
+                    labels = ", ".join(sorted({d.get("label", "?") for d in dets})) or "no objects"
+                    emit("frame", "camera", f"frame {digest[:12]}… · {labels}",
+                         {"sha256": digest, "objects": len(dets),
+                          "shape": list(getattr(frame, "shape", []))})
         except Exception:
             pass
         time.sleep(0.1)

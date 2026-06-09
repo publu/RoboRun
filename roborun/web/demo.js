@@ -4,10 +4,12 @@
 
 const $ = (id) => document.getElementById(id);
 
-const GLYPHS = { mcp_tool: "⚙", detection: "◉", ros: "⬡", agent: "✦", system: "◆", task: "▶" };
+const GLYPHS = { mcp_tool: "⚙", detection: "◉", ros: "⬡", agent: "✦", system: "◆", task: "▶", frame: "▣" };
 const MAX_FEED = 80;
 
 let eventCount = 0;
+let replaying = false;
+let sealedRootShownAt = 0;
 
 /* ---------- canonical hash (matches roborun/integrity.py) ---------- */
 
@@ -30,9 +32,11 @@ function fmtTime(ts) {
   return d.toTimeString().slice(0, 8);
 }
 
-async function addEvent(evt) {
-  eventCount++;
-  $("bbCount").textContent = `${eventCount} events`;
+async function addEvent(evt, opts = {}) {
+  if (!opts.replay) {
+    eventCount++;
+    $("bbCount").textContent = `${eventCount} events`;
+  }
 
   const row = document.createElement("div");
   row.className = "bb-evt fresh";
@@ -45,6 +49,11 @@ async function addEvent(evt) {
   }
 
   const hash = (await sha256hex(canonicalJson(evt))).slice(0, 8);
+  // Live chain head in the header (the same hash chain the journal writes)
+  if (!opts.replay && Date.now() - sealedRootShownAt > 6000) {
+    $("rootLabel").textContent = "CHAIN HEAD";
+    $("rootHash").textContent = hash + "…";
+  }
   row.innerHTML = `
     <span class="evt-time">${fmtTime(evt.ts || Date.now() / 1000)}</span>
     <span class="evt-glyph">${GLYPHS[evt.type] || "◆"}</span>
@@ -61,10 +70,14 @@ async function addEvent(evt) {
   setTimeout(() => row.classList.remove("fresh"), 1200);
 }
 
+let _es = null;
 function connectEvents() {
-  const es = new EventSource("/api/events/stream");
-  es.onmessage = (m) => { try { addEvent(JSON.parse(m.data)); } catch {} };
-  es.onerror = () => { es.close(); setTimeout(connectEvents, 2000); };
+  _es = new EventSource("/api/events/stream");
+  _es.onmessage = (m) => {
+    if (replaying) return;
+    try { addEvent(JSON.parse(m.data)); } catch {}
+  };
+  _es.onerror = () => { _es.close(); setTimeout(connectEvents, 2000); };
 }
 
 /* ---------- camera HUD ---------- */
@@ -97,10 +110,17 @@ async function pollHud() {
   setTimeout(pollHud, 1000);
 }
 
-/* ---------- run clock ---------- */
+/* ---------- live run id ---------- */
 
-const bootTs = new Date();
-$("runId").textContent = "RUN " + bootTs.toISOString().slice(0, 19) + "Z";
+async function pollRunId() {
+  try {
+    const data = await (await fetch("/api/run/list")).json();
+    const live = (data.runs || []).find((r) => r.recording);
+    if (live) $("runId").textContent = live.run.toUpperCase();
+  } catch {}
+  setTimeout(pollRunId, 5000);
+}
+pollRunId();
 
 /* ---------- agent command bar ---------- */
 
@@ -221,20 +241,24 @@ function hideStamp() { $("stampLayer").classList.remove("show", "shake"); }
 async function doSeal() {
   const r = await api("/api/run/seal");
   if (!r.ok) { showStamp("NO RUN", r.error || "", "", true); return; }
+  sealedRootShownAt = Date.now();
+  $("rootLabel").textContent = "MERKLE ROOT";
   $("rootHash").textContent = r.merkle_root.slice(0, 16) + "…";
   showStamp("SEALED",
-    `${r.event_count} events · merkle root computed`,
+    `${r.event_count} events · chained · merkle root computed`,
     `${r.merkle_root.slice(0, 32)}… · ${r.signed ? "signed ed25519" : "unsigned"}`);
   setTimeout(hideStamp, 2600);
+  loadRuns();
 }
 
 async function doVerify() {
   const r = await api("/api/run/verify");
   if (!r.ok && r.error) { showStamp("NO RUN", r.error, "", true); return; }
   if (r.verified) {
+    const chain = r.chain_intact ? "chain intact · " : "";
     showStamp("VERIFIED",
-      `${r.event_count} events · nothing was edited`,
-      `merkle root ${r.merkle_root.slice(0, 32)}…`);
+      `${r.event_count} events · ${chain}nothing was edited`,
+      `merkle root ${r.merkle_root.slice(0, 24)}…`);
   } else {
     const which = r.failed_event != null
       ? `event ${String(r.failed_event).padStart(4, "0")} hash mismatch`
@@ -256,14 +280,137 @@ async function doTamper() {
 
 document.addEventListener("keydown", (e) => {
   if (e.target === input && e.key !== "Escape") return;
+  if (e.target.tagName === "INPUT") return;
   switch (e.key) {
     case "s": case "S": doSeal(); break;
     case "v": case "V": doVerify(); break;
     case "t": case "T": doTamper(); break;
-    case "Escape": hideStamp(); input.blur(); break;
+    case "r": case "R": toggleDrawer(); break;
+    case "c": case "C": toggleDrawer(); break;
+    case "Escape": hideStamp(); closeDrawer(); replaying = false; input.blur(); break;
     case "?": $("director").classList.toggle("hidden"); break;
   }
 });
+
+/* ---------- drawer: sources + runs ---------- */
+
+function toggleDrawer() {
+  const open = $("drawer").classList.toggle("open");
+  if (open) { refreshSources(); loadRuns(); }
+}
+function closeDrawer() { $("drawer").classList.remove("open"); }
+$("btnSources").addEventListener("click", toggleDrawer);
+$("btnRuns").addEventListener("click", toggleDrawer);
+
+function srcDot(el, on) { el.classList.toggle("on", !!on); }
+
+async function refreshSources() {
+  try {
+    const wc = await (await fetch("/api/webcam/state")).json();
+    const wcOn = (wc.state || wc).running;
+    srcDot($("dotWebcam"), wcOn);
+    $("srcWebcam").textContent = wcOn ? "stop" : "start";
+  } catch {}
+  try {
+    const sim = await (await fetch("/api/sim/state")).json();
+    const simOn = (sim.state || sim).running;
+    srcDot($("dotSim"), simOn);
+    $("srcSim").textContent = simOn ? "stop" : "start";
+  } catch {}
+  try {
+    const ros = await (await fetch("/api/ros/status")).json();
+    const rosOn = ros.connected || (ros.status || {}).connected;
+    srcDot($("dotRobot"), rosOn);
+    $("srcRobot").textContent = rosOn ? "disconnect" : "connect";
+  } catch {}
+}
+
+$("srcWebcam").addEventListener("click", async () => {
+  const stopping = $("srcWebcam").textContent === "stop";
+  await api(stopping ? "/api/webcam/stop" : "/api/webcam/start",
+            stopping ? {} : { camera_index: 0, models: ["yolo"] });
+  setTimeout(refreshSources, 600);
+});
+$("srcSim").addEventListener("click", async () => {
+  const stopping = $("srcSim").textContent === "stop";
+  await api(stopping ? "/api/sim/stop" : "/api/sim/start");
+  setTimeout(refreshSources, 600);
+});
+$("srcRobot").addEventListener("click", async () => {
+  const disconnecting = $("srcRobot").textContent === "disconnect";
+  if (disconnecting) { await api("/api/ros/disconnect"); }
+  else {
+    const ip = $("robotIp").value.trim();
+    if (!ip) { $("robotIp").focus(); return; }
+    await api("/api/ros/connect", { host: ip, port: 9090 });
+  }
+  setTimeout(refreshSources, 800);
+});
+
+async function loadRuns() {
+  let data;
+  try { data = await (await fetch("/api/run/list")).json(); } catch { return; }
+  const list = $("runList");
+  list.innerHTML = "";
+  const runs = (data.runs || []).slice(-12).reverse();
+  if (!runs.length) {
+    list.innerHTML = `<div class="run-empty">no runs yet — press S to seal the first one</div>`;
+    return;
+  }
+  for (const r of runs) {
+    const row = document.createElement("div");
+    row.className = "run-row";
+    const badges = [
+      r.recording ? `<span class="run-badge rec">REC</span>` : "",
+      r.sealed ? `<span class="run-badge sealed">SEALED</span>` : "",
+    ].join("");
+    row.innerHTML = `
+      <span class="run-name">${r.run.replace("run_", "")}</span>
+      <span class="run-n">${r.events} ev</span>${badges}
+      <span class="run-actions">
+        ${r.sealed ? `<button class="src-btn" data-act="verify">verify</button>` : ""}
+        ${!r.recording ? `<button class="src-btn" data-act="replay">replay</button>` : ""}
+      </span>`;
+    row.querySelector('[data-act="verify"]')?.addEventListener("click", async () => {
+      const v = await api("/api/run/verify", { run: r.run });
+      closeDrawer();
+      if (v.verified) {
+        showStamp("VERIFIED", `${r.run} · ${v.event_count} events intact`,
+          `merkle root ${v.merkle_root.slice(0, 24)}…`);
+      } else {
+        showStamp("FAILED", v.reason || "verification failed", "", true);
+      }
+    });
+    row.querySelector('[data-act="replay"]')?.addEventListener("click", () => replayRun(r.run));
+    list.appendChild(row);
+  }
+}
+
+/* ---------- replay: stream a recorded run back through the feed ---------- */
+
+async function replayRun(name) {
+  let data;
+  try { data = await (await fetch(`/api/run/events?run=${encodeURIComponent(name)}`)).json(); } catch { return; }
+  if (!data.ok) return;
+  closeDrawer();
+  replaying = true;
+  const feed = $("bbFeed");
+  feed.innerHTML = "";
+  $("bbCount").textContent = `REPLAY · ${name}`;
+  document.body.classList.add("replaying");
+  const events = data.events;
+  const step = Math.max(18, Math.min(90, 4000 / events.length));
+  for (const evt of events) {
+    if (!replaying) break; // Esc aborts
+    await addEvent(evt, { replay: true });
+    await new Promise((res) => setTimeout(res, step));
+  }
+  document.body.classList.remove("replaying");
+  replaying = false;
+  feed.innerHTML = "";
+  $("bbCount").textContent = `${eventCount} events`;
+  // live SSE feed resumes on the next event
+}
 
 /* clicking anywhere outside input refocuses it (clean recording) */
 document.addEventListener("click", (e) => {

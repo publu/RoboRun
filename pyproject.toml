@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ros-agent"
-version = "0.9.1"
-description = "Your AI drives any ROS robot in 5 minutes — MCP tools for Claude, Cursor, or any AI to control ROS 1/2 robots, with every run recorded into a tamper-evident, replayable black box"
+version = "0.10.0"
+description = "Your AI drives any ROS robot in 5 minutes — MCP tools for Claude, Cursor, or any AI to control ROS 1/2 robots, with every run hash-chained into a tamper-evident, replayable black box"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
@@ -41,10 +41,9 @@ depth = ["transformers>=4.30"]
 jepa = ["timm>=0.9"]
 sim = ["mujoco>=3.0", "onnxruntime>=1.16"]
 gemini = ["google-generativeai>=0.8"]
-zk = ["ezkl>=10.0", "onnx>=1.14"]
 ros = ["ros_tap>=0.1", "cyclonedds>=0.10"]
 crypto = ["cryptography>=42.0"]
-all = ["ros-agent[vision,sim,depth,jepa,gemini,zk,ros,crypto]"]
+all = ["ros-agent[vision,sim,depth,jepa,gemini,ros,crypto]"]
 
 [project.scripts]
 ros-agent = "roborun.server:main"

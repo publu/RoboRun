@@ -22,10 +22,36 @@
       <span class="wordmark">roborun</span>
     </div>
     <div class="head-right">
-      <span class="root-label">MERKLE ROOT</span>
-      <span class="root-hash" id="rootHash">— not sealed —</span>
+      <span class="root-label" id="rootLabel">CHAIN HEAD</span>
+      <span class="root-hash" id="rootHash">—</span>
+      <button class="head-btn" id="btnSources" title="sources (C)">SRC</button>
+      <button class="head-btn" id="btnRuns" title="runs (R)">RUNS</button>
     </div>
   </header>
+
+  <!-- DRAWER: sources + runs -->
+  <aside class="drawer" id="drawer">
+    <div class="drawer-section" id="drawerSources">
+      <div class="drawer-title">SOURCES</div>
+      <div class="src-row">
+        <span class="src-dot" id="dotWebcam"></span><span class="src-name">webcam · yolo</span>
+        <button class="src-btn" id="srcWebcam">start</button>
+      </div>
+      <div class="src-row">
+        <span class="src-dot" id="dotSim"></span><span class="src-name">mujoco sim</span>
+        <button class="src-btn" id="srcSim">start</button>
+      </div>
+      <div class="src-row src-robot">
+        <span class="src-dot" id="dotRobot"></span>
+        <input class="src-input" id="robotIp" placeholder="robot ip — rosbridge :9090" spellcheck="false">
+        <button class="src-btn" id="srcRobot">connect</button>
+      </div>
+    </div>
+    <div class="drawer-section" id="drawerRuns">
+      <div class="drawer-title">BLACK BOX RUNS</div>
+      <div class="run-list" id="runList"></div>
+    </div>
+  </aside>
 
   <main class="deck">
     <!-- CAMERA -->
@@ -93,6 +119,8 @@
     <span><kbd>S</kbd> seal run</span>
     <span><kbd>V</kbd> verify</span>
     <span><kbd>T</kbd> tamper one byte</span>
+    <span><kbd>R</kbd> runs</span>
+    <span><kbd>C</kbd> sources</span>
     <span><kbd>Esc</kbd> clear stamp</span>
     <span><kbd>?</kbd> hide this</span>
   </div>

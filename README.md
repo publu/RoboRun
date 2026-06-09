@@ -66,20 +66,26 @@ And the whole robot is also an MCP server — one line and Claude or Cursor driv
 
 ## The black box
 
-Everything — your commands, behavior moves, agent tool calls, detections — is one event timeline. Seal it and it becomes evidence:
+Everything — your commands, behavior moves, agent tool calls, detections, camera-frame hashes — journals to disk as it happens, and every event carries the SHA-256 of the previous one. The log is a hash chain: tamper-evident **while it's being written**, not just after. Seal it and it becomes evidence:
 
 ```bash
-python -m roborun.integrity seal   runs/run_20260609_153000
-# SEALED — 1,284 events · merkle root 8f4a2c91… · signed ed25519
+python -m roborun.integrity seal   ~/.roborun/runs/run_20260609_153000
+# SEALED — 1,284 events
+# merkle root: 8f4a2c91…
+# signed: ed25519
 
-python -m roborun.integrity tamper runs/run_20260609_153000 --event 42
-python -m roborun.integrity verify runs/run_20260609_153000
+python -m roborun.integrity tamper ~/.roborun/runs/run_20260609_153000 --event 42
+python -m roborun.integrity verify ~/.roborun/runs/run_20260609_153000
 # FAILED — event 0042 hash mismatch
 ```
 
-One changed byte, caught instantly. SHA-256 Merkle tree + Ed25519 — the same primitives as Git and Certificate Transparency. No cloud, works offline. When your robot does something weird at 3am, you replay the run and you can prove nobody edited it.
+One changed byte, caught instantly — and the exact event named. Hash chain + SHA-256 Merkle tree + Ed25519 signature: the same primitives as Git and Certificate Transparency. The merkle root is 64 characters — share it anywhere (an email, a ticket, a printout) and anyone holding it can later prove the run wasn't quietly edited and resealed. No cloud, works offline, MIT licensed.
 
-There's also a mission-control view at `/demo` built for watching (and recording) all of this happen.
+Sealed runs chain to each other — each new run's manifest records the previous run's Merkle root, like blocks. When your robot does something weird at 3am, you **replay the run in the UI** and you can prove nobody edited it.
+
+What this proves: the recorded timeline hasn't been altered since sealing. What it doesn't prove: that the robot's sensors observed reality correctly. We're precise about this distinction on purpose.
+
+The UI at `http://localhost:8765` is the flight deck itself — live camera with YOLO boxes, the black box streaming, a command bar, and director keys: `S` seal · `V` verify · `T` tamper · `R` runs/replay · `C` sources.
 
 ## Connect a real robot
 

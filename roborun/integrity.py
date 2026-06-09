@@ -1,15 +1,26 @@
-"""Tamper-evident run sealing — SHA-256 Merkle tree + optional Ed25519 signature.
+"""Tamper-evident run integrity — hash chain + SHA-256 Merkle tree
++ optional Ed25519 signature.
 
 A "run" is a directory:
-    run.jsonl       ordered event timeline (one JSON object per line)
+    run.jsonl       ordered event timeline (one JSON object per line);
+                    events written by roborun carry `prev` = SHA-256 of the
+                    previous event, so the log is tamper-evident while being
+                    written, not only after sealing
     run.seal        merkle root, per-event hashes, timestamp, signature
-    manifest.json   robot, task, time range (informational)
+    manifest.json   run id, start time, link to the previous sealed run
 
 Seal: hash each event (canonical JSON), build a binary Merkle tree,
-sign the root. Verify: recompute everything, report the exact event
-that fails. Same primitives as Git and Certificate Transparency.
+sign the root. Verify: recompute everything — per-event hashes, chain
+continuity, Merkle root, signature — and report the exact event that
+fails. Same primitives as Git and Certificate Transparency.
 
-Stdlib-only; Ed25519 signing activates if `cryptography` is installed.
+Stdlib-only core; Ed25519 signing activates if `cryptography` is
+installed ([crypto] extra). The merkle root is small enough to share
+anywhere — anyone holding a copy of it can later prove the run wasn't
+quietly resealed.
+
+What this proves: the recorded timeline has not been altered since sealing.
+What it does not prove: that the robot's sensors observed reality correctly.
 
 CLI:
     python -m roborun.integrity seal   <run_dir>
@@ -24,7 +35,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-SEAL_VERSION = 1
+SEAL_VERSION = 2
+GENESIS = "0" * 64
 _KEY_DIR = Path.home() / ".roborun"
 _KEY_PATH = _KEY_DIR / "ed25519.key"
 
@@ -130,39 +142,71 @@ def seal_run(run_dir: str | Path) -> dict[str, Any]:
             "sealed_at": sealed_at, "signed": seal["signature"] is not None}
 
 
+def verify_chain(lines: list[str]) -> dict[str, Any]:
+    """Check `prev`-hash continuity. Legacy runs without `prev` are skipped."""
+    if not lines:
+        return {"chain_checked": False}
+    events = [json.loads(ln) for ln in lines]
+    if "prev" not in events[0]:
+        return {"chain_checked": False}
+    prev = GENESIS
+    for i, evt in enumerate(events):
+        if evt.get("prev") != prev:
+            return {"chain_checked": True, "chain_intact": False, "chain_break": i,
+                    "reason": f"event {i:04d} chain break — prev hash does not match event {i-1:04d}"}
+        prev = hash_event(evt)
+    return {"chain_checked": True, "chain_intact": True, "chain_head": prev}
+
+
 def verify_run(run_dir: str | Path) -> dict[str, Any]:
     run_dir = Path(run_dir)
-    seal_path = run_dir / "run.seal"
-    if not seal_path.exists():
-        return {"ok": False, "verified": False, "reason": "no run.seal — run was never sealed"}
-    seal = json.loads(seal_path.read_text())
     try:
         lines = _load_events(run_dir)
     except FileNotFoundError as exc:
         return {"ok": False, "verified": False, "reason": str(exc)}
 
+    chain = verify_chain(lines)
+
+    seal_path = run_dir / "run.seal"
+    if not seal_path.exists():
+        # Unsealed (live or crashed) run: the chain is still checkable.
+        result = {"ok": True, "verified": False, **chain,
+                  "reason": "not sealed — chain checked only"}
+        if chain.get("chain_intact"):
+            result["reason"] = f"not sealed — chain intact through {len(lines)} events"
+        elif chain.get("chain_checked"):
+            result["reason"] = chain["reason"]
+        return result
+
+    seal = json.loads(seal_path.read_text())
+
     if len(lines) != seal["event_count"]:
-        return {"ok": True, "verified": False,
+        return {"ok": True, "verified": False, **chain,
                 "reason": f"event count mismatch — sealed {seal['event_count']}, found {len(lines)}",
                 "merkle_root": seal["merkle_root"]}
 
     hashes = _hash_lines(lines)
     for i, (h, expected) in enumerate(zip(hashes, seal["event_hashes"])):
         if h != expected:
-            return {"ok": True, "verified": False, "failed_event": i,
+            return {"ok": True, "verified": False, "failed_event": i, **chain,
                     "reason": f"event {i:04d} hash mismatch",
                     "expected": expected, "found": h,
                     "merkle_root": seal["merkle_root"]}
 
     root = merkle_root(hashes)
     if root != seal["merkle_root"]:
-        return {"ok": True, "verified": False,
+        return {"ok": True, "verified": False, **chain,
                 "reason": "merkle root mismatch — event hashes reordered",
                 "merkle_root": seal["merkle_root"]}
 
+    if chain.get("chain_checked") and not chain.get("chain_intact"):
+        return {"ok": True, "verified": False, **chain,
+                "reason": chain["reason"], "merkle_root": root}
+
     return {"ok": True, "verified": True, "event_count": len(lines),
             "merkle_root": root, "sealed_at": seal["sealed_at"],
-            "signature_valid": _check_signature(seal)}
+            "signature_valid": _check_signature(seal),
+            **chain}
 
 
 def tamper_run(run_dir: str | Path, event_index: int | None = None) -> dict[str, Any]:
@@ -224,7 +268,8 @@ def _cli() -> int:
     if r.get("verified"):
         sig = r.get("signature_valid")
         sig_note = {True: "signature valid", False: "SIGNATURE INVALID", None: "unsigned"}[sig]
-        print(f"VERIFIED — {r['event_count']} events, {sig_note}")
+        chain_note = "chain intact" if r.get("chain_intact") else "no chain (legacy run)"
+        print(f"VERIFIED — {r['event_count']} events · {chain_note} · {sig_note}")
         print(f"merkle root: {r['merkle_root']}")
         return 0
     print(f"FAILED — {r['reason']}")

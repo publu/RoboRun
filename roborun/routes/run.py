@@ -1,50 +1,58 @@
-"""Run routes — snapshot the live event timeline into a sealed, verifiable run.
+"""Run routes — seal, verify, replay, and tamper the chained journal.
 
-POST /api/run/seal     snapshot current events → runs/<id>/, seal it
-POST /api/run/verify   verify a run (default: latest)
+The event bus journals every event to disk as it happens (hash-chained).
+Sealing closes the current journal, Merkle-seals + signs it, and starts
+a fresh journal whose manifest links back to the sealed run.
+
+POST /api/run/seal     close + seal the live journal
+POST /api/run/verify   verify a run (default: latest sealed)
 POST /api/run/tamper   flip one byte of one event (demo)
 GET  /api/run/list     list recorded runs
+GET  /api/run/events   events of a run, for replay
 """
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 from roborun.routes import get, post, send_json
 from roborun import integrity
-from roborun.events import emit, recent
-
-RUNS_ROOT = Path(__file__).resolve().parent.parent.parent / ".roborun" / "runs"
+from roborun import events as bus
 
 
-def _latest_run() -> Path | None:
-    if not RUNS_ROOT.exists():
-        return None
-    runs = sorted([p for p in RUNS_ROOT.iterdir() if (p / "run.jsonl").exists()])
-    return runs[-1] if runs else None
+def _runs() -> list[Path]:
+    root = bus.runs_root()
+    if not root.exists():
+        return []
+    return sorted([p for p in root.iterdir() if (p / "run.jsonl").exists()])
+
+
+def _latest_sealed() -> Path | None:
+    sealed = [p for p in _runs() if (p / "run.seal").exists()]
+    return sealed[-1] if sealed else None
 
 
 def _resolve(payload: dict) -> Path | None:
     name = str(payload.get("run", "")).strip()
     if name:
-        p = RUNS_ROOT / name
+        p = bus.runs_root() / name
         return p if (p / "run.jsonl").exists() else None
-    return _latest_run()
+    return _latest_sealed()
 
 
 @post("/api/run/seal")
 def seal(h, payload):
-    events = recent(500)
-    if not events:
+    run_dir = bus.close_journal()
+    if run_dir is None:
         send_json(h, 200, {"ok": False, "error": "no events recorded yet"})
         return
-    run_id = time.strftime("run_%Y%m%d_%H%M%S", time.gmtime())
-    run_dir = RUNS_ROOT / run_id
-    integrity.snapshot_run(events, run_dir, manifest={"source": "event-bus"})
     result = integrity.seal_run(run_dir)
-    emit("system", "integrity", f"RUN SEALED — {result['event_count']} events",
-         {"run": run_id, "merkle_root": result["merkle_root"], "signed": result["signed"]})
-    send_json(h, 200, {**result, "run": run_id})
+    bus.record_sealed(run_dir.name, result["merkle_root"])
+    bus.emit("system", "integrity",
+             f"RUN SEALED — {result['event_count']} events",
+             {"run": run_dir.name, "merkle_root": result["merkle_root"],
+              "signed": result["signed"]})
+    send_json(h, 200, {**result, "run": run_dir.name,
+                       "next_run": (bus.current_run() or {}).get("run")})
 
 
 @post("/api/run/verify")
@@ -55,13 +63,14 @@ def verify(h, payload):
         return
     result = integrity.verify_run(run_dir)
     if result.get("verified"):
-        emit("system", "integrity",
-             f"VERIFIED — {result['event_count']} events intact",
-             {"run": run_dir.name, "merkle_root": result["merkle_root"]})
+        chain = "chain intact · " if result.get("chain_intact") else ""
+        bus.emit("system", "integrity",
+                 f"VERIFIED — {result['event_count']} events · {chain}untampered",
+                 {"run": run_dir.name, "merkle_root": result["merkle_root"]})
     else:
-        emit("system", "integrity",
-             f"VERIFICATION FAILED — {result.get('reason', 'unknown')}",
-             {"run": run_dir.name})
+        bus.emit("system", "integrity",
+                 f"VERIFICATION FAILED — {result.get('reason', 'unknown')}",
+                 {"run": run_dir.name})
     send_json(h, 200, {**result, "run": run_dir.name})
 
 
@@ -69,26 +78,45 @@ def verify(h, payload):
 def tamper(h, payload):
     run_dir = _resolve(payload)
     if run_dir is None:
-        send_json(h, 200, {"ok": False, "error": "no runs found"})
+        send_json(h, 200, {"ok": False, "error": "no sealed runs to tamper — seal first"})
         return
     result = integrity.tamper_run(run_dir, payload.get("event"))
     if result.get("ok"):
-        emit("system", "integrity",
-             f"run tampered — event {result['tampered_event']:04d} modified",
-             {"run": run_dir.name})
+        bus.emit("system", "integrity",
+                 f"run tampered — event {result['tampered_event']:04d} modified",
+                 {"run": run_dir.name})
     send_json(h, 200, {**result, "run": run_dir.name})
+
+
+@get("/api/run/events")
+def run_events(h):
+    """Events of a recorded run, for replay. ?run=<name>&limit=N"""
+    from urllib.parse import parse_qs, urlparse
+    q = parse_qs(urlparse(h.path).query)
+    name = (q.get("run") or [""])[0]
+    limit = int((q.get("limit") or ["2000"])[0])
+    run_dir = bus.runs_root() / name if name else _latest_sealed()
+    if run_dir is None or not (run_dir / "run.jsonl").exists():
+        send_json(h, 200, {"ok": False, "error": "run not found"})
+        return
+    import json as _json
+    lines = [ln for ln in (run_dir / "run.jsonl").read_text().splitlines() if ln.strip()]
+    events = [_json.loads(ln) for ln in lines[:limit]]
+    send_json(h, 200, {"ok": True, "run": run_dir.name, "events": events,
+                       "sealed": (run_dir / "run.seal").exists()})
 
 
 @get("/api/run/list")
 def list_runs(h):
+    live = bus.current_run()
     runs = []
-    if RUNS_ROOT.exists():
-        for p in sorted(RUNS_ROOT.iterdir()):
-            if not (p / "run.jsonl").exists():
-                continue
-            runs.append({
-                "run": p.name,
-                "sealed": (p / "run.seal").exists(),
-                "events": sum(1 for ln in (p / "run.jsonl").read_text().splitlines() if ln.strip()),
-            })
+    for p in _runs():
+        entry = {
+            "run": p.name,
+            "sealed": (p / "run.seal").exists(),
+            "events": sum(1 for ln in (p / "run.jsonl").read_text().splitlines() if ln.strip()),
+        }
+        if live and p.name == live["run"]:
+            entry["recording"] = True
+        runs.append(entry)
     send_json(h, 200, {"ok": True, "runs": runs})

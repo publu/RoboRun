@@ -23,6 +23,7 @@ datasets/
 
 # Secrets
 .env
+private/
 .env.local
 *.pem
 *.key
