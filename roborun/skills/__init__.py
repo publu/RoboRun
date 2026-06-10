@@ -6,9 +6,11 @@ that adds tools, behaviors, and config to the shared registry.
 
 Loading order:
   1. Built-in skills from roborun/skills/ directory
-  2. pip-installed packages listed in ROBORUN_SKILL_PACKAGES env var
-  3. Local directories listed in ROBORUN_SKILL_PATHS env var
-  4. Skills listed in .roborun/skills.yaml config
+  2. GitHub-installed skills from ~/.roborun/skills/ (`ros-agent skill add`,
+     pinned by commit SHA in ~/.roborun/skills.lock — see manager.py)
+  3. pip-installed packages listed in ROBORUN_SKILL_PACKAGES env var
+  4. Local directories listed in ROBORUN_SKILL_PATHS env var
+  5. Skills listed in .roborun/skills.yaml config
 
 Skill interface — a skill module must export:
 
@@ -147,6 +149,39 @@ def _load_module_skill(module_name: str) -> bool:
         return False
 
 
+def _load_file_skill(path: Path, module_name: str) -> bool:
+    """Load a skill file under a unique module name (every installed skill
+    is a `skill.py`, so plain imports would collide)."""
+    import importlib.util
+    try:
+        spec = importlib.util.spec_from_file_location(module_name, path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = mod
+        spec.loader.exec_module(mod)
+    except Exception as exc:
+        log.warning("Failed to load skill %s: %s", path, exc)
+        return False
+    return _register_module(mod, module_name)
+
+
+def _register_module(mod, fallback_id: str) -> bool:
+    skill_id = getattr(mod, "SKILL_ID", fallback_id)
+    skill_name = getattr(mod, "SKILL_NAME", skill_id)
+    skill_version = getattr(mod, "SKILL_VERSION", "0.0.0")
+    _registry.register_skill(skill_id, skill_name, skill_version)
+    register_fn = getattr(mod, "register", None)
+    if not callable(register_fn):
+        log.warning("Skill %s has no register() function", skill_id)
+        return False
+    try:
+        register_fn(_registry)
+    except Exception as exc:
+        log.warning("Skill %s register() failed: %s", skill_id, exc)
+        return False
+    log.info("Loaded skill: %s v%s", skill_name, skill_version)
+    return True
+
+
 def _load_path_skill(path: str) -> bool:
     p = Path(path).resolve()
     if not p.exists():
@@ -167,26 +202,35 @@ def load_skills() -> int:
     # 1. Built-in skills (sibling .py files in this package)
     builtin_dir = Path(__file__).parent
     for p in sorted(builtin_dir.glob("*.py")):
-        if p.name.startswith("_"):
+        if p.name.startswith("_") or p.name == "manager.py":
             continue
         if _load_module_skill(f"roborun.skills.{p.stem}"):
             loaded += 1
 
-    # 2. pip-installed packages from env
+    # 2. GitHub-installed skills, pin-verified against the lockfile
+    try:
+        from roborun.skills.manager import verified_skill_paths
+        for skill_id, path in verified_skill_paths():
+            if _load_file_skill(path, f"roborun_skill_{skill_id.replace('-', '_')}"):
+                loaded += 1
+    except Exception as exc:
+        log.warning("Installed-skill scan failed: %s", exc)
+
+    # 3. pip-installed packages from env
     packages = os.environ.get("ROBORUN_SKILL_PACKAGES", "")
     for pkg in packages.split(","):
         pkg = pkg.strip()
         if pkg and _load_module_skill(pkg):
             loaded += 1
 
-    # 3. Local paths from env
+    # 4. Local paths from env
     paths = os.environ.get("ROBORUN_SKILL_PATHS", "")
     for path in paths.split(","):
         path = path.strip()
         if path and _load_path_skill(path):
             loaded += 1
 
-    # 4. Config file
+    # 5. Config file
     config_file = Path.cwd() / ".roborun" / "skills.yaml"
     if config_file.exists():
         try:

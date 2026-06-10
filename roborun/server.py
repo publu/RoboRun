@@ -209,6 +209,10 @@ def _frame_recorder_loop() -> None:
 
 
 def main() -> None:
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "skill":
+        from roborun.skills.manager import cli
+        raise SystemExit(cli(sys.argv[2:]))
     if not WEB_ROOT.exists():
         raise SystemExit(f"Missing web directory at {WEB_ROOT}")
     STATE_ROOT.mkdir(parents=True, exist_ok=True)

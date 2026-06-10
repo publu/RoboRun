@@ -114,6 +114,20 @@ Point the UI at the robot's IP. **No ROS install on your machine.** The same `be
 
 Optional extras: `pip install ros-agent[vision]` (YOLO + CLIP), `[sim]` (MuJoCo), `[ros]` (direct DDS), `[crypto]` (Ed25519 signing), `[anchor]` (RFC 3161 timestamping), `[fleet]` (R2 + DuckDB cross-robot), `[all]`.
 
+## Skills — fork, vibecode, install from GitHub
+
+A skill packages tools and autonomous behaviors for reuse. There's no registry to publish to — **a skill is a GitHub repo**:
+
+```bash
+ros-agent skill add someuser/their-skill     # clone, validate, pin the commit SHA
+ros-agent skill add ./my-skill               # dev mode: symlink a local checkout
+ros-agent skill list                         # installed skills + pin state
+```
+
+Install validates the skill **without executing it** (AST check of the required exports and the `REQUIRES` version range) and pins the exact commit in `~/.roborun/skills.lock`. If the installed tree ever drifts from the pinned SHA, it is refused at load — vibecoded on the way in, set in stone once installed.
+
+To write one: fork [roborun-skill-template](https://github.com/publu/roborun-skill-template), open it in Claude Code or Cursor, and describe what you want — the template's `AGENTS.md`/`CLAUDE.md` teach the agent the whole skill API. `ros-agent skill validate .`, push, done.
+
 ## Configuration
 
 | Variable | Default | |
