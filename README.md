@@ -18,8 +18,8 @@
 ## 60 seconds, no robot required
 
 ```bash
-pip install ros-agent
-ros-agent
+pip install ros-agent     # the package keeps its PyPI name; the command is roborun
+roborun
 ```
 
 The browser opens live: your webcam becomes the robot's eyes (YOLO autostarts), MuJoCo becomes its body, and a `behaviors/` folder appears with its brain:
@@ -68,7 +68,7 @@ There's no always-on narration burning tokens. Instead there's a **heartbeat**: 
 The whole robot is also an MCP server. One line and Claude or Cursor drives it directly:
 
 ```json
-{ "mcpServers": { "ros-agent": { "command": "ros-agent-mcp" } } }
+{ "mcpServers": { "roborun": { "command": "roborun-mcp" } } }
 ```
 
 ## The black box
@@ -109,14 +109,14 @@ Optional extras: `pip install ros-agent[vision]` (YOLO + CLIP), `[sim]` (MuJoCo)
 A skill packages tools and autonomous behaviors for reuse. There's no registry to publish to — **a skill is a GitHub repo**:
 
 ```bash
-ros-agent skill add someuser/their-skill     # clone, validate, pin the commit SHA
-ros-agent skill add ./my-skill               # dev mode: symlink a local checkout
-ros-agent skill list                         # installed skills + pin state
+roborun skill add someuser/their-skill     # clone, validate, pin the commit SHA
+roborun skill add ./my-skill               # dev mode: symlink a local checkout
+roborun skill list                         # installed skills + pin state
 ```
 
 Install validates the skill **without executing it** (AST check of the required exports and the `REQUIRES` version range) and pins the exact commit in `~/.roborun/skills.lock`. If the installed tree ever drifts from the pinned SHA, it is refused at load — vibecoded on the way in, set in stone once installed.
 
-To write one: fork [roborun-skill-template](https://github.com/publu/roborun-skill-template), open it in Claude Code or Cursor, and describe what you want — the template's `AGENTS.md`/`CLAUDE.md` teach the agent the whole skill API. `ros-agent skill validate .`, push, done.
+To write one: fork [roborun-skill-template](https://github.com/publu/roborun-skill-template), open it in Claude Code or Cursor, and describe what you want — the template's `AGENTS.md`/`CLAUDE.md` teach the agent the whole skill API. `roborun skill validate .`, push, done.
 
 ## Configuration
 

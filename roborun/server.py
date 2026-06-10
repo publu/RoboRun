@@ -50,7 +50,7 @@ class Handler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(WEB_ROOT), **kwargs)
 
     def log_message(self, fmt: str, *args: Any) -> None:
-        print(f"[ros-agent] {self.address_string()} - {fmt % args}")
+        print(f"[roborun] {self.address_string()} - {fmt % args}")
 
     def end_headers(self) -> None:
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
@@ -259,11 +259,11 @@ def main() -> None:
         threading.Thread(target=_autostart, daemon=True, name="Autostart").start()
 
     server = ThreadingHTTPServer((HOST, PORT), Handler)
-    print(f"\n  ros-agent is live: http://{HOST}:{PORT}")
+    print(f"\n  RoboRun is live: http://{HOST}:{PORT}")
     print(f"  Telemetry WS:    ws://127.0.0.1:8766")
     print(f"  MCP endpoint:    http://{HOST}:{PORT}/mcp\n")
     from roborun.events import emit
-    emit("system", "server", "ros-agent started", {"port": PORT})
+    emit("system", "server", "roborun started", {"port": PORT})
     try:
         server.serve_forever()
     except KeyboardInterrupt:

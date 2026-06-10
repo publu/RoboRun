@@ -4,11 +4,11 @@ There is no registry to publish to: a skill is a GitHub repo (fork of
 roborun-skill-template) with a `skill.py` at its root. Install pins the
 exact commit; the lockfile is the trust boundary.
 
-    ros-agent skill add  owner/repo            # or a full URL, or @ref
-    ros-agent skill add  ./local-skill-dir     # symlinked, for development
-    ros-agent skill list
-    ros-agent skill update <id>
-    ros-agent skill remove <id>
+    roborun skill add  owner/repo            # or a full URL, or @ref
+    roborun skill add  ./local-skill-dir     # symlinked, for development
+    roborun skill list
+    roborun skill update <id>
+    roborun skill remove <id>
 
 Layout:
     ~/.roborun/skills/<skill_id>/     git clone, checked out at the pinned SHA
@@ -277,7 +277,7 @@ def verified_skill_paths() -> list[tuple[str, Path]]:
 def cli(argv: list[str] | None = None) -> int:
     import argparse
     p = argparse.ArgumentParser(
-        prog="ros-agent skill",
+        prog="roborun skill",
         description="Install skills from GitHub: fork roborun-skill-template, "
                     "vibecode, `skill add owner/repo`.")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -293,7 +293,7 @@ def cli(argv: list[str] | None = None) -> int:
     if args.cmd == "list":
         rows = installed()
         if not rows:
-            print("no skills installed — try: ros-agent skill add "
+            print("no skills installed — try: roborun skill add "
                   "publu/roborun-skill-template")
             return 0
         for r in rows:

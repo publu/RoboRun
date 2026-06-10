@@ -1303,7 +1303,7 @@ def get_all_tools() -> list[dict]:
 
 def get_mcp_manifest() -> dict:
     return {
-        "name": "ros-agent",
+        "name": "roborun",
         "version": "0.11.0",
         "description": "Direct ROS robot control — DDS + rosbridge, zero-config discovery, topic/service/action/param access, extensible skills. No ROS install needed. Set ROBORUN_MCP_FULL=1 to list the full introspection toolset.",
         "tools": get_all_tools(),

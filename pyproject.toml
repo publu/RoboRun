@@ -49,6 +49,9 @@ fleet = ["boto3>=1.28", "duckdb>=1.0"]
 all = ["ros-agent[vision,sim,depth,jepa,gemini,ros,crypto,anchor,fleet]"]
 
 [project.scripts]
+roborun = "roborun.server:main"
+roborun-mcp = "roborun.mcp_stdio:main"
+# legacy aliases (the PyPI package is named ros-agent)
 ros-agent = "roborun.server:main"
 ros-agent-mcp = "roborun.mcp_stdio:main"
 

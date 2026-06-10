@@ -387,7 +387,7 @@ def follow_person(robot):
     )
 ''',
     "patrol.py": '''\
-"""Square patrol in the sim. `ros-agent` autostarts MuJoCo if there's no camera."""
+"""Square patrol in the sim. `roborun` autostarts MuJoCo if there's no camera."""
 import time
 from roborun.behaviors import behavior
 

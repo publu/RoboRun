@@ -153,7 +153,7 @@ _STATE_PATHS = [
 ]
 _MAX_FRAME_AGE = 3.0  # seconds
 
-_FAST_SYSTEM = """You are a robot operator powered by ros-agent. The current camera frame and YOLO detections are injected into every message — you can see the robot's live view directly.
+_FAST_SYSTEM = """You are a robot operator powered by RoboRun. The current camera frame and YOLO detections are injected into every message — you can see the robot's live view directly.
 
 Use tools for physical actions and memory:
 - move: direct velocity command, fast, use for nudges and short moves
@@ -560,116 +560,6 @@ class FastRobotAgent:
 
     def stop(self) -> None:
         pass  # no subprocess to stop
-
-
-# ── Gemini agent ──────────────────────────────────────────────────────────────
-
-_GEMINI_SYSTEM = """You are a robot operator powered by ros-agent. You have tools to:
-- capture camera frames and see what the robot sees
-- move the robot (forward/back/turn) with velocity commands
-- call any ros-agent skill (navigate, follow, patrol, find objects, etc.)
-- publish/subscribe to ROS 2 topics directly
-- search the robot's spatial memory for past observations
-
-Use tools for ALL physical actions. After each command, verify it worked.
-Be concise — this is a live control panel."""
-
-# Tool declarations matching agenticROS's MCP surface
-_GEMINI_TOOLS = [
-    {
-        "name": "camera_snapshot",
-        "description": "Capture a single frame from the robot camera. Returns a JPEG image for visual inspection.",
-        "parameters": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-    {
-        "name": "move_robot",
-        "description": "Send velocity command to the robot. Positive linear_x = forward, negative = backward. Positive angular_z = turn left, negative = turn right.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "linear_x": {"type": "number", "description": "Forward/backward speed in m/s (e.g. 0.3)"},
-                "linear_y": {"type": "number", "description": "Lateral speed in m/s (for holonomic robots)"},
-                "angular_z": {"type": "number", "description": "Rotation speed in rad/s"},
-                "topic": {"type": "string", "description": "ROS topic (default /cmd_vel)"},
-            },
-            "required": [],
-        },
-    },
-    {
-        "name": "ros_publish",
-        "description": "Publish a message to any ROS 2 topic.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "topic": {"type": "string"},
-                "type": {"type": "string", "description": "ROS message type e.g. geometry_msgs/Twist"},
-                "message": {"type": "object"},
-            },
-            "required": ["topic", "type", "message"],
-        },
-    },
-    {
-        "name": "ros_subscribe_once",
-        "description": "Read a single message from any ROS 2 topic and return it.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "topic": {"type": "string"},
-                "type": {"type": "string"},
-                "timeout_ms": {"type": "number", "description": "Timeout in milliseconds (default 5000)"},
-            },
-            "required": ["topic"],
-        },
-    },
-    {
-        "name": "ros_list_topics",
-        "description": "List all available ROS 2 topics and their types.",
-        "parameters": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-    {
-        "name": "call_skill",
-        "description": "Call a ros-agent skill by name. Use ros_list_topics first to discover what's available. Skills include follow_me, patrol, scan, find_object, etc.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "skill": {"type": "string", "description": "Skill name e.g. follow_me_start, patrol_start"},
-                "args": {"type": "object", "description": "Skill arguments"},
-            },
-            "required": ["skill"],
-        },
-    },
-    {
-        "name": "memory_search",
-        "description": "Search the robot's spatial memory by text (CLIP semantic search). Returns matching past observations with locations.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "What to search for e.g. 'red mug', 'person in hallway'"},
-                "top_k": {"type": "integer", "description": "Max results (default 5)"},
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "memory_search_nearby",
-        "description": "Search the robot's spatial memory for observations near given coordinates.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "x": {"type": "number"},
-                "y": {"type": "number"},
-                "radius": {"type": "number", "description": "Search radius in meters (default 2.0)"},
-            },
-            "required": ["x", "y"],
-        },
-    },
-]
 
 
 def _call_local_api(path: str, payload: dict | None = None, method: str = "POST") -> dict:
