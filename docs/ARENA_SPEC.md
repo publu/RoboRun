@@ -26,9 +26,36 @@ MuJoCo and rosbridge.
   optional `[sim]` extra; it stops being the default first-run experience.
 - **We own the UI/UX.** The flight deck is already a browser app; the arena
   renders in the same page, same event timeline, same anchor badge.
-- Physics: a deterministic JS engine (rapier.js compiled to WASM —
-  cross-platform deterministic, fixed timestep) — determinism is
-  load-bearing for score verification (below).
+- Physics is **behind the `world` API, not married to one engine**. Both
+  candidates are WASM, and WASM float math is IEEE-deterministic across
+  browsers — which is what sealed-score replay verification needs:
+  - **rapier.js** — light, fast to ship; the default for locomotion types.
+  - **mujoco-wasm** — MuJoCo compiled to WASM runs fine in a browser (no
+    CUDA involved; that objection was Isaac's). It's the upgrade path for
+    contact-rich types where real dynamics *is* the gameplay (hand).
+
+## Robot types — four ladders
+
+A robot type is a **character with a built-in controller, not raw
+dynamics**. The gait/stabilizer is L0/L1 and ships with the type; the
+player codes the policy. Each type adds at most a couple of verbs to the
+handle, each level declares `ROBOT = "dog" | "humanoid" | "hand" | "drone"`,
+and each type's ladder ends at its real-hardware twin:
+
+| Type | Built-in controller | Handle | Engine | Hardware twin |
+|---|---|---|---|---|
+| dog | trot gait | `robot.move()` as-is | rapier | Unitree Go2 |
+| humanoid | walk controller | `move()` + `robot.carry()` | rapier | Unitree G1 |
+| drone | flight stabilizer | `move()` + `robot.climb(z)` | rapier | PX4-class quad |
+| hand | joint servoing | `robot.grasp()/release()/pose()` | mujoco-wasm | arm + gripper |
+
+Ladder sketches: dog — beacon run → rough-terrain patrol → fetch.
+humanoid — walk-and-carry → button/door sequence. drone — waypoint ring
+race → land on a moving pad → search-from-altitude. hand — pick-place →
+stack → rotate-in-hand. Visuals are three.js models over simplified
+colliders for locomotion types: the game is policy and prompt
+engineering, not contact fidelity — except the hand ladder, which exists
+*because* of contact fidelity.
 
 ## Architecture: the sim is a transport backend
 
