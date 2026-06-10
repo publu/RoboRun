@@ -337,6 +337,21 @@ def _tool_move(args: dict) -> dict:
     domain_id = int(args.get("domain_id", os.environ.get("ROS_DOMAIN_ID", "0")))
 
     try:
+        from roborun.arena import get_arena
+        arena = get_arena()
+        if arena.is_active():
+            arena.set_cmd(lx, ly, az)
+            if dur:
+                def _stop():
+                    time.sleep(dur)
+                    arena.set_cmd(0, 0, 0)
+                threading.Thread(target=_stop, daemon=True).start()
+            return {"ok": True, "linear_x": lx, "linear_y": ly, "angular_z": az,
+                    "transport": "arena", "will_stop_after_s": dur}
+    except Exception:
+        pass
+
+    try:
         from roborun.routes._singletons import get_simulator
         sim = get_simulator()
         if sim.is_running:
@@ -381,14 +396,25 @@ def _tool_move(args: dict) -> dict:
 
 def _tool_estop(args: dict) -> dict:
     topic = args.get("topic", "/cmd_vel")
+    # estop hits every actuator that might be live, not the first one found
+    stopped = []
+    try:
+        from roborun.arena import get_arena
+        if get_arena().is_active():
+            get_arena().set_cmd(0, 0, 0)
+            stopped.append("arena")
+    except Exception:
+        pass
     try:
         from roborun.routes._singletons import get_simulator
         sim = get_simulator()
         if sim.is_running:
             sim.set_cmd_vel(0, 0, 0)
-            return {"ok": True, "transport": "mujoco"}
+            stopped.append("mujoco")
     except Exception:
         pass
+    if stopped:
+        return {"ok": True, "transport": "+".join(stopped)}
     rb = _get_rosbridge(_get_robot_host())
     if rb:
         try:
