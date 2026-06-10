@@ -176,6 +176,26 @@ def mcap_tamper(h, payload):
                        "note": "one bit flipped mid-file; verify will localize it"})
 
 
+@get("/api/run/mcap/download")
+def mcap_download(h):
+    """Download a run's .mcap (Foxglove-replayable). ?run=&robot_id="""
+    from urllib.parse import parse_qs, urlparse
+    q = parse_qs(urlparse(h.path).query)
+    payload = {"run": (q.get("run") or [""])[0],
+               "robot_id": (q.get("robot_id") or [""])[0]}
+    p = _mcap_path(payload)
+    if p is None:
+        send_json(h, 404, {"ok": False, "error": "run not found"})
+        return
+    data = p.read_bytes()
+    h.send_response(200)
+    h.send_header("Content-Type", "application/octet-stream")
+    h.send_header("Content-Disposition", f'attachment; filename="{p.name}"')
+    h.send_header("Content-Length", str(len(data)))
+    h.end_headers()
+    h.wfile.write(data)
+
+
 @get("/api/run/badge")
 def badge(h):
     """Verify state of the newest run — the flight deck's live badge."""

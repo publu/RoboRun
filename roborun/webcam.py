@@ -340,6 +340,14 @@ class WebcamPipeline:
             return
         if rec is None:
             return
+        try:
+            # An arena run records the arena's world, not the player's face —
+            # keep webcam frames out of runs people will download and share.
+            from roborun.arena import get_arena
+            if get_arena().is_active:
+                return
+        except Exception:
+            pass
         self._last_record_ts = now
         try:
             ok, raw = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
@@ -400,8 +408,9 @@ class WebcamPipeline:
         if embedding is not None:
             try:
                 from roborun.recorder import active_recorder
+                from roborun.arena import get_arena
                 rec = active_recorder()
-                if rec is not None:
+                if rec is not None and not get_arena().is_active:
                     rec.write_clip(embedding, frame_topic="/camera/webcam")
             except Exception:
                 pass

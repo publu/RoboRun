@@ -31,6 +31,24 @@ def arena_state(h, payload):
         sightings.reset()
     sightings.observe(payload.get("detections") or [],
                       pose=payload.get("pose"), source="arena")
+    # the black box gets the full ROS-shaped view: /pose, /detections, /lidar
+    try:
+        from roborun import recorder as rec_mod
+        rec = rec_mod.active_recorder()
+        if rec is not None:
+            pose = payload.get("pose") or {}
+            rec.write_pose(pose.get("x", 0.0), pose.get("z", 0.0),
+                           pose.get("y", 0.0))
+            dets = payload.get("detections") or []
+            if dets:
+                rec.write_detections(dets, name="arena")
+            lidar = payload.get("lidar") or []
+            if lidar:
+                rec.write_json("/lidar", "roborun.LaserScan",
+                               {"ranges": lidar, "angle_increment": 0.1745,
+                                "frame_id": "base_link"})
+    except Exception:
+        pass
     send_json(h, 200, {"ok": True})
 
 

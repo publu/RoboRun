@@ -861,6 +861,7 @@ function loadLevel(i) {
   cloudReset();
   odo = 0;
   document.getElementById("win").classList.remove("show");
+  if (linked) startViewRecording();
   setCode(LV.demo || "");
   policyStatus("demo policy loaded — press RUN, or rewrite it", "");
 
@@ -1018,15 +1019,46 @@ function tickChamber(dt, answer) {
 
 /* ════════════════ recording ════════════════ */
 let recording = false;
+let mediaRec = null, videoChunks = [], videoMime = "";
+function startViewRecording() {
+  try {
+    stopViewRecording();
+    const stream = renderer.domElement.captureStream(30);
+    videoMime = ["video/mp4", "video/webm;codecs=vp9", "video/webm"]
+      .find((m) => MediaRecorder.isTypeSupported(m)) || "";
+    mediaRec = new MediaRecorder(stream, videoMime ? { mimeType: videoMime } : {});
+    videoChunks = [];
+    mediaRec.ondataavailable = (e) => { if (e.data.size) videoChunks.push(e.data); };
+    mediaRec.start(1000);
+  } catch { mediaRec = null; }
+}
+function stopViewRecording() {
+  if (mediaRec && mediaRec.state !== "inactive") mediaRec.stop();
+}
+function videoBlobUrl() {
+  if (!videoChunks.length) return null;
+  return URL.createObjectURL(new Blob(videoChunks, { type: videoMime || "video/webm" }));
+}
 async function startAttemptRecording() {
   try {
     const r = await api("/api/run/record/start", { robot_id: "arena" });
     recording = !!r.ok;
     document.getElementById("rec").textContent = recording ? "● REC" : "";
+    startViewRecording();
   } catch {}
 }
 async function sealAttempt() {
   const hashEl = document.getElementById("winHash");
+  const linksEl = document.getElementById("winLinks");
+  linksEl.innerHTML = "";
+  stopViewRecording();
+  setTimeout(() => {                       // let the last chunk flush
+    const url = videoBlobUrl();
+    if (url) {
+      const ext = videoMime.includes("mp4") ? "mp4" : "webm";
+      linksEl.innerHTML += `<a href="${url}" download="roborun_${LV.name}.${ext}">⬇ robot view video (.${ext})</a>`;
+    }
+  }, 400);
   try {
     const r = await api("/api/run/record/stop", {});
     const root = r?.seal?.merkle_root;
@@ -1034,6 +1066,9 @@ async function sealAttempt() {
       hashEl.innerHTML = `<span class="k">run-hash</span>0x${root}`;
       document.getElementById("rec").textContent = "";
       recording = false;
+      const run = r.seal.run, robot = r.seal.robot_id;
+      linksEl.innerHTML += ` <a href="/api/run/mcap/download?run=${run}&robot_id=${robot}"
+        download>⬇ run data (.mcap — pose, detections, lidar, events; replays in Foxglove)</a>`;
       return;
     }
     hashEl.innerHTML = `<span class="k">run-hash</span>unrecorded — server wasn't running`;

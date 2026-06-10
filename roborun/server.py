@@ -80,7 +80,7 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         # Static files — the flight deck IS the UI; the arena is the sim
-        if self.path == "/" or path_only == "/deck":
+        if path_only in ("/", "/deck"):
             self.path = "/deck.html"
         elif path_only == "/arena":
             self.path = "/arena.html"
