@@ -12,7 +12,8 @@ const LEVELS = [
   {
     name: "chamber-01",
     title: "CHAMBER 01 — RECON",
-    brief: "POLICY GOAL: visit all four rooms, autonomously. You have pose(), "
+    brief: "POLICY GOAL: visit all four rooms, autonomously — no map given, "
+         + "build one. You have pose(), "
          + "lidar(), see() and move(). Drop a file in behaviors/ "
          + "or let your agent write it over MCP (write_behavior). "
          + "WASD is debug-drive only: manual runs count as practice.",
@@ -40,34 +41,90 @@ const LEVELS = [
       { id: "d6", x: 1, z: 4.7, color: "blue" },
     ],
     demo: `from roborun.behaviors import behavior
-from math import atan2, hypot, pi
+from math import atan2, hypot, pi, cos, sin
 
-# One lap through the doorways hits every room.
-TOUR = [(-2.5, 0), (-2.5, -4.5), (2.5, -4.5), (2.5, 4.5), (-2.5, 4.5)]
+# No map is given. Build one from lidar, chase the frontier between
+# known and unknown space, and the rooms find themselves.
+CELL = 0.25  # fine enough that doorways survive obstacle inflation
+
+def integrate(grid, pose, scan):
+    n = len(scan)
+    for i, r in enumerate(scan):
+        a = pose["heading"] + i / n * 2 * pi
+        d = CELL * 0.5
+        while d < r:
+            c = (round((pose["x"] + cos(a) * d) / CELL),
+                 round((pose["z"] - sin(a) * d) / CELL))
+            if grid.get(c) != 2:
+                grid[c] = 1                      # known free
+            d += CELL * 0.5
+        if r < 7.5:
+            grid[(round((pose["x"] + cos(a) * r) / CELL),
+                  round((pose["z"] - sin(a) * r) / CELL))] = 2   # wall
+
+def clear(grid, c):
+    # traversable = free and not hugging a wall (the robot is fatter
+    # than a grid cell — inflate obstacles by one cell)
+    if grid.get(c) != 1:
+        return False
+    for dx in (-1, 0, 1):
+        for dz in (-1, 0, 1):
+            if grid.get((c[0] + dx, c[1] + dz)) == 2:
+                return False
+    return True
+
+def plan(grid, pose):
+    # BFS through clear cells; stop at the nearest frontier
+    start = (round(pose["x"] / CELL), round(pose["z"] / CELL))
+    prev, queue, seen = {}, [start], {start}
+    while queue:
+        c = queue.pop(0)
+        for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            n = (c[0] + dx, c[1] + dz)
+            if n in seen:
+                continue
+            if grid.get(n) is None:              # frontier reached
+                path = [c]
+                while path[-1] != start:
+                    path.append(prev[path[-1]])
+                return path[::-1]                # start -> frontier
+            if clear(grid, n):
+                seen.add(n); prev[n] = c; queue.append(n)
+    return None
 
 @behavior(hz=10)
 def player_policy(robot):
-    pose = robot.pose()
-    if not pose:
+    pose, scan = robot.pose(), robot.lidar()
+    if not pose or not scan:
         return robot.stop()
+    st = robot.state
+    grid = st.setdefault("grid", {})
+    integrate(grid, pose, scan)
 
-    leg = robot.state.setdefault("leg", 0)
-    if leg >= len(TOUR):
-        return robot.stop()
-    tx, tz = TOUR[leg]
+    st["tick"] = st.get("tick", 0) + 1
+    if st["tick"] % 10 == 1 or not st.get("path"):
+        st["path"] = plan(grid, pose)
+    path = st.get("path")
+    if not path:
+        return robot.move(turn=0.8)              # no frontier? sweep for one
 
-    dx, dz = tx - pose["x"], tz - pose["z"]
-    if hypot(dx, dz) < 0.6:
-        robot.state["leg"] = leg + 1
+    # follow the path: aim a few cells ahead, drop reached cells
+    while path and hypot(path[0][0] * CELL - pose["x"],
+                         path[0][1] * CELL - pose["z"]) < 0.45:
+        path.pop(0)
+    if not path:
         return
-
+    tx, tz = path[min(4, len(path) - 1)]
+    dx, dz = tx * CELL - pose["x"], tz * CELL - pose["z"]
     bearing = (atan2(-dz, dx) - pose["heading"] + pi) % (2 * pi) - pi
-    scan = robot.lidar()
-    ahead = min(scan[:2] + scan[-2:]) if scan else 8
-    if abs(bearing) > 0.4:
+    ahead = min(scan[:2] + scan[-2:])
+    if abs(bearing) > 0.5:
         robot.move(turn=1.2 if bearing > 0 else -1.2)
+    elif ahead < 0.6:
+        left, right = sum(scan[6:12]), sum(scan[-12:-6])
+        robot.move(turn=1.0 if left > right else -1.0)   # rotate toward open space
     else:
-        robot.move(forward=0.9 if ahead > 1.5 else 0.4, turn=0.8 * bearing)
+        robot.move(forward=0.9, turn=0.8 * bearing)
 `,
   },
   {
