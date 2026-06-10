@@ -1041,8 +1041,13 @@ function videoBlobUrl() {
 }
 async function startAttemptRecording() {
   try {
-    const r = await api("/api/run/record/start", { robot_id: "arena" });
-    recording = !!r.ok;
+    if (MODE === "wasm") {
+      if (!wasmRT) return;
+      recording = !!wasmRT.recordStart();
+    } else {
+      const r = await api("/api/run/record/start", { robot_id: "arena" });
+      recording = !!r.ok;
+    }
     document.getElementById("rec").textContent = recording ? "● REC" : "";
     startViewRecording();
   } catch {}
@@ -1052,28 +1057,132 @@ async function sealAttempt() {
   const linksEl = document.getElementById("winLinks");
   linksEl.innerHTML = "";
   stopViewRecording();
-  setTimeout(() => {                       // let the last chunk flush
-    const url = videoBlobUrl();
-    if (url) {
-      const ext = videoMime.includes("mp4") ? "mp4" : "webm";
-      linksEl.innerHTML += `<a href="${url}" download="roborun_${LV.name}.${ext}">⬇ robot view video (.${ext})</a>`;
-    }
-  }, 400);
+  await new Promise((res) => setTimeout(res, 450));   // let the last chunk flush
+  const vblob = videoChunks.length
+    ? new Blob(videoChunks, { type: videoMime || "video/webm" }) : null;
+  const ext = videoMime.includes("mp4") ? "mp4" : "webm";
+  if (vblob) {
+    linksEl.innerHTML += `<a href="${URL.createObjectURL(vblob)}"
+      download="roborun_${LV.name}.${ext}">⬇ robot view video (.${ext})</a>`;
+  }
+  const entry = { id: Date.now(), ts: new Date().toISOString(),
+                  level: LV.name, mode: MODE, video: vblob, ext };
   try {
-    const r = await api("/api/run/record/stop", {});
-    const root = r?.seal?.merkle_root;
-    if (root) {
+    if (MODE === "wasm" && wasmRT) {
+      const r = wasmRT.recordStop();
+      if (!r.ok) throw new Error(r.error);
+      hashEl.innerHTML = `<span class="k">run-hash</span>0x${r.seal.merkle_root}`;
+      entry.seal = r.seal;
+      entry.mcap = r.files.mcap.buffer;
+      entry.chain = r.files.chain;
+      entry.sealText = r.files.seal;
+      linksEl.innerHTML += ` <a href="${URL.createObjectURL(new Blob([r.files.mcap]))}"
+        download="${r.seal.run}.mcap">⬇ run data (.mcap — pose, detections, lidar, events; replays in Foxglove)</a>`;
+    } else {
+      const r = await api("/api/run/record/stop", {});
+      const root = r?.seal?.merkle_root;
+      if (!root) {
+        hashEl.innerHTML = `<span class="k">run-hash</span>unrecorded — server wasn't running`;
+        return;
+      }
       hashEl.innerHTML = `<span class="k">run-hash</span>0x${root}`;
-      document.getElementById("rec").textContent = "";
-      recording = false;
-      const run = r.seal.run, robot = r.seal.robot_id;
-      linksEl.innerHTML += ` <a href="/api/run/mcap/download?run=${run}&robot_id=${robot}"
+      entry.seal = r.seal;
+      entry.serverRun = r.seal.run;
+      entry.robotId = r.seal.robot_id;
+      linksEl.innerHTML += ` <a href="/api/run/mcap/download?run=${r.seal.run}&robot_id=${r.seal.robot_id}"
         download>⬇ run data (.mcap — pose, detections, lidar, events; replays in Foxglove)</a>`;
-      return;
     }
-    hashEl.innerHTML = `<span class="k">run-hash</span>unrecorded — server wasn't running`;
+    document.getElementById("rec").textContent = "";
+    recording = false;
+    await runsDB.put(entry);
+    renderRuns();
   } catch {
     hashEl.innerHTML = `<span class="k">run-hash</span>unavailable`;
+  }
+}
+
+/* ════════════════ stored runs (IndexedDB) ════════════════ */
+const runsDB = {
+  _open: null,
+  db() {
+    this._open ??= new Promise((res, rej) => {
+      const q = indexedDB.open("roborun-arena", 1);
+      q.onupgradeneeded = () => q.result.createObjectStore("runs", { keyPath: "id" });
+      q.onsuccess = () => res(q.result);
+      q.onerror = () => rej(q.error);
+    });
+    return this._open;
+  },
+  async _tx(mode, fn) {
+    const db = await this.db();
+    return new Promise((res, rej) => {
+      const tx = db.transaction("runs", mode);
+      const out = fn(tx.objectStore("runs"));
+      tx.oncomplete = () => res(out.result ?? out);
+      tx.onerror = () => rej(tx.error);
+    });
+  },
+  put(entry) {
+    return this._tx("readwrite", (s) => s.put(entry)).then(() => this.prune());
+  },
+  all() { return this._tx("readonly", (s) => s.getAll()); },
+  del(id) { return this._tx("readwrite", (s) => s.delete(id)); },
+  async prune(keep = 12) {
+    const runs = (await this.all()).sort((a, b) => b.id - a.id);
+    for (const r of runs.slice(keep)) await this.del(r.id);
+  },
+};
+async function renderRuns() {
+  const host = document.getElementById("runsList");
+  if (!host) return;
+  const runs = (await runsDB.all().catch(() => [])).sort((a, b) => b.id - a.id);
+  host.innerHTML = runs.length ? "" :
+    `<div class="runs-empty">no recorded attempts yet — beat a chamber and it lands here</div>`;
+  for (const r of runs) {
+    const row = document.createElement("div");
+    row.className = "run-row";
+    const when = new Date(r.id).toLocaleString();
+    const links = [];
+    if (r.video) links.push(`<a href="${URL.createObjectURL(r.video)}"
+      download="roborun_${r.level}.${r.ext || "webm"}">video</a>`);
+    if (r.mcap) links.push(`<a href="${URL.createObjectURL(new Blob([r.mcap]))}"
+      download="${r.seal?.run || "run"}.mcap">mcap</a>`);
+    else if (r.serverRun) links.push(`<a href="/api/run/mcap/download?run=${r.serverRun}&robot_id=${r.robotId}" download>mcap</a>`);
+    if (r.sealText) links.push(`<a href="${URL.createObjectURL(new Blob([r.sealText]))}"
+      download="${r.seal?.run || "run"}.seal">seal</a>`);
+    row.innerHTML = `
+      <div class="run-head">
+        <b>${r.level}</b> <span>${when}</span>
+        <span class="run-links">${links.join(" ")}
+          ${r.mcap ? '<a href="#" class="verify">verify</a>' : ""}
+          <a href="#" class="del">✕</a></span>
+      </div>
+      <div class="run-hashline">${r.seal ? "0x" + r.seal.merkle_root.slice(0, 16) + "…" : "unsealed"}
+        <span class="vstate"></span></div>`;
+    if (r.video) {
+      row.querySelector(".run-head b").style.cursor = "pointer";
+      row.querySelector(".run-head b").addEventListener("click", () => {
+        let v = row.querySelector("video");
+        if (v) { v.remove(); return; }
+        v = document.createElement("video");
+        v.controls = true; v.src = URL.createObjectURL(r.video);
+        row.appendChild(v);
+      });
+    }
+    row.querySelector(".verify")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      const out = row.querySelector(".vstate");
+      if (!wasmRT) { out.textContent = "· verify needs the python runtime"; return; }
+      const v = wasmRT.verify(r.seal.run, new Uint8Array(r.mcap), r.chain, r.sealText);
+      out.textContent = `· ${v.state.replace(/_/g, " ")}`;
+      out.className = `vstate ${v.state === "broken" ? "bad" : "good"}`;
+    });
+    row.querySelector(".del").addEventListener("click", async (e) => {
+      e.preventDefault();
+      await runsDB.del(r.id);
+      renderRuns();
+    });
+    host.appendChild(row);
   }
 }
 
@@ -1083,12 +1192,48 @@ async function api(path, body) {
     headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
   return r.json();
 }
+
+/* A local server gives the full stack (MCP, mission compiler, deck).
+   Without one — GitHub Pages, file:// — the same page boots the actual
+   roborun python modules in the tab (wasm.js → Pyodide): same policies,
+   same sightings ledger, same merkle-sealed recordings. */
+let MODE = "detect";                       // "server" | "wasm"
+let wasmRT = null, wasmLoading = false;
+async function detectMode() {
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 1500);
+    const r = await fetch("/api/arena/cmd", { signal: ctl.signal });
+    clearTimeout(t);
+    if (r.ok) { MODE = "server"; return; }
+  } catch {}
+  MODE = "wasm";
+  document.body.classList.add("wasm-mode");
+  bootWasm();
+}
+async function bootWasm() {
+  if (wasmRT || wasmLoading) return;
+  wasmLoading = true;
+  try {
+    const mod = await import("./wasm.js");
+    wasmRT = await mod.loadWasmRuntime((m) => policyStatus(m, ""));
+    linked = true;
+    policyStatus("in-browser python ready — press RUN", "ok");
+    startAttemptRecording();
+  } catch (e) {
+    policyStatus(`python runtime failed to load: ${e.message || e}`, "err");
+  }
+  wasmLoading = false;
+}
+
 let serverCmd = { forward: 0, strafe: 0, turn: 0, climb: 0, grip: 0 };
 let serverAnswer = null;
 let linked = false, lastLidar = [];
 let serverSightings = [];
 async function pollSightings() {
-  if (linked) {
+  if (MODE === "wasm" && wasmRT) {
+    try { serverSightings = wasmRT.sightings() || []; } catch {}
+  } else if (linked) {
     try {
       const r = await (await fetch("/api/sightings")).json();
       serverSightings = r.sightings || [];
@@ -1097,33 +1242,57 @@ async function pollSightings() {
   setTimeout(pollSightings, 1000);
 }
 async function pollCmd() {
-  try {
-    const r = await (await fetch("/api/arena/cmd")).json();
-    serverCmd = r.cmd;
-    serverAnswer = r.answer;
-    if (!linked) { linked = true; startAttemptRecording(); }
-  } catch { linked = false; }
   const el = document.getElementById("link");
-  el.textContent = linked ? "behaviors: linked" : "behaviors: no server (WASD only)";
+  if (MODE === "wasm") {
+    // cmd arrives synchronously from each tick in pushState
+    el.textContent = wasmRT ? "policy: in-browser python"
+      : wasmLoading ? "policy: loading python runtime…"
+      : "policy: in-browser (starting)";
+    el.className = `link ${wasmRT ? "on" : "off"}`;
+    setTimeout(pollCmd, 500);
+    return;
+  }
+  if (MODE === "server") {
+    try {
+      const r = await (await fetch("/api/arena/cmd")).json();
+      serverCmd = r.cmd;
+      serverAnswer = r.answer;
+      if (!linked) { linked = true; startAttemptRecording(); }
+    } catch { linked = false; }
+  }
+  el.textContent = linked ? "behaviors: linked"
+    : MODE === "detect" ? "behaviors: connecting…" : "behaviors: no server (WASD only)";
   el.className = `link ${linked ? "on" : "off"}`;
-  setTimeout(pollCmd, 50);
+  setTimeout(pollCmd, MODE === "detect" ? 300 : 50);
+}
+function currentState() {
+  return {
+    detections: senseDetections(),
+    lidar: lastLidar,
+    pose: { x: +bot.pos.x.toFixed(2), z: +bot.pos.z.toFixed(2),
+            y: +bot.alt.toFixed(2), heading: +bot.heading.toFixed(3) },
+    level: { name: LV.name, robot: LV.robot, room: currentRoom(),
+             rooms_visited: [...visited], odometer_m: +odo.toFixed(1), won },
+  };
 }
 async function pushState() {
-  if (linked) {
+  if (MODE === "wasm" && wasmRT) {
     try {
-      await api("/api/arena/state", {
-        detections: senseDetections(),
-        lidar: lastLidar,
-        pose: { x: +bot.pos.x.toFixed(2), z: +bot.pos.z.toFixed(2),
-                y: +bot.alt.toFixed(2), heading: +bot.heading.toFixed(3) },
-        level: { name: LV.name, robot: LV.robot, room: currentRoom(),
-                 rooms_visited: [...visited], odometer_m: +odo.toFixed(1), won },
-      });
+      const r = wasmRT.tick(currentState());
+      serverCmd = r.cmd;
+      serverAnswer = r.answer;
+      if (r.error) policyStatus(r.error.trim().split("\n").pop(), "err");
     } catch {}
+  } else if (linked) {
+    try { await api("/api/arena/state", currentState()); } catch {}
   }
   setTimeout(pushState, 100);
 }
 function postEvent(type, title, detail) {
+  if (MODE === "wasm") {
+    try { wasmRT?.emitEvent(type, title, detail); } catch {}
+    return;
+  }
   if (!linked) return;
   api("/api/arena/event", { type, title, detail }).catch(() => {});
 }
@@ -1190,6 +1359,18 @@ for (const pre of connectEl.querySelectorAll("pre")) {
 
 document.getElementById("btnRun").addEventListener("click", async () => {
   let source = getCode();
+  if (MODE === "wasm") {
+    if (!source.includes("@behavior")) {
+      policyStatus("✨ the mission compiler needs the local install — "
+        + "pip install ros-agent · or write the policy in python", "err");
+      return;
+    }
+    if (!wasmRT) { await bootWasm(); if (!wasmRT) return; }
+    const r = wasmRT.loadPolicy(source);
+    policyStatus(r.ok ? "running in-browser — edits apply on every RUN" : r.error,
+                 r.ok ? "ok" : "err");
+    return;
+  }
   try {
     if (!source.includes("@behavior")) {
       // words, not code: compile the mission into a policy first
@@ -1208,6 +1389,11 @@ document.getElementById("btnRun").addEventListener("click", async () => {
   } catch { policyStatus("no server — run `roborun` first", "err"); }
 });
 document.getElementById("btnStop").addEventListener("click", async () => {
+  if (MODE === "wasm") {
+    try { wasmRT?.stopPolicy(); } catch {}
+    policyStatus("stopped", "");
+    return;
+  }
   try {
     await api("/api/behaviors/disable", { name: "player_policy" });
     policyStatus("stopped", "");
@@ -1234,7 +1420,8 @@ function updateTelemetry() {
 
 /* ════════════════ panels ════════════════ */
 const LAYOUT_KEY = "arena-layout-v3";
-const PANEL_IDS = ["p-brief", "p-policy", "p-status", "p-map", "p-view1", "p-view2"];
+const PANEL_IDS = ["p-brief", "p-policy", "p-status", "p-map", "p-view1", "p-view2",
+                   "p-runs"];
 let zTop = 100;
 function defaultLayout() {
   // Two docked rails, open stage in the middle. Left rail: what you read
@@ -1256,6 +1443,8 @@ function defaultLayout() {
     "p-view2":  { l: w - R - GAP, t: TOP + statusH + mapH + 2 * GAP, w: R,
                   h: h - TOP - statusH - mapH - 3 * GAP - 4, hidden: false },
     "p-view1":  { l: Math.round(w / 2 - 170), t: h - 244, w: 340, h: 230, hidden: true },
+    "p-runs":   { l: Math.round(w / 2 - 230), t: TOP + 30, w: 460,
+                  h: Math.min(440, h - TOP - 60), hidden: true },
   };
 }
 function loadLayout() {
@@ -1485,5 +1674,5 @@ function frame(now) {
 }
 
 loadLevel(0);
-pollCmd(); pushState(); pollSightings();
+detectMode(); pollCmd(); pushState(); pollSightings(); renderRuns();
 requestAnimationFrame(frame);

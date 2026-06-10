@@ -38,3 +38,4 @@ private/
 *.safetensors
 MUJOCO_LOG.TXT
 /behaviors/
+site/

@@ -110,6 +110,25 @@
   #keys { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
           color: #4a5a66; z-index: 5; white-space: nowrap; }
   #keys a { color: #3a8a6a; }
+
+  /* hosted (wasm) mode vs local server mode */
+  .wasm-mode .wasm-only { display: block !important; }
+  .wasm-mode .server-only { display: none !important; }
+
+  /* stored runs */
+  #runsList { display: flex; flex-direction: column; gap: 8px; }
+  .runs-empty { color: #4a5a66; padding: 12px 0; }
+  .run-row { border: 1px solid #1f2a33; border-radius: 6px; padding: 7px 9px; }
+  .run-head { display: flex; gap: 8px; align-items: baseline; }
+  .run-head b { color: #00d47e; }
+  .run-head > span { color: #4a5a66; font-size: 11px; }
+  .run-links { margin-left: auto; display: flex; gap: 8px; font-size: 11px; }
+  .run-links a { color: #3a8a6a; }
+  .run-links a.del { color: #4a5a66; }
+  .run-hashline { color: #4a5a66; font-size: 11px; margin-top: 3px; }
+  .vstate.good { color: #00d47e; }
+  .vstate.bad { color: #d84a4a; }
+  .run-row video { width: 100%; margin-top: 6px; border-radius: 4px; }
 </style>
 </head>
 <body>
@@ -121,6 +140,7 @@
   <button data-panel="p-map">MAP</button>
   <button data-panel="p-view1">VIEW 1</button>
   <button data-panel="p-view2">VIEW 2</button>
+  <button data-panel="p-runs">RUNS</button>
   <div class="sep"></div>
   <button id="btnConnect" class="accent">⚡ CONNECT AGENT</button>
   <button id="btnReset" title="restore default layout">reset</button>
@@ -183,9 +203,19 @@
   <div class="p-body"><div class="viewport"></div></div>
 </div>
 
+<div class="panel" id="p-runs">
+  <div class="p-head"><b>RUNS</b><span style="color:#4a5a66">— recorded attempts, stored in this browser</span><span class="x">✕</span></div>
+  <div class="p-body"><div id="runsList"></div></div>
+</div>
+
 <div id="connect"><div class="card">
   <button class="close" id="connectClose">✕</button>
   <h2>CONNECT YOUR AGENT</h2>
+  <span class="note wasm-only" style="display:none">This is the hosted arena — policies run
+  as real roborun python in your browser, and runs are merkle-sealed locally. MCP agents and
+  the ✨ mission compiler need the local install:</span>
+  <pre class="wasm-only" style="display:none">pip install ros-agent
+roborun        # then open http://localhost:8765/arena — same page, full stack</pre>
   <span class="note">The game's MCP endpoint is this server: <b>http://localhost:8765/mcp</b>.
   Click any block to copy. Then just ask your agent to beat the chamber.</span>
   <h3>CLAUDE CODE</h3>
@@ -209,10 +239,11 @@ player_policy and poll arena_status until won. No teleop.</pre>
   <div class="stats" id="winDetail"></div>
   <div class="hash" id="winHash"><span class="sealing">sealing run…</span></div>
   <div class="after" id="winLinks"></div>
-  <div class="after"><a href="/?runs=1" target="_blank">open the sealed run in the deck →</a></div>
+  <div class="after server-only"><a href="/?runs=1" target="_blank">open the sealed run in the deck →</a></div>
+  <div class="after wasm-only" style="display:none"><a href="#" onclick="document.querySelector('#toolbar [data-panel=p-runs]').click();document.getElementById('win').classList.remove('show');return false">view all recorded attempts → RUNS</a></div>
 </div></div>
 
-<div id="keys">drag headers · resize corners · ⌘⏎ run · L lidar cloud · C main camera · N level · WASD debug (practice) · <a href="/">deck</a></div>
+<div id="keys">drag headers · resize corners · ⌘⏎ run · L lidar cloud · C main camera · N level · WASD debug (practice)<span class="server-only"> · <a href="/">deck</a></span></div>
 
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
