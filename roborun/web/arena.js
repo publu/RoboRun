@@ -12,8 +12,8 @@ const LEVELS = [
   {
     name: "chamber-01",
     title: "CHAMBER 01 — RECON",
-    brief: "POLICY GOAL: visit all four rooms, autonomously. The robot has "
-         + "see() — doors, obstacles — and move(). Drop a file in behaviors/ "
+    brief: "POLICY GOAL: visit all four rooms, autonomously. You have pose(), "
+         + "lidar(), see() and move(). Drop a file in behaviors/ "
          + "or let your agent write it over MCP (write_behavior). "
          + "WASD is debug-drive only: manual runs count as practice.",
     bounds: 16,
@@ -40,33 +40,34 @@ const LEVELS = [
       { id: "d6", x: 1, z: 4.7, color: "blue" },
     ],
     demo: `from roborun.behaviors import behavior
+from math import atan2, hypot, pi
+
+# One lap through the doorways hits every room.
+TOUR = [(-2.5, 0), (-2.5, -4.5), (2.5, -4.5), (2.5, 4.5), (-2.5, 4.5)]
 
 @behavior(hz=10)
 def player_policy(robot):
-    # L1 reflex — runs at 10 Hz, never waits on anything
-    scan = robot.lidar()               # 36 ranges (m), [0] = ahead
-    ahead = min(scan[0:3] + scan[-3:]) if scan else 8
-    if ahead < 1.2:
-        robot.move(turn=1.1)
+    pose = robot.pose()
+    if not pose:
+        return robot.stop()
+
+    leg = robot.state.setdefault("leg", 0)
+    if leg >= len(TOUR):
+        return robot.stop()
+    tx, tz = TOUR[leg]
+
+    dx, dz = tx - pose["x"], tz - pose["z"]
+    if hypot(dx, dz) < 0.6:
+        robot.state["leg"] = leg + 1
+        return
+
+    bearing = (atan2(-dz, dx) - pose["heading"] + pi) % (2 * pi) - pi
+    scan = robot.lidar()
+    ahead = min(scan[:2] + scan[-2:]) if scan else 8
+    if abs(bearing) > 0.4:
+        robot.move(turn=1.2 if bearing > 0 else -1.2)
     else:
-        robot.move(forward=0.8, turn=0.15)
-
-    # keep a ledger of what we saw (recon levels ask questions later)
-    for d in robot.see("red door"):
-        robot.state.setdefault("red_doors", set()).add(round(d.cx, 1))
-
-    # escalate when stuck: async — the loop keeps driving while the
-    # LLM thinks, and it has tools (it may even rewrite this file).
-    st = robot.state
-    st["blocked"] = st.get("blocked", 0) + 1 if ahead < 1.2 else 0
-    if st["blocked"] > 60 and not robot.thinking("fix"):
-        robot.delegate(
-            "I'm a wall-following policy stuck spinning in the arena. "
-            "Check arena_status and see, then write_behavior a smarter "
-            "player_policy (hz=10, use robot.lidar()).", key="fix")
-    report = robot.thought("fix")
-    if report:
-        robot.say(report)
+        robot.move(forward=0.9 if ahead > 1.5 else 0.4, turn=0.8 * bearing)
 `,
   },
   {
@@ -89,16 +90,15 @@ def player_policy(robot):
 
 @behavior(hz=10)
 def player_policy(robot):
-    # demo: beacon seeker. robot.see("beacon")[0].cx is bearing (0.5 = centered)
     beacon = robot.see("beacon")
     scan = robot.lidar()
-    ahead = min(scan[0:3] + scan[-3:]) if scan else 8
+    ahead = min(scan[:2] + scan[-2:]) if scan else 8
     if ahead < 1.0:
-        robot.move(turn=1.2)           # dodge the pillar
+        robot.move(turn=1.2)
     elif beacon:
         robot.move(forward=0.9, turn=-1.5 * (beacon[0].cx - 0.5))
     else:
-        robot.move(forward=0.5, turn=0.6)   # search pattern
+        robot.move(forward=0.5, turn=0.6)
 `,
   },
 ];

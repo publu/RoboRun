@@ -16,6 +16,7 @@ restart, no build step, no framework to learn:
 
 The `robot` handle:
     robot.see(label=None)    detections (normalized .cx .cy .w .h .label .conf)
+    robot.pose()             {x, z, heading} odometry (arena / robots with odom)
     robot.move(forward=0, strafe=0, turn=0)   sim or real robot, safety-clamped
     robot.stop()
     robot.say(text)          speaks into the event timeline
@@ -231,6 +232,16 @@ class Robot:
 
         threading.Thread(target=_run, daemon=True, name=f"delegate-{key}").start()
         return True
+
+    def pose(self) -> dict | None:
+        """{x, z, heading} when the world provides odometry (arena does;
+        real robots will via /odom). None means dead-reckon or go blind."""
+        try:
+            from roborun.arena import get_arena
+            a = get_arena()
+            return a.pose() if a.is_active() else None
+        except Exception:
+            return None
 
     def lidar(self) -> list[float]:
         """360° range scan in meters, index 0 = straight ahead, CCW.

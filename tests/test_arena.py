@@ -44,3 +44,17 @@ def test_robot_move_drives_arena_when_active(monkeypatch):
     from roborun.behaviors import Robot
     Robot("test").move(forward=0.8, turn=0.2)
     assert a.cmd()["forward"] == 0.8
+
+
+def test_robot_pose_from_arena(monkeypatch):
+    a = ArenaState()
+    a.update({"pose": {"x": 1.5, "z": -2.0, "heading": 0.4}})
+    monkeypatch.setattr(arena_mod, "_arena", a)
+    from roborun.behaviors import Robot
+    assert Robot("t").pose() == {"x": 1.5, "z": -2.0, "heading": 0.4}
+
+
+def test_robot_pose_none_when_inactive(monkeypatch):
+    monkeypatch.setattr(arena_mod, "_arena", ArenaState())
+    from roborun.behaviors import Robot
+    assert Robot("t").pose() is None
