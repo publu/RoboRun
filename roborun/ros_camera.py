@@ -111,6 +111,12 @@ class RosCameraPipeline:
             self._frames += 1
             if dets is not None:
                 self._detections = dets
+        if dets:
+            try:
+                from roborun.sightings import observe
+                observe(dets, source="robot-camera")
+            except Exception:
+                pass
         try:
             FRAME_PATH.write_bytes(raw)
         except Exception:

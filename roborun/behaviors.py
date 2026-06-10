@@ -17,6 +17,7 @@ restart, no build step, no framework to learn:
 The `robot` handle:
     robot.see(label=None)    detections (normalized .cx .cy .w .h .label .conf)
     robot.pose()             {x, z, heading} odometry (arena / robots with odom)
+    robot.seen(label=None)   the system's automatic sighting memory this run
     robot.move(forward=0, strafe=0, turn=0)   sim or real robot, safety-clamped
     robot.stop()
     robot.say(text)          speaks into the event timeline
@@ -232,6 +233,18 @@ class Robot:
 
         threading.Thread(target=_run, daemon=True, name=f"delegate-{key}").start()
         return True
+
+    def seen(self, label: str | None = None) -> list[dict]:
+        """What the system has observed this run — automatic, no
+        bookkeeping. Episode-counted sightings with sample poses:
+        robot.seen("red door") -> [{"label", "count", "poses", ...}].
+        This is the answer source for recon questions; the same
+        observations are already in the timeline and the sealed run."""
+        try:
+            from roborun.sightings import summary
+            return summary(label)
+        except Exception:
+            return []
 
     def pose(self) -> dict | None:
         """{x, z, heading} when the world provides odometry (arena does;

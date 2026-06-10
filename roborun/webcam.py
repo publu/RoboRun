@@ -178,6 +178,11 @@ class WebcamPipeline:
                     try:
                         detections = self._yolo.detect(frame)
                         self._latest_detections = detections
+                        try:
+                            from roborun.sightings import observe
+                            observe([d.to_dict() for d in detections], source="camera")
+                        except Exception:
+                            pass
                     except Exception:
                         self._active_models.discard("yolo")
 

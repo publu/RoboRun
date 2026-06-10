@@ -16,9 +16,20 @@ def arena_cmd(h):
     send_json(h, 200, {"ok": True, "cmd": get_arena().cmd()})
 
 
+_last_level: list[str] = [""]
+
+
 @post("/api/arena/state")
 def arena_state(h, payload):
-    get_arena().update(payload or {})
+    payload = payload or {}
+    get_arena().update(payload)
+    from roborun import sightings
+    level = (payload.get("level") or {}).get("name", "")
+    if level and level != _last_level[0]:
+        _last_level[0] = level
+        sightings.reset()
+    sightings.observe(payload.get("detections") or [],
+                      pose=payload.get("pose"), source="arena")
     send_json(h, 200, {"ok": True})
 
 

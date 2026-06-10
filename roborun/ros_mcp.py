@@ -934,6 +934,13 @@ def _tool_see(args: dict) -> dict:
                            for t in things]}
 
 
+def _tool_seen(args: dict) -> dict:
+    """The run's automatic sighting memory — answer recon questions from
+    what was actually observed, not from guesses."""
+    from roborun.sightings import summary
+    return {"ok": True, "sightings": summary(args.get("label"))}
+
+
 def _tool_arena_status(args: dict) -> dict:
     from roborun.arena import get_arena
     a = get_arena()
@@ -1298,6 +1305,12 @@ MCP_TOOLS = [
             "min_conf": {"type": "number", "description": "Confidence floor (default 0.4)"}}},
     },
     {
+        "name": "seen",
+        "description": "Sighting memory for the current run, episode-counted with sample poses ({label, count, poses}). Fed automatically by YOLO/arena perception — query it to answer questions like 'how many red doors did the robot see'.",
+        "inputSchema": {"type": "object", "properties": {
+            "label": {"type": "string", "description": "Filter to one label"}}},
+    },
+    {
         "name": "arena_status",
         "description": "Arena chamber state: pose, rooms visited, won, live detections. The game loop: write_behavior, enable it, poll this until won.",
         "inputSchema": {"type": "object", "properties": {}},
@@ -1331,6 +1344,7 @@ _TOOL_HANDLERS = {
     "publish": _tool_publish,
     "move": _tool_move,
     "see": _tool_see,
+    "seen": _tool_seen,
     "arena_status": _tool_arena_status,
     "write_behavior": _tool_write_behavior,
     "behaviors": _tool_behaviors,
@@ -1384,7 +1398,7 @@ def handle_tool_call(name: str, args: dict) -> dict:
 CORE_TOOLS = {
     "scan_robots", "connect_to_robot", "get_robot_info", "get_capabilities",
     "list_topics", "subscribe_once", "publish", "move", "estop", "navigate",
-    "see", "arena_status", "write_behavior", "behaviors",
+    "see", "seen", "arena_status", "write_behavior", "behaviors",
     "call_service", "send_action_goal", "get_parameters", "set_parameter",
     "camera_snapshot", "telemetry_stream",
 }
