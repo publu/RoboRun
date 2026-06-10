@@ -146,9 +146,6 @@ def dashboard(h):
     except Exception:
         pass
 
-    from roborun.dataset import DatasetCollector
-    dataset = DatasetCollector()
-
     send_json(h, 200, {
         "ok": True,
         "profile": profile,
@@ -158,7 +155,6 @@ def dashboard(h):
         "commandCenter": {"ok": False, "url": "http://127.0.0.1:7779/command-center"},
         "webcam": webcam.get_state(),
         "sim": sim_state,
-        "dataset": dataset.get_status(),
         "stats": system_stats(),
         "robotType": robot_profile,
         "telemetryWs": "ws://127.0.0.1:8766",

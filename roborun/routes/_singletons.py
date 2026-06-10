@@ -5,7 +5,6 @@ import os
 from pathlib import Path
 
 _webcam = None
-_dataset = None
 _simulator = None
 _spatial_memory = None
 _agent = None
@@ -17,14 +16,6 @@ def get_webcam():
         from roborun.webcam import WebcamPipeline
         _webcam = WebcamPipeline()
     return _webcam
-
-
-def get_dataset():
-    global _dataset
-    if _dataset is None:
-        from roborun.dataset import DatasetCollector
-        _dataset = DatasetCollector()
-    return _dataset
 
 
 def get_simulator():

@@ -37,7 +37,6 @@ import roborun.routes.simulator  # noqa: F401
 import roborun.routes.agent  # noqa: F401
 import roborun.routes.ros  # noqa: F401
 import roborun.routes.memory  # noqa: F401
-import roborun.routes.dataset  # noqa: F401
 import roborun.routes.launch  # noqa: F401
 import roborun.routes.skills  # noqa: F401
 import roborun.routes.run  # noqa: F401
@@ -179,17 +178,12 @@ class Handler(SimpleHTTPRequestHandler):
 def _frame_recorder_loop() -> None:
     import hashlib
     from roborun.events import emit
-    from roborun.routes._singletons import get_webcam, get_dataset
+    from roborun.routes._singletons import get_webcam
     hash_interval = float(os.environ.get("ROBORUN_FRAME_HASH_INTERVAL", "2.0"))
     last_hash_at = 0.0
     while True:
         try:
-            ds = get_dataset()
             wc = get_webcam()
-            if ds.is_recording and wc.is_running:
-                frame = wc.snapshot()
-                if frame is not None:
-                    ds.record_frame(frame, detections=wc.get_detections())
             # Visual evidence into the chain: hash the live frame periodically
             if hash_interval > 0 and wc.is_running and time.monotonic() - last_hash_at >= hash_interval:
                 frame = wc.snapshot()
