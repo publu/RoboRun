@@ -1,24 +1,28 @@
 /* RoboRun Arena.
-   Self-contained browser sim: procedural-gait quadruped (planted feet),
-   robot senses = forward camera cone + 360° lidar, nothing else.
-   Levels are data; switch with the HUD selector or N. Behaviors drive
-   via GET /api/arena/cmd; attempts auto-record; wins seal and show the
+   Seven chambers, four robot types (dog, humanoid, arm, drone) — all in
+   the browser, all driven by the same policy handle that drives real
+   ROS robots. The robot's senses: forward camera cone + 360° lidar
+   (+ pose). The spectator gets more. Briefs are policy specs; WASD is
+   debug only (practice). Attempts auto-record; wins seal and show the
    run-hash. */
 
 import * as THREE from "three";
 
-/* ---------- levels ---------- */
+/* ════════════════ levels ════════════════ */
+const COLORS = { red: 0xd84a4a, blue: 0x4a7ad8, green: 0x44b86a,
+                 yellow: 0xd8b54a, purple: 0x9a5ad8 };
+
 const LEVELS = [
+  /* ── DOG 1 · DOOR CENSUS — explore, count with perception, answer ── */
   {
-    name: "chamber-01",
-    title: "CHAMBER 01 — RECON",
-    brief: "POLICY GOAL: visit all four rooms, autonomously — no map given, "
-         + "build one. You have pose(), "
-         + "lidar(), see() and move(). Drop a file in behaviors/ "
-         + "or let your agent write it over MCP (write_behavior). "
-         + "WASD is debug-drive only: manual runs count as practice.",
-    bounds: 16,
-    spawn: { x: 0, z: 0, heading: 0 },
+    name: "dog-census", robot: "dog",
+    title: "DOG 01 — DOOR CENSUS",
+    brief: "QUESTION: how many doors does this building have? Explore, count "
+         + "them with your own perception (project see() hits into world "
+         + "coords and dedupe — the same door seen twice is one door), then "
+         + "robot.answer(n). Wrong answers are logged. You have pose(), "
+         + "lidar(), see(), goto().",
+    bounds: 16, spawn: { x: 0, z: 0, heading: 0 },
     rooms: [
       { id: "north-west", rect: [-8, -8, -1, -1] },
       { id: "north-east", rect: [1, -8, 8, -1] },
@@ -32,20 +36,22 @@ const LEVELS = [
       [-1, -8, -1, -5.4], [-1, -4, -1, -1], [1, -8, 1, -5.4], [1, -4, 1, -1],
       [-1, 1, -1, 4], [-1, 5.4, -1, 8], [1, 1, 1, 4], [1, 5.4, 1, 8],
     ],
-    doors: [
-      { id: "d1", x: -2.5, z: -1, color: "red" },
-      { id: "d2", x: 2.5, z: -1, color: "blue" },
-      { id: "d3", x: -2.5, z: 1, color: "red" },
-      { id: "d4", x: 2.5, z: 1, color: "green" },
-      { id: "d5", x: -1, z: -4.7, color: "red" },
-      { id: "d6", x: 1, z: 4.7, color: "blue" },
+    props: [
+      { kind: "door", color: "red", x: -2.5, z: -1 },
+      { kind: "door", color: "blue", x: 2.5, z: -1 },
+      { kind: "door", color: "red", x: -2.5, z: 1 },
+      { kind: "door", color: "green", x: 2.5, z: 1 },
+      { kind: "door", color: "red", x: -1, z: -4.7 },
+      { kind: "door", color: "blue", x: 1, z: 4.7 },
     ],
+    win: { type: "answer", value: "6", question: "how many doors?" },
     demo: `from roborun.behaviors import behavior
 from math import hypot, pi, cos, sin
 
-# No map is given. Build one from lidar, chase the frontier between
-# known and unknown space, and the rooms find themselves.
-CELL = 0.25  # fine enough that doorways survive obstacle inflation
+# Explore (frontier search), project every door sighting into world
+# coordinates, dedupe by position, answer when nothing is left unknown.
+CELL = 0.25
+FOV = 1.323     # see(): bearing = (0.5 - cx) * FOV  (radians)
 
 def integrate(grid, pose, scan):
     n = len(scan)
@@ -56,15 +62,13 @@ def integrate(grid, pose, scan):
             c = (round((pose["x"] + cos(a) * d) / CELL),
                  round((pose["z"] - sin(a) * d) / CELL))
             if grid.get(c) != 2:
-                grid[c] = 1                      # known free
+                grid[c] = 1
             d += CELL * 0.5
         if r < 7.5:
             grid[(round((pose["x"] + cos(a) * r) / CELL),
-                  round((pose["z"] - sin(a) * r) / CELL))] = 2   # wall
+                  round((pose["z"] - sin(a) * r) / CELL))] = 2
 
 def clear(grid, c):
-    # traversable = free and not hugging a wall (the robot is fatter
-    # than a grid cell — inflate obstacles by one cell)
     if grid.get(c) != 1:
         return False
     for dx in (-1, 0, 1):
@@ -74,7 +78,6 @@ def clear(grid, c):
     return True
 
 def plan(grid, pose):
-    # BFS through clear cells; stop at the nearest frontier
     start = (round(pose["x"] / CELL), round(pose["z"] / CELL))
     prev, queue, seen = {}, [start], {start}
     while queue:
@@ -83,11 +86,11 @@ def plan(grid, pose):
             n = (c[0] + dx, c[1] + dz)
             if n in seen:
                 continue
-            if grid.get(n) is None:              # frontier reached
+            if grid.get(n) is None:
                 path = [c]
                 while path[-1] != start:
                     path.append(prev[path[-1]])
-                return path[::-1]                # start -> frontier
+                return path[::-1]
             if clear(grid, n):
                 seen.add(n); prev[n] = c; queue.append(n)
     return None
@@ -101,14 +104,27 @@ def player_policy(robot):
     grid = st.setdefault("grid", {})
     integrate(grid, pose, scan)
 
+    # perception-based door census: project each sighting to a world
+    # point, snap to a 1.5 m cell — one cell, one door, however often seen
+    doors = st.setdefault("doors", set())
+    for d in robot.see():
+        if "door" in d.label and d.dist:
+            a = pose["heading"] + (0.5 - d.cx) * FOV
+            wx = pose["x"] + cos(a) * d.dist
+            wz = pose["z"] - sin(a) * d.dist
+            doors.add((round(wx / 1.5), round(wz / 1.5)))
+
     st["tick"] = st.get("tick", 0) + 1
     if st["tick"] % 10 == 1 or not st.get("path"):
         st["path"] = plan(grid, pose)
     path = st.get("path")
     if not path:
-        return robot.move(turn=0.8)              # no frontier? sweep for one
+        if not st.get("done"):           # fully explored: commit the count
+            st["done"] = True
+            robot.answer(str(len(doors)))
+            robot.say("counted " + str(len(doors)) + " doors")
+        return robot.stop()
 
-    # follow the path: aim a few cells ahead, drop reached cells
     while path and hypot(path[0][0] * CELL - pose["x"],
                          path[0][1] * CELL - pose["z"]) < 0.45:
         path.pop(0)
@@ -118,45 +134,296 @@ def player_policy(robot):
     ahead = min(scan[:2] + scan[-2:])
     if ahead < 0.6:
         left, right = sum(scan[6:12]), sum(scan[-12:-6])
-        robot.move(turn=1.0 if left > right else -1.0)   # rotate toward open space
+        robot.move(turn=1.0 if left > right else -1.0)
     else:
         robot.goto(tx * CELL, tz * CELL)
 `,
   },
+
+  /* ── DOG 2 · RED DOOR — random spawn, find the red one ── */
   {
-    name: "chamber-02",
-    title: "CHAMBER 02 — SPRINT",
-    brief: "POLICY GOAL: reach the beacon and hold it 1.5s. see('beacon') "
-         + "gives bearing via .cx; see('obstacle') warns of walls. "
-         + "The pillars do not move. Your policy might.",
-    bounds: 16,
-    spawn: { x: -6.5, z: -6.5, heading: -0.7 },
+    name: "dog-reddoor", robot: "dog",
+    title: "DOG 02 — FIND THE RED DOOR",
+    brief: "Five rooms off a corridor, each with a colored door. Colors and "
+         + "your spawn are random. Stand at the RED door (within 1.6 m) and "
+         + "hold 1.5 s. No map given.",
+    bounds: 16, spawn: { random: "corridor" },
     rooms: [],
     walls: [
-      [-8, -8, 8, -8], [-8, 8, 8, 8], [-8, -8, -8, 8], [8, -8, 8, 8],
-      [-4, -5, -4, -1], [0, -3, 0, 2], [-2, 4, 3, 4],
-      [4, -6, 4, -2], [4, 1, 4, 5], [-6, 0, -6, 4], [-2, -8, -2, -6.5],
+      [-16, -8, 16, -8], [-16, 7, 16, 7], [-16, -8, -16, 7], [16, -8, 16, 7],
+      [-16, -1, -12.7, -1], [-11.3, -1, -6.7, -1], [-5.3, -1, -0.7, -1],
+      [0.7, -1, 5.3, -1], [6.7, -1, 11.3, -1], [12.7, -1, 16, -1],
+      [-9, -8, -9, -1], [-3, -8, -3, -1], [3, -8, 3, -1], [9, -8, 9, -1],
     ],
-    doors: [{ id: "d1", x: 0, z: -3, color: "red" }],
-    goal: { x: 6.5, z: 6.5, r: 1.1, hold: 1.5 },
+    props: "reddoor-random",
+    win: { type: "near", label: "red door", dist: 1.6, hold: 1.5 },
     demo: `from roborun.behaviors import behavior
+from math import cos, sin
+
+FOV = 1.323
 
 @behavior(hz=10)
 def player_policy(robot):
-    beacon = robot.see("beacon")
-    scan = robot.lidar()
-    ahead = min(scan[:2] + scan[-2:]) if scan else 8
+    pose, scan = robot.pose(), robot.lidar()
+    if not pose or not scan:
+        return robot.stop()
+    st = robot.state
+
+    red = robot.see("red door")
+    if red and red[0].dist:
+        a = pose["heading"] + (0.5 - red[0].cx) * FOV
+        st["target"] = (pose["x"] + cos(a) * red[0].dist,
+                        pose["z"] - sin(a) * red[0].dist)
+    t = st.get("target")
+    if t:
+        robot.goto(t[0], t[1], tol=1.0)   # the chamber checks the hold
+        return
+
+    # sweep the corridor until red shows up
+    ahead = min(scan[:2] + scan[-2:])
     if ahead < 1.0:
+        st["dir"] = -st.get("dir", 1)
         robot.move(turn=1.2)
-    elif beacon:
-        robot.move(forward=0.9, turn=-1.5 * (beacon[0].cx - 0.5))
     else:
-        robot.move(forward=0.5, turn=0.6)
+        robot.move(forward=0.8 * st.get("dir", 1), turn=0.25)
+`,
+  },
+
+  /* ── DOG 3 · PATROL — laps with a moving hazard ── */
+  {
+    name: "dog-patrol", robot: "dog",
+    title: "DOG 03 — PATROL",
+    brief: "Patrol route: the four corners at (±6, ±6), in order, two full "
+         + "laps. A service rover circles the middle — it will not dodge "
+         + "you, so you dodge it.",
+    bounds: 16, spawn: { x: -6, z: 6, heading: 0 },
+    rooms: [],
+    walls: [[-8, -8, 8, -8], [-8, 8, 8, 8], [-8, -8, -8, 8], [8, -8, 8, 8],
+            [-2, -2, 2, -2], [-2, 2, 2, 2]],
+    props: [
+      { kind: "checkpoint", color: "green", x: -6, z: -6, id: 0 },
+      { kind: "checkpoint", color: "green", x: 6, z: -6, id: 1 },
+      { kind: "checkpoint", color: "green", x: 6, z: 6, id: 2 },
+      { kind: "checkpoint", color: "green", x: -6, z: 6, id: 3 },
+    ],
+    movers: [{ kind: "rover", r: 4.2, speed: 0.55, size: 0.9 }],
+    win: { type: "checkpoints", order: [0, 1, 2, 3], laps: 2, dist: 1.2 },
+    demo: `from roborun.behaviors import behavior
+
+CORNERS = [(-6, -6), (6, -6), (6, 6), (-6, 6)]   # given in the brief
+
+@behavior(hz=10)
+def player_policy(robot):
+    pose, scan = robot.pose(), robot.lidar()
+    if not pose or not scan:
+        return robot.stop()
+    st = robot.state
+    i = st.setdefault("i", 0)
+    tx, tz = CORNERS[i % 4]
+
+    ahead = min(scan[:3] + scan[-3:])
+    if ahead < 1.1:                       # the rover, or a wall: yield
+        left, right = sum(scan[6:12]), sum(scan[-12:-6])
+        robot.move(turn=1.2 if left > right else -1.2)
+        return
+    if robot.goto(tx, tz, tol=1.0):
+        st["i"] = i + 1
+`,
+  },
+
+  /* ── HUMANOID 1 · BUTTONS — press in order ── */
+  {
+    name: "biped-buttons", robot: "biped",
+    title: "HUMANOID 01 — PRESS THE BUTTONS",
+    brief: "Three floor buttons: press RED, then GREEN, then BLUE — stand "
+         + "on each pad until it locks (0.8 s). Out-of-order presses do "
+         + "nothing. Find them with see('red button') etc.",
+    bounds: 12, spawn: { x: 0, z: 4, heading: 1.57 },
+    rooms: [],
+    walls: [[-6, -6, 6, -6], [-6, 6, 6, 6], [-6, -6, -6, 6], [6, -6, 6, 6],
+            [-2, -1, 2, -1]],
+    props: [
+      { kind: "button", color: "red", x: -4, z: -4, id: 0 },
+      { kind: "button", color: "green", x: 4, z: -4, id: 1 },
+      { kind: "button", color: "blue", x: 4, z: 4, id: 2 },
+    ],
+    win: { type: "buttons", order: [0, 1, 2], dist: 0.8, hold: 0.8 },
+    demo: `from roborun.behaviors import behavior
+from math import cos, sin
+
+FOV = 1.323
+ORDER = ["red button", "green button", "blue button"]
+
+@behavior(hz=10)
+def player_policy(robot):
+    pose = robot.pose()
+    if not pose:
+        return robot.stop()
+    st = robot.state
+    i = st.setdefault("i", 0)
+    if i >= len(ORDER):
+        return robot.stop()
+
+    hits = robot.see(ORDER[i])
+    if hits and hits[0].dist:
+        a = pose["heading"] + (0.5 - hits[0].cx) * FOV
+        st["target"] = (pose["x"] + cos(a) * hits[0].dist,
+                        pose["z"] - sin(a) * hits[0].dist)
+    t = st.get("target")
+    if not t:
+        return robot.move(turn=0.9)       # scan for it
+    if robot.goto(t[0], t[1], tol=0.35):
+        st["hold"] = st.get("hold", 0) + 1
+        if st["hold"] > 12:               # pressed — next button
+            st["i"], st["target"], st["hold"] = i + 1, None, 0
+`,
+  },
+
+  /* ── HUMANOID 2 · CARRY — crates to the drop zone ── */
+  {
+    name: "biped-carry", robot: "biped",
+    title: "HUMANOID 02 — CARRY",
+    brief: "Two crates, one glowing drop zone. Walk into a crate to pick it "
+         + "up (auto), walk into the zone to set it down (auto). Deliver "
+         + "both. see('crate') / see('drop zone').",
+    bounds: 12, spawn: { x: 0, z: 0, heading: 0 },
+    rooms: [],
+    walls: [[-6, -6, 6, -6], [-6, 6, 6, 6], [-6, -6, -6, 6], [6, -6, 6, 6],
+            [0, -3, 0, -0.5], [-3, 2, -0.5, 2]],
+    props: [
+      { kind: "crate", color: "yellow", x: -4.5, z: -4.5, id: 0 },
+      { kind: "crate", color: "yellow", x: 4.5, z: -4.5, id: 1 },
+      { kind: "zone", color: "green", x: 4.5, z: 4.5, r: 1.2, label: "drop zone" },
+    ],
+    win: { type: "carry", crates: 2, pickup: 0.7, zone: 1.2 },
+    demo: `from roborun.behaviors import behavior
+from math import cos, sin
+
+FOV = 1.323
+
+@behavior(hz=10)
+def player_policy(robot):
+    pose = robot.pose()
+    if not pose:
+        return robot.stop()
+    st = robot.state
+    want = "drop zone" if st.get("carrying") else "crate"
+    hits = robot.see(want)
+    if hits and hits[0].dist:
+        a = pose["heading"] + (0.5 - hits[0].cx) * FOV
+        st["target"] = (pose["x"] + cos(a) * hits[0].dist,
+                        pose["z"] - sin(a) * hits[0].dist)
+    t = st.get("target")
+    if not t:
+        return robot.move(turn=0.9)
+    if robot.goto(t[0], t[1], tol=0.4):
+        st["carrying"] = not st.get("carrying")   # auto pick/drop happened
+        st["target"] = None
+`,
+  },
+
+  /* ── ARM · SORT — blocks into matching bins ── */
+  {
+    name: "arm-sort", robot: "arm",
+    title: "ARM 01 — SORT THE BLOCKS",
+    brief: "A fixed arm over a table. Four blocks (red/blue), two bins: RED "
+         + "bin at (-3, 0), BLUE bin at (3, 0). Controls differ: move() "
+         + "drives the end-effector — forward=+x, strafe=+z; grasp(True) "
+         + "closes near a block, grasp(False) releases. pose() is the "
+         + "effector. Sort all four.",
+    bounds: 8, spawn: { x: 0, z: 0, heading: 0 },
+    rooms: [], walls: [],
+    props: [
+      { kind: "block", color: "red", x: -1.5, z: -2, id: 0 },
+      { kind: "block", color: "blue", x: 1.8, z: -1.4, id: 1 },
+      { kind: "block", color: "red", x: 0.6, z: 2.1, id: 2 },
+      { kind: "block", color: "blue", x: -2.2, z: 1.6, id: 3 },
+      { kind: "bin", color: "red", x: -3, z: 0, r: 0.8, label: "red bin" },
+      { kind: "bin", color: "blue", x: 3, z: 0, r: 0.8, label: "blue bin" },
+    ],
+    win: { type: "sort", blocks: 4, grabDist: 0.4 },
+    demo: `from roborun.behaviors import behavior
+from math import cos, sin
+
+FOV = 1.323
+BINS = {"red": (-3, 0), "blue": (3, 0)}   # given in the brief
+
+def toward(robot, pose, tx, tz, tol=0.25):
+    dx, dz = tx - pose["x"], tz - pose["z"]
+    if abs(dx) < tol and abs(dz) < tol:
+        return True
+    robot.move(forward=max(-0.8, min(0.8, 2 * dx)),
+               strafe=max(-0.8, min(0.8, 2 * dz)))
+    return False
+
+@behavior(hz=10)
+def player_policy(robot):
+    pose = robot.pose()
+    if not pose:
+        return robot.stop()
+    st = robot.state
+
+    if st.get("carrying"):                 # take it to the matching bin
+        bx, bz = BINS[st["carrying"]]
+        if toward(robot, pose, bx, bz):
+            robot.grasp(False)
+            st["carrying"] = None
+        return
+
+    blocks = robot.see("red block") + robot.see("blue block")
+    if not blocks:
+        return robot.stop()                # table clear — done
+    b = min(blocks, key=lambda d: d.dist or 9)
+    a = (0.5 - b.cx) * FOV                 # effector camera looks along +x
+    tx = pose["x"] + cos(a) * (b.dist or 0)
+    tz = pose["z"] - sin(a) * (b.dist or 0)
+    if toward(robot, pose, tx, tz):
+        robot.grasp(True)
+        st["carrying"] = b.label.split()[0]
+`,
+  },
+
+  /* ── DRONE · RINGS — fly the course ── */
+  {
+    name: "drone-rings", robot: "drone",
+    title: "DRONE 01 — RING RUN",
+    brief: "Race course: four rings, in order — (-5,-5) alt 1.2 · (5,-5) "
+         + "alt 2.4 · (5,5) alt 1.0 · (-5,5) alt 2.8 (given: it's a "
+         + "course). move(climb=) is your vertical; pose() includes y.",
+    bounds: 16, spawn: { x: 0, z: 0, heading: 0 },
+    rooms: [],
+    walls: [[-8, -8, 8, -8], [-8, 8, 8, 8], [-8, -8, -8, 8], [8, -8, 8, 8]],
+    props: [
+      { kind: "ring", color: "green", x: -5, z: -5, y: 1.2, id: 0 },
+      { kind: "ring", color: "green", x: 5, z: -5, y: 2.4, id: 1 },
+      { kind: "ring", color: "green", x: 5, z: 5, y: 1.0, id: 2 },
+      { kind: "ring", color: "green", x: -5, z: 5, y: 2.8, id: 3 },
+    ],
+    win: { type: "rings", order: [0, 1, 2, 3], dist: 0.9, alt: 0.5 },
+    demo: `from roborun.behaviors import behavior
+
+RINGS = [(-5, -5, 1.2), (5, -5, 2.4), (5, 5, 1.0), (-5, 5, 2.8)]
+
+@behavior(hz=10)
+def player_policy(robot):
+    pose = robot.pose()
+    if not pose:
+        return robot.stop()
+    st = robot.state
+    i = st.setdefault("i", 0)
+    if i >= len(RINGS):
+        return robot.stop()
+    tx, tz, ty = RINGS[i]
+    dy = ty - pose.get("y", 1)
+    arrived = robot.goto(tx, tz, tol=0.6)
+    robot.move(climb=max(-0.8, min(0.8, 2 * dy)))   # climb stacks on goto
+    if arrived and abs(dy) < 0.4:
+        st["i"] = i + 1
 `,
   },
 ];
 
-/* ---------- renderer / scene shell ---------- */
+/* ════════════════ scene shell ════════════════ */
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0b0e11);
 scene.fog = new THREE.Fog(0x0b0e11, 18, 34);
@@ -182,23 +449,53 @@ const povCam = new THREE.PerspectiveCamera(70, 16 / 9, 0.08, 60);
 const topCam = new THREE.OrthographicCamera(-9, 9, 9, -9, 1, 50);
 topCam.position.set(0, 30, 0);
 topCam.lookAt(0, 0, 0);
-let camMode = 0;
-const CAM_MODES = ["chase", "orbit", "top"];
 const chaseCam = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 100);
 const orbitCam = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 100);
 const CAM_POOL = { pov: povCam, top: topCam, chase: chaseCam, orbit: orbitCam };
+let camMode = 0;
+const CAM_MODES = ["chase", "orbit", "top"];
 addEventListener("resize", () => {
   renderer.setSize(innerWidth, innerHeight);
   specCam.aspect = innerWidth / innerHeight;
   specCam.updateProjectionMatrix();
 });
 
-/* ---------- level building (rebuildable) ---------- */
-const DOOR_COLORS = { red: 0xd84a4a, blue: 0x4a7ad8, green: 0x44b86a };
+/* ════════════════ level building ════════════════ */
 const W = 0.15;
-let LV = null;                 // active level def
-let levelGroup = null;         // all level meshes, swapped on switch
-let wallMeshes = [], doorObjs = [], goalMesh = null;
+let LV = null, levelGroup = null;
+let wallMeshes = [], propObjs = [], movers = [];
+
+function makeProp(p) {
+  const color = COLORS[p.color] || 0x9fb0bd;
+  const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.35 });
+  let mesh, y = 0.8;
+  const label = p.label || `${p.color} ${p.kind}`;
+  if (p.kind === "door") {
+    mesh = new THREE.Mesh(new THREE.TorusGeometry(0.75, 0.09, 8, 24, Math.PI), mat);
+    mesh.position.set(p.x, 0.05, p.z);
+  } else if (["checkpoint", "zone", "bin", "button"].includes(p.kind)) {
+    const r = p.r || (p.kind === "button" ? 0.6 : 0.9);
+    mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.05, 28),
+      new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.45,
+                                       transparent: true, opacity: 0.55 }));
+    mesh.position.set(p.x, 0.03, p.z);
+    y = 0.4;
+  } else if (p.kind === "crate" || p.kind === "block") {
+    const s = p.kind === "crate" ? 0.5 : 0.3;
+    mesh = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), mat);
+    mesh.position.set(p.x, s / 2, p.z);
+    y = s / 2;
+  } else if (p.kind === "ring") {
+    mesh = new THREE.Mesh(new THREE.TorusGeometry(0.9, 0.08, 8, 28), mat);
+    mesh.position.set(p.x, p.y, p.z);
+    y = p.y;
+  }
+  mesh.castShadow = true;
+  levelGroup.add(mesh);
+  return { ...p, label, mesh, pos: new THREE.Vector3(p.x, y, p.z), seen: false,
+           pressed: false, carried: false, delivered: false, passed: false,
+           sorted: false };
+}
 
 function buildLevel(def) {
   if (levelGroup) {
@@ -207,7 +504,7 @@ function buildLevel(def) {
   }
   LV = def;
   levelGroup = new THREE.Group();
-  wallMeshes = []; doorObjs = []; goalMesh = null;
+  wallMeshes = []; propObjs = []; movers = [];
 
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(def.bounds * 2, def.bounds * 2),
@@ -229,128 +526,197 @@ function buildLevel(def) {
     levelGroup.add(m);
     wallMeshes.push(m);
   }
-  for (const d of def.doors || []) {
-    const frame = new THREE.Mesh(new THREE.TorusGeometry(0.75, 0.09, 8, 24, Math.PI),
-      new THREE.MeshStandardMaterial({ color: DOOR_COLORS[d.color],
-        emissive: DOOR_COLORS[d.color], emissiveIntensity: 0.35 }));
-    frame.position.set(d.x, 0.05, d.z);
-    frame.castShadow = true;
-    levelGroup.add(frame);
-    doorObjs.push({ ...d, pos: new THREE.Vector3(d.x, 0.8, d.z), seen: false });
+
+  let props = def.props;
+  if (props === "reddoor-random") {
+    const colors = ["red", "blue", "green", "yellow", "purple"]
+      .sort(() => Math.random() - 0.5);
+    props = [-12, -6, 0, 6, 12].map((x, i) => ({ kind: "door", color: colors[i], x, z: -1 }));
   }
-  if (def.goal) {
-    goalMesh = new THREE.Mesh(new THREE.CylinderGeometry(def.goal.r, def.goal.r, 0.05, 32),
-      new THREE.MeshStandardMaterial({ color: 0x44b86a, emissive: 0x44b86a,
-        emissiveIntensity: 0.5, transparent: true, opacity: 0.55 }));
-    goalMesh.position.set(def.goal.x, 0.03, def.goal.z);
-    levelGroup.add(goalMesh);
+  for (const p of props || []) propObjs.push(makeProp(p));
+
+  for (const mv of def.movers || []) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(mv.size, 0.8, mv.size),
+      new THREE.MeshStandardMaterial({ color: 0xb86a3a, roughness: 0.6 }));
+    m.castShadow = true;
+    m.userData.aabb = new THREE.Box3();
+    levelGroup.add(m);
+    wallMeshes.push(m);              // lidar sees it, collision respects it
+    movers.push({ ...mv, mesh: m, phase: Math.random() * 6.28 });
   }
   scene.add(levelGroup);
 }
 
-/* ---------- the dog ---------- */
-const BODY_LEN = 0.62, BODY_W = 0.3, STAND_H = 0.42;
-const HIPS = [
-  { x: BODY_LEN / 2 - 0.06, z: -BODY_W / 2 }, { x: BODY_LEN / 2 - 0.06, z: BODY_W / 2 },
-  { x: -BODY_LEN / 2 + 0.06, z: -BODY_W / 2 }, { x: -BODY_LEN / 2 + 0.06, z: BODY_W / 2 },
-];
-const TROT_PAIRS = [0, 1, 1, 0];
-const L1 = 0.26, L2 = 0.26;
-const dog = { pos: new THREE.Vector3(), heading: 0, group: new THREE.Group(),
-              legs: [], phase: 0 };
-{
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0xc8cdd4, roughness: 0.5, metalness: 0.35 });
-  const darkMat = new THREE.MeshStandardMaterial({ color: 0x23282e, roughness: 0.6 });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(BODY_LEN, 0.18, BODY_W), bodyMat);
-  body.castShadow = true;
-  dog.group.add(body);
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.18), darkMat);
-  head.position.set(BODY_LEN / 2 + 0.1, 0.06, 0);
-  head.castShadow = true;
-  dog.group.add(head);
-  for (const hip of HIPS) {
+function updateMovers(dt) {
+  for (const mv of movers) {
+    mv.phase += dt * mv.speed;
+    mv.mesh.position.set(Math.cos(mv.phase) * mv.r, 0.4, Math.sin(mv.phase) * mv.r);
+    mv.mesh.userData.aabb.setFromObject(mv.mesh);
+  }
+}
+
+/* ════════════════ robot bodies ════════════════ */
+const bot = { type: "dog", pos: new THREE.Vector3(), heading: 0, alt: 1,
+              group: null, legs: [], phase: 0, grip: false, carrying: null,
+              rotors: [], armParts: null };
+
+const bodyMat = new THREE.MeshStandardMaterial({ color: 0xc8cdd4, roughness: 0.5, metalness: 0.35 });
+const darkMat = new THREE.MeshStandardMaterial({ color: 0x23282e, roughness: 0.6 });
+
+function legSet(group, hips, L1, L2) {
+  const legs = [];
+  for (const hip of hips) {
     const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.07, L1, 0.05), darkMat);
     const shin = new THREE.Mesh(new THREE.BoxGeometry(0.05, L2, 0.04), bodyMat);
     thigh.castShadow = shin.castShadow = true;
     thigh.geometry.translate(0, -L1 / 2, 0);
     shin.geometry.translate(0, -L2 / 2, 0);
     const hipPivot = new THREE.Group();
-    hipPivot.position.set(hip.x, -0.06, hip.z);
+    hipPivot.position.set(hip.x, hip.y, hip.z);
     const kneePivot = new THREE.Group();
     kneePivot.position.set(0, -L1, 0);
     hipPivot.add(thigh); hipPivot.add(kneePivot); kneePivot.add(shin);
-    dog.group.add(hipPivot);
-    dog.legs.push({ hip, hipPivot, kneePivot, foot: new THREE.Vector3(),
-                    swing: 0, from: new THREE.Vector3(), to: new THREE.Vector3() });
+    group.add(hipPivot);
+    legs.push({ hip, hipPivot, kneePivot, foot: new THREE.Vector3(),
+                swing: 0, from: new THREE.Vector3(), to: new THREE.Vector3(),
+                L1, L2 });
   }
-  scene.add(dog.group);
+  return legs;
 }
+
+const BODIES = {
+  dog(group) {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.18, 0.3), bodyMat);
+    body.castShadow = true;
+    group.add(body);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.18), darkMat);
+    head.position.set(0.41, 0.06, 0);
+    group.add(head);
+    bot.legs = legSet(group, [
+      { x: 0.25, y: -0.06, z: -0.15, phase: 0 }, { x: 0.25, y: -0.06, z: 0.15, phase: 1 },
+      { x: -0.25, y: -0.06, z: -0.15, phase: 1 }, { x: -0.25, y: -0.06, z: 0.15, phase: 0 },
+    ], 0.26, 0.26);
+    return { standH: 0.42, stepTime: 0.28, eyeH: 0.45, speed: 1.0 };
+  },
+  biped(group) {
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.55, 0.38), bodyMat);
+    torso.position.y = 0.25;
+    torso.castShadow = true;
+    group.add(torso);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.2, 0.18), darkMat);
+    head.position.y = 0.68;
+    head.castShadow = true;
+    group.add(head);
+    bot.legs = legSet(group, [
+      { x: 0, y: -0.03, z: -0.11, phase: 0 }, { x: 0, y: -0.03, z: 0.11, phase: 1 },
+    ], 0.42, 0.42);
+    return { standH: 0.85, stepTime: 0.42, eyeH: 1.45, speed: 0.6 };
+  },
+  arm(group) {
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 0.4, 20), darkMat);
+    base.position.set(0, 0.2, 0);
+    base.castShadow = true;
+    group.add(base);
+    const seg1 = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 1), bodyMat);
+    seg1.geometry.translate(0, 0, 0.5);
+    const seg2 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 1), darkMat);
+    seg2.geometry.translate(0, 0, 0.5);
+    seg1.castShadow = seg2.castShadow = true;
+    const j1 = new THREE.Group(); j1.position.set(0, 0.45, 0);
+    const j2 = new THREE.Group(); j2.position.set(0, 0, 1);
+    j1.add(seg1); j1.add(j2); j2.add(seg2);
+    group.add(j1);
+    const eff = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12),
+      new THREE.MeshStandardMaterial({ color: 0x00d47e, emissive: 0x00d47e, emissiveIntensity: 0.5 }));
+    eff.castShadow = true;
+    group.add(eff);
+    bot.armParts = { j1, j2, eff, reach: 4.0 };
+    return { standH: 0, stepTime: 1, eyeH: 3.0, speed: 1.2 };
+  },
+  drone(group) {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.4), bodyMat);
+    body.castShadow = true;
+    group.add(body);
+    bot.rotors = [];
+    for (const [dx, dz] of [[0.26, 0.26], [0.26, -0.26], [-0.26, 0.26], [-0.26, -0.26]]) {
+      const rotor = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.02, 16),
+        new THREE.MeshStandardMaterial({ color: 0x4a7ad8, transparent: true, opacity: 0.5 }));
+      rotor.position.set(dx, 0.1, dz);
+      group.add(rotor);
+      bot.rotors.push(rotor);
+    }
+    return { standH: 1.0, stepTime: 1, eyeH: 0, speed: 1.3 };
+  },
+};
+
+let bodySpec = null;
+function buildBody(type) {
+  if (bot.group) {
+    scene.remove(bot.group);
+    bot.group.traverse((o) => { o.geometry?.dispose(); });
+  }
+  bot.type = type;
+  bot.group = new THREE.Group();
+  bot.legs = []; bot.rotors = []; bot.armParts = null;
+  bodySpec = BODIES[type](bot.group);
+  scene.add(bot.group);
+}
+
 function bodyToWorld(bx, bz, out) {
-  const c = Math.cos(dog.heading), s = Math.sin(dog.heading);
-  return out.set(dog.pos.x + bx * c + bz * s, 0, dog.pos.z - bx * s + bz * c);
+  const c = Math.cos(bot.heading), s = Math.sin(bot.heading);
+  return out.set(bot.pos.x + bx * c + bz * s, 0, bot.pos.z - bx * s + bz * c);
 }
 function worldToBodyX(wx, wz) {
-  const c = Math.cos(dog.heading), s = Math.sin(dog.heading);
-  return (wx - dog.pos.x) * c - (wz - dog.pos.z) * s;
+  const c = Math.cos(bot.heading), s = Math.sin(bot.heading);
+  return (wx - bot.pos.x) * c - (wz - bot.pos.z) * s;
 }
 function homeFoot(leg, out) { return bodyToWorld(leg.hip.x, leg.hip.z, out); }
 
-const STEP_TIME = 0.28, STEP_H = 0.09;
-function updateDog(dt, cmd) {
-  const f = THREE.MathUtils.clamp(cmd.forward, -1, 1);
-  const st = THREE.MathUtils.clamp(cmd.strafe, -1, 1);
-  const yaw = THREE.MathUtils.clamp(cmd.turn, -1.5, 1.5);
-  dog.heading += yaw * dt;
-  const c = Math.cos(dog.heading), s = Math.sin(dog.heading);
-  const dx = (f * c + st * s) * dt, dz = (-f * s + st * c) * dt;
-  const next = dog.pos.clone(); next.x += dx; next.z += dz;
-  const r = 0.32;
+function slideCollide(next, r) {
   for (const m of wallMeshes) {
     const b = m.userData.aabb;
     if (next.x > b.min.x - r && next.x < b.max.x + r &&
         next.z > b.min.z - r && next.z < b.max.z + r) {
-      const keepX = dog.pos.clone(); keepX.x = next.x;
-      const keepZ = dog.pos.clone(); keepZ.z = next.z;
+      const keepX = bot.pos.clone(); keepX.x = next.x;
+      const keepZ = bot.pos.clone(); keepZ.z = next.z;
       const okX = !(keepX.x > b.min.x - r && keepX.x < b.max.x + r &&
                     keepX.z > b.min.z - r && keepX.z < b.max.z + r);
       const okZ = !(keepZ.x > b.min.x - r && keepZ.x < b.max.x + r &&
                     keepZ.z > b.min.z - r && keepZ.z < b.max.z + r);
-      next.copy(okX ? keepX : okZ ? keepZ : dog.pos);
+      next.copy(okX ? keepX : okZ ? keepZ : bot.pos);
     }
   }
-  dog.pos.copy(next);
+  return next;
+}
 
-  const speed = Math.hypot(dx, dz) / dt + Math.abs(yaw) * 0.4;
-  const moving = speed > 0.02;
-  if (moving) dog.phase = (dog.phase + dt / (STEP_TIME * 2)) % 1;
-
-  for (let i = 0; i < 4; i++) {
-    const leg = dog.legs[i];
-    const legPhase = (dog.phase + TROT_PAIRS[i] * 0.5) % 1;
+function gaitUpdate(dt, dx, dz, moving) {
+  const stepT = bodySpec.stepTime;
+  if (moving) bot.phase = (bot.phase + dt / (stepT * 2)) % 1;
+  for (const leg of bot.legs) {
+    const legPhase = (bot.phase + leg.hip.phase * 0.5) % 1;
     const inSwing = moving && legPhase < 0.5;
     if (inSwing) {
       if (leg.swing === 0) {
         leg.from.copy(leg.foot);
         homeFoot(leg, leg.to);
-        leg.to.x += dx / dt * STEP_TIME * 1.6;
-        leg.to.z += dz / dt * STEP_TIME * 1.6;
+        leg.to.x += dx / dt * stepT * 1.6;
+        leg.to.z += dz / dt * stepT * 1.6;
       }
       leg.swing = legPhase / 0.5;
       leg.foot.lerpVectors(leg.from, leg.to, leg.swing);
-      leg.foot.y = Math.sin(leg.swing * Math.PI) * STEP_H;
+      leg.foot.y = Math.sin(leg.swing * Math.PI) * 0.09;
     } else {
       leg.swing = 0;
       leg.foot.y = 0;
     }
   }
-
-  const bob = moving ? Math.sin(dog.phase * Math.PI * 4) * 0.012 : 0;
-  dog.group.position.set(dog.pos.x, STAND_H + bob, dog.pos.z);
-  dog.group.rotation.y = dog.heading;
-
-  for (const leg of dog.legs) {
+  const bob = moving ? Math.sin(bot.phase * Math.PI * 4) * 0.012 : 0;
+  bot.group.position.set(bot.pos.x, bodySpec.standH + bob, bot.pos.z);
+  bot.group.rotation.y = bot.heading;
+  for (const leg of bot.legs) {
     const dxp = worldToBodyX(leg.foot.x, leg.foot.z) - leg.hip.x;
-    const dyp = (STAND_H + bob - 0.06) - leg.foot.y;
+    const dyp = (bodySpec.standH + bob + leg.hip.y) - leg.foot.y;
+    const { L1, L2 } = leg;
     const reach = Math.min(Math.hypot(dxp, dyp), L1 + L2 - 0.01);
     const a1 = Math.atan2(dxp, dyp);
     const a2 = Math.acos(THREE.MathUtils.clamp(
@@ -362,64 +728,106 @@ function updateDog(dt, cmd) {
   }
 }
 
-/* ---------- robot senses ---------- */
+function updateBody(dt, cmd) {
+  const f = THREE.MathUtils.clamp(cmd.forward || 0, -1, 1) * bodySpec.speed;
+  const st = THREE.MathUtils.clamp(cmd.strafe || 0, -1, 1) * bodySpec.speed;
+  const yaw = THREE.MathUtils.clamp(cmd.turn || 0, -1.5, 1.5);
+  bot.grip = (cmd.grip || 0) > 0.5;
+
+  if (bot.type === "arm") {
+    const p = bot.armParts;
+    const nx = bot.pos.x + f * dt, nz = bot.pos.z + st * dt;
+    if (Math.hypot(nx, nz) < p.reach * 0.95) { bot.pos.x = nx; bot.pos.z = nz; }
+    const r = Math.max(0.2, Math.hypot(bot.pos.x, bot.pos.z));
+    const az = Math.atan2(bot.pos.x, bot.pos.z);
+    const L = p.reach / 2;
+    const aa = Math.acos(THREE.MathUtils.clamp(r / (2 * L), -1, 1));
+    p.j1.rotation.y = az + aa;
+    p.j2.rotation.y = -2 * aa;
+    p.eff.position.set(bot.pos.x, 0.45, bot.pos.z);
+    if (bot.carrying) bot.carrying.mesh.position.set(bot.pos.x, 0.3, bot.pos.z);
+    return;
+  }
+
+  bot.heading += yaw * dt;
+  const c = Math.cos(bot.heading), s = Math.sin(bot.heading);
+  const dx = (f * c + st * s) * dt, dz = (-f * s + st * c) * dt;
+  const next = bot.pos.clone(); next.x += dx; next.z += dz;
+  slideCollide(next, 0.32);
+  bot.pos.copy(next);
+  const moving = (Math.hypot(dx, dz) / dt + Math.abs(yaw) * 0.4) > 0.02;
+
+  if (bot.type === "drone") {
+    bot.alt = THREE.MathUtils.clamp(bot.alt + (cmd.climb || 0) * dt * 1.2, 0.4, 3.4);
+    bot.group.position.set(bot.pos.x, bot.alt, bot.pos.z);
+    bot.group.rotation.set(-f * 0.15, bot.heading, st * 0.15, "YXZ");
+    for (const r of bot.rotors) r.rotation.y += dt * 40;
+    return;
+  }
+  gaitUpdate(dt, dx || 1e-9, dz || 1e-9, moving);
+  if (bot.carrying)
+    bot.carrying.mesh.position.set(bot.pos.x, bodySpec.standH + 0.45, bot.pos.z);
+}
+
+/* ════════════════ senses ════════════════ */
 const raycaster = new THREE.Raycaster();
 const LIDAR_RAYS = 36, LIDAR_RANGE = 8;
-function eyePos() { return new THREE.Vector3(dog.pos.x, 0.45, dog.pos.z); }
-function fwdVec() { return new THREE.Vector3(Math.cos(dog.heading), 0, -Math.sin(dog.heading)); }
+function eyePos() {
+  if (bot.type === "arm") return new THREE.Vector3(bot.pos.x, 0.6, bot.pos.z);
+  return new THREE.Vector3(bot.pos.x,
+    bot.type === "drone" ? bot.alt : bodySpec.eyeH, bot.pos.z);
+}
+function fwdVec() { return new THREE.Vector3(Math.cos(bot.heading), 0, -Math.sin(bot.heading)); }
 
 function senseDetections() {
   const out = [];
   const eye = eyePos(), fwd = fwdVec();
-  for (const d of doorObjs) {
-    const to = d.pos.clone().sub(eye);
+  for (const p of propObjs) {
+    if (p.carried || p.delivered || p.sorted) continue;
+    const ppos = p.kind === "crate" || p.kind === "block" ? p.mesh.position : p.pos;
+    const to = ppos.clone().sub(eye);
     const dist = to.length();
-    if (dist > 7) continue;
-    const bearing = Math.atan2(fwd.x * to.z - fwd.z * to.x, fwd.x * to.x + fwd.z * to.z);
-    if (Math.abs(bearing) > 0.62) continue;
-    raycaster.set(eye, to.normalize());
-    const hit = raycaster.intersectObjects(wallMeshes, false)[0];
-    if (hit && hit.distance < dist - 0.4) continue;
-    const cx = 640 - (bearing / 0.62) * 600;
-    const size = Math.min(420, 2200 / dist);
-    out.push({ label: `${d.color} door`, confidence: 0.95,
-               bbox: [cx - size / 4, 360 - size / 2, cx + size / 4, 360 + size / 2],
-               door_id: d.id, distance: +dist.toFixed(2) });
-    if (!d.seen) { d.seen = true; postEvent("detection", `sighted: ${d.color} door`, { door: d.id }); }
-  }
-  if (LV.goal) {
-    const gp = new THREE.Vector3(LV.goal.x, 0.4, LV.goal.z);
-    const to = gp.clone().sub(eye);
-    const dist = to.length();
-    const bearing = Math.atan2(fwd.x * to.z - fwd.z * to.x, fwd.x * to.x + fwd.z * to.z);
-    if (dist < 12 && Math.abs(bearing) <= 0.62) {
-      raycaster.set(eye, to.normalize());
+    if (dist > (bot.type === "arm" ? 6 : 8)) continue;
+    let bearing;
+    if (bot.type === "arm") {
+      bearing = Math.atan2(-(ppos.z - eye.z), ppos.x - eye.x);  // camera looks along +x
+      if (Math.abs(bearing) > Math.PI) continue;
+    } else {
+      // natural convention: world angle of the target minus heading, so a
+      // policy recovers the world direction with heading + bearing
+      const phi = Math.atan2(-to.z, to.x);
+      bearing = ((phi - bot.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      if (Math.abs(bearing) > 0.62) continue;
+      raycaster.set(eye, to.clone().normalize());
       const hit = raycaster.intersectObjects(wallMeshes, false)[0];
-      if (!hit || hit.distance > dist - 0.4) {
-        const cx = 640 - (bearing / 0.62) * 600;
-        const size = Math.min(420, 2600 / dist);
-        out.push({ label: "beacon", confidence: 0.98,
-                   bbox: [cx - size / 3, 360 - size / 2, cx + size / 3, 360 + size / 2],
-                   distance: +dist.toFixed(2) });
-      }
+      if (hit && hit.distance < dist - 0.4) continue;
     }
+    const cx = 640 - (bearing / 0.62) * 600;
+    const size = Math.min(420, 2200 / Math.max(dist, 0.4));
+    out.push({ label: p.label, confidence: 0.95,
+               bbox: [cx - size / 4, 360 - size / 2, cx + size / 4, 360 + size / 2],
+               distance: +dist.toFixed(2) });
+    if (!p.seen) { p.seen = true; postEvent("detection", `sighted: ${p.label}`, {}); }
   }
-  raycaster.set(eyePos(), fwd);
-  const ahead = raycaster.intersectObjects(wallMeshes, false)[0];
-  if (ahead && ahead.distance < 1.6) {
-    const size = 700 / ahead.distance;
-    out.push({ label: "obstacle", confidence: 1.0,
-               bbox: [640 - size / 2, 360 - size / 2, 640 + size / 2, 360 + size / 2],
-               distance: +ahead.distance.toFixed(2) });
+  if (bot.type === "dog" || bot.type === "biped") {
+    raycaster.set(eyePos(), fwdVec());
+    const ahead = raycaster.intersectObjects(wallMeshes, false)[0];
+    if (ahead && ahead.distance < 1.6) {
+      const size = 700 / ahead.distance;
+      out.push({ label: "obstacle", confidence: 1.0,
+                 bbox: [640 - size / 2, 360 - size / 2, 640 + size / 2, 360 + size / 2],
+                 distance: +ahead.distance.toFixed(2) });
+    }
   }
   return out;
 }
 
 function senseLidar() {
-  const eye = eyePos();
+  if (bot.type === "arm") return [];
+  const eye = new THREE.Vector3(bot.pos.x, 0.45, bot.pos.z);
   const ranges = [];
   for (let i = 0; i < LIDAR_RAYS; i++) {
-    const a = dog.heading + (i / LIDAR_RAYS) * Math.PI * 2;
+    const a = bot.heading + (i / LIDAR_RAYS) * Math.PI * 2;
     raycaster.set(eye, new THREE.Vector3(Math.cos(a), 0, -Math.sin(a)));
     raycaster.far = LIDAR_RANGE;
     const hit = raycaster.intersectObjects(wallMeshes, false)[0];
@@ -429,7 +837,7 @@ function senseLidar() {
   return ranges;
 }
 
-/* ---------- lidar point cloud (the world as the robot has sensed it) ---------- */
+/* ════════════════ lidar cloud + robot map ════════════════ */
 const CLOUD_MAX = 80000;
 const cloudPos = new Float32Array(CLOUD_MAX * 3);
 const cloudCol = new Float32Array(CLOUD_MAX * 3);
@@ -456,12 +864,8 @@ function cloudCommit() {
   cloudGeo.attributes.color.needsUpdate = true;
   cloudGeo.setDrawRange(0, cloudCount);
 }
-function cloudReset() {
-  cloudCount = 0; cloudHead = 0;
-  cloudGeo.setDrawRange(0, 0);
-}
+function cloudReset() { cloudCount = 0; cloudHead = 0; cloudGeo.setDrawRange(0, 0); }
 
-/* ---------- robot-built map ---------- */
 const GRID = 96;
 let CELL = 32 / GRID;
 let occ = new Uint8Array(GRID * GRID);
@@ -472,20 +876,19 @@ function cellOf(x, z) {
 }
 function integrateLidar(ranges) {
   for (let i = 0; i < ranges.length; i++) {
-    const a = dog.heading + (i / ranges.length) * Math.PI * 2;
+    const a = bot.heading + (i / ranges.length) * Math.PI * 2;
     const dx = Math.cos(a), dz = -Math.sin(a);
     for (let r = 0.2; r < ranges[i]; r += CELL * 0.8) {
-      const [cx, cz] = cellOf(dog.pos.x + dx * r, dog.pos.z + dz * r);
+      const [cx, cz] = cellOf(bot.pos.x + dx * r, bot.pos.z + dz * r);
       if (cx >= 0 && cx < GRID && cz >= 0 && cz < GRID && occ[cz * GRID + cx] !== 2)
         occ[cz * GRID + cx] = 1;
     }
     if (ranges[i] < LIDAR_RANGE) {
-      const hx = dog.pos.x + dx * ranges[i], hz = dog.pos.z + dz * ranges[i];
+      const hx = bot.pos.x + dx * ranges[i], hz = bot.pos.z + dz * ranges[i];
       const [cx, cz] = cellOf(hx, hz);
       if (cx >= 0 && cx < GRID && cz >= 0 && cz < GRID) occ[cz * GRID + cx] = 2;
-      for (let k = 0; k < 5; k++)   // vertical spread up the wall + noise
-        cloudAdd(hx + (Math.random() - 0.5) * 0.05,
-                 Math.random() * 1.55,
+      for (let k = 0; k < 5; k++)
+        cloudAdd(hx + (Math.random() - 0.5) * 0.05, Math.random() * 1.55,
                  hz + (Math.random() - 0.5) * 0.05);
     }
   }
@@ -499,14 +902,12 @@ function drawMap() {
     img.data[i * 4 + 3] = 255;
   }
   mapCtx.putImageData(img, 0, 0);
-  const [cx, cz] = cellOf(dog.pos.x, dog.pos.z);
+  const [cx, cz] = cellOf(bot.pos.x, bot.pos.z);
   mapCtx.fillStyle = "#00d47e";
   mapCtx.fillRect(cx - 1, cz - 1, 3, 3);
-  mapCtx.fillRect(Math.round(cx + Math.cos(dog.heading) * 3),
-                  Math.round(cz - Math.sin(dog.heading) * 3), 1, 1);
 }
 
-/* ---------- chamber state, switching, win ---------- */
+/* ════════════════ chamber engine ════════════════ */
 const briefTitle = document.getElementById("briefTitle");
 const briefText = document.getElementById("briefText");
 const roomsEl = document.getElementById("rooms");
@@ -516,43 +917,210 @@ for (let i = 0; i < LEVELS.length; i++) {
   o.value = i; o.textContent = LEVELS[i].title;
   levelSel.appendChild(o);
 }
-let visited = new Set(), won = false, t0 = performance.now(), goalHeld = 0;
-let usedManual = false;
-let levelIndex = 0;
+let visited = new Set(), won = false, t0 = performance.now();
+let usedManual = false, levelIndex = 0;
+let chips = [];
+let winState = {};
+let lastAnswerTs = 0;
+
+function setChips(list) {
+  chips = list;
+  roomsEl.innerHTML = "";
+  for (const c of chips) {
+    const el = document.createElement("span");
+    el.className = "room-chip" + (c.done ? " seen" : "");
+    el.id = `chip-${c.id}`;
+    el.textContent = c.label;
+    roomsEl.appendChild(el);
+  }
+}
+function markChip(id) {
+  const c = chips.find((c) => c.id === id);
+  if (c && !c.done) {
+    c.done = true;
+    document.getElementById(`chip-${id}`)?.classList.add("seen");
+  }
+}
 
 function loadLevel(i) {
   levelIndex = ((i % LEVELS.length) + LEVELS.length) % LEVELS.length;
   buildLevel(LEVELS[levelIndex]);
+  buildBody(LV.robot);
   levelSel.value = levelIndex;
   briefTitle.textContent = LV.title;
   briefText.textContent = LV.brief;
-  dog.pos.set(LV.spawn.x, 0, LV.spawn.z);
-  dog.heading = LV.spawn.heading;
-  for (const leg of dog.legs) homeFoot(leg, leg.foot);
-  visited = new Set(); won = false; goalHeld = 0; t0 = performance.now();
-  usedManual = false;
+  const sp = LV.spawn.random === "corridor"
+    ? { x: Math.random() * 26 - 13, z: 3 + Math.random() * 3, heading: Math.random() * 6.28 }
+    : LV.spawn;
+  bot.pos.set(sp.x, 0, sp.z);
+  bot.heading = sp.heading || 0;
+  bot.alt = 1.0;
+  bot.carrying = null;
+  for (const leg of bot.legs) homeFoot(leg, leg.foot);
+  visited = new Set(); won = false; usedManual = false;
+  winState = { idx: 0, lap: 0, hold: 0, delivered: 0, sorted: 0 };
+  t0 = performance.now();
   occ = new Uint8Array(GRID * GRID);
   CELL = (LV.bounds * 2) / GRID;
   cloudReset();
   odo = 0;
+  document.getElementById("win").classList.remove("show");
   setCode(LV.demo || "");
   policyStatus("demo policy loaded — press RUN, or rewrite it", "");
-  document.getElementById("win").classList.remove("show");
-  roomsEl.innerHTML = "";
-  for (const r of LV.rooms || []) {
-    const chip = document.createElement("span");
-    chip.className = "room-chip"; chip.id = `room-${r.id}`; chip.textContent = r.id;
-    roomsEl.appendChild(chip);
-  }
-  if (LV.goal) {
-    const chip = document.createElement("span");
-    chip.className = "room-chip"; chip.id = "goal-chip"; chip.textContent = "reach the beacon";
-    roomsEl.appendChild(chip);
-  }
-  postEvent("arena", `level loaded: ${LV.name}`, {});
+
+  const w = LV.win;
+  if (LV.rooms?.length) setChips(LV.rooms.map((r) => ({ id: r.id, label: r.id, done: false })));
+  else chips = [], roomsEl.innerHTML = "";
+  if (w.type === "answer") setChips([{ id: "q", label: w.question, done: false },
+    ...(LV.rooms || []).map((r) => ({ id: r.id, label: r.id, done: false }))]);
+  else if (w.type === "near") setChips([{ id: "near", label: `reach the ${w.label}`, done: false }]);
+  else if (w.type === "checkpoints") setChips(
+    Array.from({ length: w.laps }, (_, l) => ({ id: `lap${l}`, label: `lap ${l + 1}`, done: false })));
+  else if (w.type === "buttons") setChips(
+    w.order.map((id) => ({ id: `b${id}`, label: propObjs.find((p) => p.id === id)?.label || id, done: false })));
+  else if (w.type === "carry") setChips(
+    Array.from({ length: w.crates }, (_, i) => ({ id: `c${i}`, label: `crate ${i + 1}`, done: false })));
+  else if (w.type === "sort") setChips(
+    Array.from({ length: w.blocks }, (_, i) => ({ id: `s${i}`, label: `block ${i + 1}`, done: false })));
+  else if (w.type === "rings") setChips(
+    w.order.map((id) => ({ id: `r${id}`, label: `ring ${id + 1}`, done: false })));
+  postEvent("arena", `level loaded: ${LV.name}`, { robot: LV.robot });
 }
 levelSel.addEventListener("change", () => loadLevel(+levelSel.value));
 
+function winChamber(detail) {
+  won = true;
+  const secs = ((performance.now() - t0) / 1000).toFixed(1);
+  document.getElementById("winTitle").textContent =
+    usedManual ? "PRACTICE RUN — MANUAL DRIVE" : "CHAMBER COMPLETE — AUTONOMOUS";
+  document.getElementById("winDetail").textContent = `${detail} · ${secs}s` +
+    (usedManual ? " · write a policy to make it count" : "");
+  document.getElementById("win").classList.add("show");
+  document.querySelector("#win .card").classList.toggle("practice", usedManual);
+  postEvent("task", `${LV.title} ${usedManual ? "cleared MANUALLY (practice)" : "COMPLETE — autonomous"} · ${secs}s`,
+            { time_s: +secs, level: LV.name, mode: usedManual ? "manual" : "autonomous" });
+  sealAttempt();
+}
+
+function dist2d(a, bx, bz) { return Math.hypot(a.x - bx, a.z - bz); }
+
+function tickChamber(dt, answer) {
+  if (won || !LV) return;
+  const w = LV.win;
+
+  for (const r of LV.rooms || []) {
+    const [x1, z1, x2, z2] = r.rect;
+    if (!visited.has(r.id) && bot.pos.x > x1 && bot.pos.x < x2 && bot.pos.z > z1 && bot.pos.z < z2) {
+      visited.add(r.id);
+      markChip(r.id);
+      postEvent("arena", `room explored: ${r.id}`, {});
+    }
+  }
+
+  if (w.type === "answer" && answer && answer.ts > lastAnswerTs) {
+    lastAnswerTs = answer.ts;
+    if (String(answer.text).trim() === w.value) {
+      markChip("q");
+      winChamber(`correct: ${w.value} doors`);
+    } else {
+      postEvent("arena", `wrong answer: ${answer.text} (keep looking)`, {});
+    }
+  }
+
+  if (w.type === "near") {
+    const target = propObjs.find((p) => p.label === w.label);
+    if (target) {
+      const close = dist2d(bot.pos, target.pos.x, target.pos.z) < w.dist;
+      winState.hold = close ? winState.hold + dt : 0;
+      if (winState.hold >= w.hold) { markChip("near"); winChamber(`found the ${w.label}`); }
+    }
+  }
+
+  if (w.type === "checkpoints") {
+    const want = propObjs.find((p) => p.id === w.order[winState.idx % w.order.length]);
+    if (want && dist2d(bot.pos, want.pos.x, want.pos.z) < w.dist) {
+      winState.idx += 1;
+      postEvent("arena", `checkpoint ${want.id + 1}`, {});
+      if (winState.idx % w.order.length === 0) {
+        markChip(`lap${winState.lap}`);
+        winState.lap += 1;
+        if (winState.lap >= w.laps) winChamber(`${w.laps} laps patrolled`);
+      }
+    }
+  }
+
+  if (w.type === "buttons") {
+    const want = propObjs.find((p) => p.id === w.order[winState.idx]);
+    if (want) {
+      const on = dist2d(bot.pos, want.pos.x, want.pos.z) < w.dist;
+      winState.hold = on ? winState.hold + dt : 0;
+      if (winState.hold >= w.hold) {
+        want.pressed = true;
+        want.mesh.material.opacity = 1;
+        markChip(`b${want.id}`);
+        postEvent("arena", `button pressed: ${want.label}`, {});
+        winState.idx += 1; winState.hold = 0;
+        if (winState.idx >= w.order.length) winChamber("sequence complete");
+      }
+    }
+  }
+
+  if (w.type === "carry") {
+    const zone = propObjs.find((p) => p.kind === "zone");
+    if (!bot.carrying) {
+      const crate = propObjs.find((p) => p.kind === "crate" && !p.delivered &&
+        dist2d(bot.pos, p.mesh.position.x, p.mesh.position.z) < w.pickup);
+      if (crate) { bot.carrying = crate; crate.carried = true;
+                   postEvent("arena", "crate picked up", {}); }
+    } else if (zone && dist2d(bot.pos, zone.pos.x, zone.pos.z) < w.zone) {
+      bot.carrying.delivered = true;
+      bot.carrying.carried = false;
+      bot.carrying.mesh.position.set(zone.pos.x + (winState.delivered - 0.5), 0.25, zone.pos.z);
+      bot.carrying = null;
+      markChip(`c${winState.delivered}`);
+      winState.delivered += 1;
+      postEvent("arena", `crate delivered (${winState.delivered}/${w.crates})`, {});
+      if (winState.delivered >= w.crates) winChamber("all crates delivered");
+    }
+  }
+
+  if (w.type === "sort") {
+    if (bot.grip && !bot.carrying) {
+      const block = propObjs.find((p) => p.kind === "block" && !p.sorted &&
+        dist2d(bot.pos, p.mesh.position.x, p.mesh.position.z) < w.grabDist);
+      if (block) { bot.carrying = block; block.carried = true; }
+    }
+    if (!bot.grip && bot.carrying) {
+      const block = bot.carrying;
+      bot.carrying = null; block.carried = false;
+      const bin = propObjs.find((p) => p.kind === "bin" &&
+        dist2d({ x: block.mesh.position.x, z: block.mesh.position.z }, p.pos.x, p.pos.z) < p.r);
+      if (bin && bin.color === block.color) {
+        block.sorted = true;
+        block.mesh.position.set(bin.pos.x, 0.18 + winState.sorted * 0.12, bin.pos.z);
+        markChip(`s${winState.sorted}`);
+        winState.sorted += 1;
+        postEvent("arena", `sorted ${block.label} (${winState.sorted}/${w.blocks})`, {});
+        if (winState.sorted >= w.blocks) winChamber("table sorted");
+      }
+    }
+  }
+
+  if (w.type === "rings") {
+    const want = propObjs.find((p) => p.id === w.order[winState.idx]);
+    if (want && dist2d(bot.pos, want.pos.x, want.pos.z) < w.dist &&
+        Math.abs(bot.alt - want.pos.y) < w.alt) {
+      want.passed = true;
+      want.mesh.material.emissiveIntensity = 1.2;
+      markChip(`r${want.id}`);
+      postEvent("arena", `ring ${want.id + 1}`, {});
+      winState.idx += 1;
+      if (winState.idx >= w.order.length) winChamber("course complete");
+    }
+  }
+}
+
+/* ════════════════ recording ════════════════ */
 let recording = false;
 async function startAttemptRecording() {
   try {
@@ -578,58 +1146,20 @@ async function sealAttempt() {
   }
 }
 
-function winChamber(detail) {
-  won = true;
-  const secs = ((performance.now() - t0) / 1000).toFixed(1);
-  const mode = usedManual ? "manual" : "autonomous";
-  document.getElementById("winTitle").textContent =
-    usedManual ? "PRACTICE RUN — MANUAL DRIVE" : "CHAMBER COMPLETE — AUTONOMOUS";
-  document.getElementById("winDetail").textContent = `${detail} · ${secs}s` +
-    (usedManual ? " · write a policy to make it count" : "");
-  document.getElementById("win").classList.add("show");
-  document.querySelector("#win .card").classList.toggle("practice", usedManual);
-  postEvent("task", `${LV.title} ${usedManual ? "cleared MANUALLY (practice)" : "COMPLETE — autonomous"} · ${secs}s`,
-            { time_s: +secs, level: LV.name, mode });
-  sealAttempt();
-}
-
-function tickChamber(dt) {
-  if (won) return;
-  for (const r of LV.rooms || []) {
-    const [x1, z1, x2, z2] = r.rect;
-    if (!visited.has(r.id) && dog.pos.x > x1 && dog.pos.x < x2 && dog.pos.z > z1 && dog.pos.z < z2) {
-      visited.add(r.id);
-      document.getElementById(`room-${r.id}`)?.classList.add("seen");
-      postEvent("arena", `room explored: ${r.id}`, { rooms: visited.size });
-    }
-  }
-  if ((LV.rooms || []).length && visited.size === LV.rooms.length) {
-    winChamber(`all ${LV.rooms.length} rooms explored`);
-  }
-  if (LV.goal) {
-    const inGoal = Math.hypot(dog.pos.x - LV.goal.x, dog.pos.z - LV.goal.z) < LV.goal.r;
-    goalHeld = inGoal ? goalHeld + dt : 0;
-    const chip = document.getElementById("goal-chip");
-    if (chip) {
-      chip.textContent = inGoal ? `holding… ${Math.max(0, LV.goal.hold - goalHeld).toFixed(1)}s` : "reach the beacon";
-      chip.classList.toggle("seen", inGoal);
-    }
-    if (goalHeld >= LV.goal.hold) winChamber("beacon held");
-  }
-}
-
-/* ---------- the wire ---------- */
+/* ════════════════ the wire ════════════════ */
 async function api(path, body) {
   const r = await fetch(path, { method: "POST",
     headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
   return r.json();
 }
-let serverCmd = { forward: 0, strafe: 0, turn: 0 };
+let serverCmd = { forward: 0, strafe: 0, turn: 0, climb: 0, grip: 0 };
+let serverAnswer = null;
 let linked = false, lastLidar = [];
 async function pollCmd() {
   try {
     const r = await (await fetch("/api/arena/cmd")).json();
     serverCmd = r.cmd;
+    serverAnswer = r.answer;
     if (!linked) { linked = true; startAttemptRecording(); }
   } catch { linked = false; }
   const el = document.getElementById("link");
@@ -643,10 +1173,10 @@ async function pushState() {
       await api("/api/arena/state", {
         detections: senseDetections(),
         lidar: lastLidar,
-        pose: { x: +dog.pos.x.toFixed(2), z: +dog.pos.z.toFixed(2),
-                heading: +dog.heading.toFixed(3) },
-        level: { name: LV.name, room: currentRoom(), rooms_visited: [...visited],
-                 odometer_m: +odo.toFixed(1), won },
+        pose: { x: +bot.pos.x.toFixed(2), z: +bot.pos.z.toFixed(2),
+                y: +bot.alt.toFixed(2), heading: +bot.heading.toFixed(3) },
+        level: { name: LV.name, robot: LV.robot, room: currentRoom(),
+                 rooms_visited: [...visited], odometer_m: +odo.toFixed(1), won },
       });
     } catch {}
   }
@@ -657,12 +1187,12 @@ function postEvent(type, title, detail) {
   api("/api/arena/event", { type, title, detail }).catch(() => {});
 }
 
-/* ---------- the policy editor: this is how you play ---------- */
+/* ════════════════ policy editor ════════════════ */
 const codeEl = document.getElementById("code");
 const statusEl = document.getElementById("policyStatus");
 function policyStatus(msg, cls) { statusEl.textContent = msg; statusEl.className = cls; }
 
-let cm = null;   // CodeMirror view when the CDN loads; textarea otherwise
+let cm = null;
 function getCode() { return cm ? cm.state.doc.toString() : codeEl.value; }
 function setCode(text) {
   if (cm) cm.dispatch({ changes: { from: 0, to: cm.state.doc.length, insert: text } });
@@ -692,7 +1222,7 @@ document.getElementById("p-policy").addEventListener("keydown", (e) => {
     e.preventDefault();
     document.getElementById("btnRun").click();
   }
-  e.stopPropagation();          // typing must not drive the dog
+  e.stopPropagation();
 });
 document.getElementById("p-policy").addEventListener("keyup", (e) => e.stopPropagation());
 codeEl.addEventListener("keydown", (e) => {
@@ -703,15 +1233,7 @@ codeEl.addEventListener("keydown", (e) => {
     codeEl.selectionStart = codeEl.selectionEnd = a + 4;
   }
 });
-document.getElementById("btnRun").addEventListener("click", async () => {
-  policyStatus("saving…", "");
-  try {
-    const w = await api("/api/behaviors/write", { name: "player_policy", source: getCode() });
-    if (!w.ok) { policyStatus(w.error, "err"); return; }
-    await api("/api/behaviors/enable", { name: "player_policy" });
-    policyStatus("running — hot reload applies edits on every RUN", "ok");
-  } catch { policyStatus("no server — run `roborun` first", "err"); }
-});
+
 const connectEl = document.getElementById("connect");
 document.getElementById("btnConnect").addEventListener("click", () => connectEl.classList.add("show"));
 document.getElementById("connectClose").addEventListener("click", () => connectEl.classList.remove("show"));
@@ -725,6 +1247,15 @@ for (const pre of connectEl.querySelectorAll("pre")) {
   });
 }
 
+document.getElementById("btnRun").addEventListener("click", async () => {
+  policyStatus("saving…", "");
+  try {
+    const w = await api("/api/behaviors/write", { name: "player_policy", source: getCode() });
+    if (!w.ok) { policyStatus(w.error, "err"); return; }
+    await api("/api/behaviors/enable", { name: "player_policy" });
+    policyStatus("running — hot reload applies edits on every RUN", "ok");
+  } catch { policyStatus("no server — run `roborun` first", "err"); }
+});
 document.getElementById("btnStop").addEventListener("click", async () => {
   try {
     await api("/api/behaviors/disable", { name: "player_policy" });
@@ -732,52 +1263,33 @@ document.getElementById("btnStop").addEventListener("click", async () => {
   } catch {}
 });
 
-/* ---------- telemetry: room, odometer, pose ---------- */
+/* ════════════════ telemetry ════════════════ */
 let odo = 0;
 const prevPos = new THREE.Vector3();
 function currentRoom() {
   for (const r of LV.rooms || []) {
     const [x1, z1, x2, z2] = r.rect;
-    if (dog.pos.x > x1 && dog.pos.x < x2 && dog.pos.z > z1 && dog.pos.z < z2) return r.id;
+    if (bot.pos.x > x1 && bot.pos.x < x2 && bot.pos.z > z1 && bot.pos.z < z2) return r.id;
   }
-  return LV.goal ? "field" : "corridor";
+  return "field";
 }
 function updateTelemetry() {
   document.getElementById("teleRoom").textContent = `room ${currentRoom()}`;
   document.getElementById("teleOdo").textContent = `odometer ${odo.toFixed(1)} m`;
-  document.getElementById("telePose").textContent =
-    `x ${dog.pos.x.toFixed(1)} · z ${dog.pos.z.toFixed(1)} · θ ${dog.heading.toFixed(2)}`;
+  document.getElementById("telePose").textContent = bot.type === "drone"
+    ? `x ${bot.pos.x.toFixed(1)} · z ${bot.pos.z.toFixed(1)} · alt ${bot.alt.toFixed(1)}`
+    : `x ${bot.pos.x.toFixed(1)} · z ${bot.pos.z.toFixed(1)} · θ ${bot.heading.toFixed(2)}`;
 }
 
-/* ---------- input ---------- */
-const keys = {};
-addEventListener("keydown", (e) => {
-  if (e.target.closest?.("#p-policy") ||
-      ["SELECT", "TEXTAREA", "INPUT"].includes(e.target.tagName)) return;
-  keys[e.key.toLowerCase()] = true;
-  if (e.key.toLowerCase() === "c") camMode = (camMode + 1) % CAM_MODES.length;
-  if (e.key.toLowerCase() === "n") loadLevel(levelIndex + 1);
-  if (e.key.toLowerCase() === "l") { cloudOn = !cloudOn; cloud.visible = cloudOn; }
-  if (e.key === "Escape") connectEl.classList.remove("show");
-});
-addEventListener("keyup", (e) => keys[e.key.toLowerCase()] = false);
-function keyboardCmd() {
-  const f = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
-  const t = (keys.a ? 1 : 0) - (keys.d ? 1 : 0);
-  if (f || t) { usedManual = true; return { forward: f * 0.9, strafe: 0, turn: t * 1.2 }; }
-  return null;
-}
-
-/* ---------- panel system: drag, resize, toggle, persist ---------- */
+/* ════════════════ panels ════════════════ */
 const LAYOUT_KEY = "arena-layout-v2";
 const PANEL_IDS = ["p-brief", "p-policy", "p-status", "p-map", "p-view1", "p-view2"];
 let zTop = 100;
-
 function defaultLayout() {
   const w = innerWidth, h = innerHeight;
   return {
-    "p-brief":  { l: 14, t: 52, w: 360, h: 170, hidden: false },
-    "p-policy": { l: 14, t: 232, w: 470, h: Math.min(430, h - 250), hidden: false },
+    "p-brief":  { l: 14, t: 52, w: 360, h: 190, hidden: false },
+    "p-policy": { l: 14, t: 252, w: 470, h: Math.min(430, h - 270), hidden: false },
     "p-status": { l: w - 230, t: 52, w: 216, h: 150, hidden: false },
     "p-map":    { l: w - 230, t: 212, w: 216, h: 240, hidden: false },
     "p-view1":  { l: w - 340, t: h - 230, w: 326, h: 216, hidden: false },
@@ -844,7 +1356,31 @@ function initPanels() {
 }
 initPanels();
 
-/* ---------- multi-view render: viewports are DOM rects ---------- */
+/* ════════════════ input ════════════════ */
+const keys = {};
+addEventListener("keydown", (e) => {
+  if (e.target.closest?.("#p-policy") ||
+      ["SELECT", "TEXTAREA", "INPUT"].includes(e.target.tagName)) return;
+  keys[e.key.toLowerCase()] = true;
+  if (e.key.toLowerCase() === "c") camMode = (camMode + 1) % CAM_MODES.length;
+  if (e.key.toLowerCase() === "n") loadLevel(levelIndex + 1);
+  if (e.key.toLowerCase() === "l") { cloudOn = !cloudOn; cloud.visible = cloudOn; }
+  if (e.key === "Escape") connectEl.classList.remove("show");
+});
+addEventListener("keyup", (e) => keys[e.key.toLowerCase()] = false);
+function keyboardCmd() {
+  const f = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
+  const t = (keys.a ? 1 : 0) - (keys.d ? 1 : 0);
+  const cl = (keys.e ? 1 : 0) - (keys.q ? 1 : 0);
+  if (f || t || cl) {
+    usedManual = true;
+    return { forward: f * 0.9, strafe: 0, turn: t * 1.2, climb: cl * 0.8,
+             grip: keys[" "] ? 1 : 0 };
+  }
+  return null;
+}
+
+/* ════════════════ multi-view render ════════════════ */
 function renderViews() {
   const w = innerWidth, h = innerHeight;
   renderer.setScissorTest(true);
@@ -870,18 +1406,19 @@ function renderViews() {
   renderer.setScissorTest(false);
 }
 
-/* ---------- loop ---------- */
+/* ════════════════ main loop ════════════════ */
 const clockEl = document.getElementById("clock"), cmdEl = document.getElementById("cmdline");
 let last = performance.now(), senseTick = 0, orbitAngle = 0;
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.05);
   last = now;
   const cmd = keyboardCmd() || serverCmd;
-  updateDog(dt, cmd);
-  tickChamber(dt);
+  updateMovers(dt);
+  updateBody(dt, cmd);
+  tickChamber(dt, serverAnswer);
 
-  odo += prevPos.distanceTo(dog.pos);
-  prevPos.copy(dog.pos);
+  odo += prevPos.distanceTo(bot.pos);
+  prevPos.copy(bot.pos);
   senseTick += dt;
   if (senseTick > 0.12) {
     senseTick = 0;
@@ -892,29 +1429,31 @@ function frame(now) {
     updateTelemetry();
   }
 
+  const focusY = bot.type === "drone" ? bot.alt : 0.5;
   if (camMode === 0) {
     specCam.position.lerp(new THREE.Vector3(
-      dog.pos.x - Math.cos(dog.heading) * 3.4, 2.4,
-      dog.pos.z + Math.sin(dog.heading) * 3.4), 0.06);
-    specCam.lookAt(dog.pos.x, 0.5, dog.pos.z);
+      bot.pos.x - Math.cos(bot.heading) * 3.4, focusY + 2,
+      bot.pos.z + Math.sin(bot.heading) * 3.4), 0.06);
+    specCam.lookAt(bot.pos.x, focusY, bot.pos.z);
   } else if (camMode === 1) {
     specCam.position.copy(orbitCam.position);
     specCam.quaternion.copy(orbitCam.quaternion);
   }
   const fwd = fwdVec();
-  povCam.position.set(dog.pos.x + fwd.x * 0.35, 0.45, dog.pos.z + fwd.z * 0.35);
-  povCam.lookAt(dog.pos.x + fwd.x * 5, 0.4, dog.pos.z + fwd.z * 5);
+  const eye = eyePos();
+  povCam.position.set(eye.x + fwd.x * 0.35, eye.y, eye.z + fwd.z * 0.35);
+  povCam.lookAt(eye.x + fwd.x * 5, bot.type === "arm" ? 0 : eye.y - 0.05, eye.z + fwd.z * 5);
   chaseCam.position.lerp(new THREE.Vector3(
-    dog.pos.x - Math.cos(dog.heading) * 3.4, 2.4,
-    dog.pos.z + Math.sin(dog.heading) * 3.4), 0.08);
-  chaseCam.lookAt(dog.pos.x, 0.5, dog.pos.z);
-  orbitCam.position.set(dog.pos.x + Math.cos(orbitAngle) * 6, 4.2,
-                        dog.pos.z + Math.sin(orbitAngle) * 6);
-  orbitCam.lookAt(dog.pos.x, 0.4, dog.pos.z);
+    bot.pos.x - Math.cos(bot.heading) * 3.4, focusY + 2,
+    bot.pos.z + Math.sin(bot.heading) * 3.4), 0.08);
+  chaseCam.lookAt(bot.pos.x, focusY, bot.pos.z);
+  orbitCam.position.set(bot.pos.x + Math.cos(orbitAngle) * 6, focusY + 3.6,
+                        bot.pos.z + Math.sin(orbitAngle) * 6);
+  orbitCam.lookAt(bot.pos.x, focusY, bot.pos.z);
   orbitAngle += dt * 0.25;
 
   if (!won) clockEl.textContent = `${((now - t0) / 1000).toFixed(1)}s`;
-  cmdEl.textContent = `cmd f=${cmd.forward.toFixed(2)} t=${cmd.turn.toFixed(2)} · cam ${CAM_MODES[camMode]}`;
+  cmdEl.textContent = `cmd f=${(cmd.forward || 0).toFixed(2)} t=${(cmd.turn || 0).toFixed(2)} · cam ${CAM_MODES[camMode]}`;
   renderViews();
   requestAnimationFrame(frame);
 }

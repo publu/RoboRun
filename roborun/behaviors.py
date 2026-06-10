@@ -19,6 +19,9 @@ The `robot` handle:
     robot.pose()             {x, z, heading} odometry (arena / robots with odom)
     robot.seen(label=None)   the system's automatic sighting memory this run
     robot.goto(x, z)         one tick of drive-toward; True when arrived
+    robot.move(climb=)       vertical for drones (Twist linear.z)
+    robot.grasp(closed)      gripper for arm levels
+    robot.answer("6")        submit the chamber's answer (recon levels)
     robot.move(forward=0, strafe=0, turn=0)   sim or real robot, safety-clamped
     robot.stop()
     robot.say(text)          speaks into the event timeline
@@ -308,17 +311,19 @@ class Robot:
 
     # ---- action ----
 
-    def move(self, forward: float = 0.0, strafe: float = 0.0, turn: float = 0.0) -> None:
+    def move(self, forward: float = 0.0, strafe: float = 0.0, turn: float = 0.0,
+             climb: float = 0.0) -> None:
         forward = max(-MAX_LINEAR, min(MAX_LINEAR, forward))
         strafe = max(-MAX_LINEAR, min(MAX_LINEAR, strafe))
         turn = max(-MAX_ANGULAR, min(MAX_ANGULAR, turn))
+        climb = max(-MAX_LINEAR, min(MAX_LINEAR, climb))  # Twist linear.z
 
         sent = False
         try:
             from roborun.arena import get_arena
             arena = get_arena()
             if arena.is_active():
-                arena.set_cmd(forward, strafe, turn)
+                arena.set_cmd(forward, strafe, turn, climb)
                 sent = True
         except Exception:
             pass
@@ -364,6 +369,28 @@ class Robot:
 
     def stop(self) -> None:
         self.move(0.0, 0.0, 0.0)
+
+    def grasp(self, closed: bool = True) -> None:
+        """Arm levels / grippers: close or open the end-effector."""
+        try:
+            from roborun.arena import get_arena
+            arena = get_arena()
+            if arena.is_active():
+                arena.set_grip(closed)
+        except Exception:
+            pass
+
+    def answer(self, text: str) -> None:
+        """Submit an answer to the chamber's question (recon levels).
+        Also lands in the timeline, so the sealed run carries it."""
+        try:
+            from roborun.arena import get_arena
+            arena = get_arena()
+            if arena.is_active():
+                arena.set_answer(str(text))
+        except Exception:
+            pass
+        emit("task", self._name, f"ANSWER: {text}", {"answer": str(text)})
 
     def say(self, text: str) -> None:
         text = str(text).strip()

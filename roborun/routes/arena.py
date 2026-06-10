@@ -13,7 +13,8 @@ from roborun import events as bus
 
 @get("/api/arena/cmd")
 def arena_cmd(h):
-    send_json(h, 200, {"ok": True, "cmd": get_arena().cmd()})
+    a = get_arena()
+    send_json(h, 200, {"ok": True, "cmd": a.cmd(), "answer": a.answer()})
 
 
 _last_level: list[str] = [""]

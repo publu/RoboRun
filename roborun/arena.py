@@ -24,17 +24,34 @@ _FRESH = 2.0  # seconds of browser silence before the arena counts as gone
 class ArenaState:
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._cmd: dict[str, float] = {"forward": 0.0, "strafe": 0.0, "turn": 0.0}
+        self._cmd: dict[str, float] = {"forward": 0.0, "strafe": 0.0, "turn": 0.0,
+                                       "climb": 0.0, "grip": 0.0}
         self._cmd_ts = 0.0
         self._state: dict[str, Any] = {}
         self._state_ts = 0.0
+        self._answer: dict[str, Any] | None = None
 
     # ── Python side (behaviors) ──────────────────────────────────────────
 
-    def set_cmd(self, forward: float, strafe: float, turn: float) -> None:
+    def set_cmd(self, forward: float, strafe: float, turn: float,
+                climb: float = 0.0) -> None:
         with self._lock:
-            self._cmd = {"forward": forward, "strafe": strafe, "turn": turn}
+            grip = self._cmd.get("grip", 0.0)
+            self._cmd = {"forward": forward, "strafe": strafe, "turn": turn,
+                         "climb": climb, "grip": grip}
             self._cmd_ts = time.monotonic()
+
+    def set_grip(self, closed: bool) -> None:
+        with self._lock:
+            self._cmd["grip"] = 1.0 if closed else 0.0
+
+    def set_answer(self, text: str) -> None:
+        with self._lock:
+            self._answer = {"text": str(text), "ts": time.time()}
+
+    def answer(self) -> dict | None:
+        with self._lock:
+            return dict(self._answer) if self._answer else None
 
     def is_active(self) -> bool:
         with self._lock:
@@ -63,7 +80,8 @@ class ArenaState:
             # Stale commands decay to stop: a crashed behavior must not
             # leave the dog walking into a wall forever (L0 thinking).
             if time.monotonic() - self._cmd_ts > 1.0:
-                return {"forward": 0.0, "strafe": 0.0, "turn": 0.0}
+                return {"forward": 0.0, "strafe": 0.0, "turn": 0.0,
+                        "climb": 0.0, "grip": self._cmd.get("grip", 0.0)}
             return dict(self._cmd)
 
     def update(self, state: dict) -> None:

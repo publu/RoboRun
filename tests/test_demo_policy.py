@@ -22,6 +22,8 @@ WALLS = [(-8, -8, 8, -8), (-8, 8, 8, 8), (-8, -8, -8, 8), (8, -8, 8, 8),
          (-1, 1, -1, 4), (-1, 5.4, -1, 8), (1, 1, 1, 4), (1, 5.4, 1, 8)]
 ROOMS = {"NW": (-8, -8, -1, -1), "NE": (1, -8, 8, -1),
          "SW": (-8, 1, -1, 8), "SE": (1, 1, 8, 8)}
+DOORS = [("red door", -2.5, -1), ("blue door", 2.5, -1), ("red door", -2.5, 1),
+         ("green door", 2.5, 1), ("red door", -1, -4.7), ("blue door", 1, 4.7)]
 W = 0.15
 AABBS = [(min(x1, x2) - W, min(z1, z2) - W, max(x1, x2) + W, max(z1, z2) + W)
          for x1, z1, x2, z2 in WALLS]
@@ -76,7 +78,47 @@ class SimRobot:
         return out
 
     def see(self, label=None, min_conf=0.4):
-        return []
+        """Door sensing with the arena's exact encoding: cone, occlusion,
+        cx from bearing, dist in meters."""
+        out = []
+        for name, dx_, dz_ in DOORS:
+            if label and name != label:
+                continue
+            tx, tz = dx_ - self.x, dz_ - self.z
+            dist = math.hypot(tx, tz)
+            if dist > 7 or dist < 0.05:
+                continue
+            phi = math.atan2(-tz, tx)
+            bearing = (phi - self.heading + math.pi * 3) % (math.pi * 2) - math.pi
+            if abs(bearing) > 0.62:
+                continue
+            # occlusion: march the ray, stop if a wall AABB is hit first
+            ux, uz = tx / dist, tz / dist
+            blocked = False
+            t = 0.1
+            while t < dist - 0.4:
+                px, pz = self.x + ux * t, self.z + uz * t
+                if any(lx <= px <= hx and lz <= pz <= hz
+                       for lx, lz, hx, hz in AABBS):
+                    blocked = True
+                    break
+                t += 0.1
+            if blocked:
+                continue
+            cx_px = 640 - (bearing / 0.62) * 600
+
+            class T:
+                pass
+            th = T()
+            th.label, th.conf, th.dist = name, 0.95, round(dist, 2)
+            th.cx, th.cy = cx_px / 1280, 0.5
+            th.w = th.h = 0.1
+            out.append(th)
+        return out
+
+    def answer(self, text):
+        self.answers = getattr(self, "answers", [])
+        self.answers.append(str(text))
 
     def seen(self, label=None):
         return []
@@ -121,7 +163,7 @@ class SimRobot:
         self.x, self.z = nx, nz
 
 
-def run_policy(source: str, budget_ticks: int) -> set:
+def run_policy(source: str, budget_ticks: int):
     ns = {"behavior": lambda **kw: (lambda fn: fn)}
     code = source.replace("from roborun.behaviors import behavior\n", "")
     exec(compile(code, "demo.py", "exec"), ns)
@@ -134,13 +176,16 @@ def run_policy(source: str, budget_ticks: int) -> set:
         for name, (a, b, c, d) in ROOMS.items():
             if a < robot.x < c and b < robot.z < d:
                 visited.add(name)
-        if len(visited) == 4:
+        if getattr(robot, "answers", None):
             break
-    return visited
+    return visited, robot
 
 
-def test_chamber01_demo_explores_all_rooms_without_a_map():
-    source = load_demo_source("chamber-01")
+def test_census_demo_explores_all_rooms_without_a_map():
+    source = load_demo_source("dog-census")
     assert "TOUR" not in source, "hardcoded waypoints = cheating the benchmark"
-    visited = run_policy(source, budget_ticks=3600)  # 6 sim-minutes
+    visited, robot = run_policy(source, budget_ticks=3600)  # 6 sim-minutes
     assert visited == {"NW", "NE", "SW", "SE"}, f"only explored {sorted(visited)}"
+    # the census itself: perception-counted, deduped, correct
+    assert getattr(robot, "answers", []) == ["6"], \
+        f"answered {getattr(robot, 'answers', [])!r}, there are 6 doors"

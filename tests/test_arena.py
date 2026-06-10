@@ -15,11 +15,13 @@ def test_inactive_until_browser_pushes():
 def test_cmd_roundtrip_and_stale_decay(monkeypatch):
     a = ArenaState()
     a.set_cmd(0.5, 0.0, -0.3)
-    assert a.cmd() == {"forward": 0.5, "strafe": 0.0, "turn": -0.3}
+    assert a.cmd() == {"forward": 0.5, "strafe": 0.0, "turn": -0.3,
+                       "climb": 0.0, "grip": 0.0}
     # a behavior that stops ticking must not leave the dog walking
     t = time.monotonic()
     monkeypatch.setattr(time, "monotonic", lambda: t + 2.0)
-    assert a.cmd() == {"forward": 0.0, "strafe": 0.0, "turn": 0.0}
+    assert a.cmd() == {"forward": 0.0, "strafe": 0.0, "turn": 0.0,
+                       "climb": 0.0, "grip": 0.0}
 
 
 def test_robot_see_uses_arena_when_active(monkeypatch):
