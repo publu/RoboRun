@@ -44,7 +44,7 @@ sim = ["mujoco>=3.0", "onnxruntime>=1.16"]
 gemini = ["google-generativeai>=0.8"]
 ros = ["cyclonedds>=0.10"]
 crypto = ["cryptography>=42.0"]
-anchor = ["opentimestamps>=0.4"]
+anchor = ["asn1crypto>=1.5"]
 fleet = ["boto3>=1.28", "duckdb>=1.0"]
 all = ["ros-agent[vision,sim,depth,jepa,gemini,ros,crypto,anchor,fleet]"]
 

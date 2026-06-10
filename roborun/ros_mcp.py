@@ -1129,7 +1129,7 @@ MCP_TOOLS = [
     # --- Telemetry ---
     {
         "name": "telemetry_stream",
-        "description": "Tap mode: passively record robot topics into a tamper-evident MCAP run at full rate (no LLM in the loop). 'start' opens a run and taps topics; 'stop' seals it (Merkle root + OpenTimestamps anchor) and indexes it for search; 'status' reports counts.",
+        "description": "Tap mode: passively record robot topics into a tamper-evident MCAP run at full rate (no LLM in the loop). 'start' opens a run and taps topics; 'stop' seals it (Merkle root + RFC 3161 trusted timestamp) and indexes it for search; 'status' reports counts.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1137,7 +1137,7 @@ MCP_TOOLS = [
                 "topics": {"type": "array", "items": {"type": "string"},
                            "description": "Topic names or patterns ('/camera/*'). Omit to tap everything visible."},
                 "robot_id": {"type": "string", "description": "Robot identity for the run directory (default: local)"},
-                "no_anchor": {"type": "boolean", "description": "Skip OpenTimestamps anchoring on stop"},
+                "no_anchor": {"type": "boolean", "description": "Skip trusted-timestamp anchoring on stop"},
             },
             "required": ["action"],
         },

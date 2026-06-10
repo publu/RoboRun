@@ -299,7 +299,7 @@ let mcapRecording = false;
 
 const BADGE_STATES = {
   recording:  { text: "● REC MCAP",   cls: "rec" },
-  anchored:   { text: "⛓ ANCHORED",   cls: "good" },
+  anchored:   { text: "✓ ANCHORED",   cls: "good" },
   unanchored: { text: "◇ UNANCHORED", cls: "warn" },
   broken:     { text: "✕ BROKEN",     cls: "bad" },
   none:       { text: "—",            cls: "" },
@@ -327,7 +327,7 @@ async function toggleRecord() {
     mcapRecording = false;
     const anchor = (r.seal.anchor || {}).status || "unanchored";
     showStamp("SEALED",
-      `${r.seal.run} · ${r.seal.segment_count} chunks · merkle root · ${anchor === "pending" ? "anchoring via opentimestamps" : anchor}`,
+      `${r.seal.run} · ${r.seal.segment_count} chunks · merkle root · ${anchor === "anchored" ? "anchored · rfc 3161 timestamp" : anchor}`,
       `${r.seal.merkle_root.slice(0, 32)}… · ${r.indexed && r.indexed.ok ? r.indexed.observations + " observations indexed" : ""}`);
     setTimeout(hideStamp, 3000);
   } else {
@@ -376,7 +376,7 @@ async function loadMcapRuns() {
     row.className = "run-row";
     const mb = (r.size / 1048576).toFixed(1);
     const badges = [
-      r.anchored ? `<span class="run-badge sealed">OTS</span>` : "",
+      r.anchored ? `<span class="run-badge sealed">TSA</span>` : "",
       r.sealed ? `<span class="run-badge sealed">SEALED</span>` : "",
     ].join("");
     row.innerHTML = `

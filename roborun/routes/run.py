@@ -15,7 +15,7 @@ GET  /api/run/list           list journal runs
 GET  /api/run/events         events of a run, for replay
 
 POST /api/run/record/start   open an MCAP run (webcam + event bus feed it)
-POST /api/run/record/stop    seal + OTS-anchor + index the MCAP run
+POST /api/run/record/stop    seal + timestamp-anchor + index the MCAP run
 GET  /api/run/mcap           list MCAP runs with seal/anchor status
 POST /api/run/mcap/verify    three-state verify {run, robot_id}
 POST /api/run/mcap/clip      verified clip export {run, robot_id, start_ts, end_ts}

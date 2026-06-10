@@ -3,7 +3,7 @@
 Status: **MVP implemented** (v0.11.0). The §4 MVP scope shipped: vendored
 transport (`roborun/transport/` — general message types, capability matrix,
 tap mode), MCAP recorder with chunk-granular hash chain, O(1) seal,
-OpenTimestamps anchoring and three-state verify (`roborun/recorder.py`,
+RFC 3161 trusted-timestamp anchoring and three-state verify (`roborun/recorder.py`,
 `roborun/anchor.py`), MCAP→Observation extraction into the upgraded indexed
 SQLite store (`roborun/observations.py`, `roborun/spatial_memory.py`),
 R2 sync + Parquet/DuckDB fleet queries (`roborun/r2sync.py`), signed beacons
@@ -116,7 +116,7 @@ The hash chain moves **out of a private JSONL and onto the MCAP itself**:
 
 - **Leaf = MCAP chunk.** As the writer flushes each chunk (chunks are MCAP's native, compressed, indexed unit), hash it and link it: `chain[i] = H(chunk_bytes_i, chain[i-1])`. The chain lives in a small sidecar index `(chunk_offset, chunk_hash, prev)`, not injected into messages we don't own.
 - **Seal = Merkle root over chunk hashes + anchor proof.** Drop the stored per event hash list from the seal (it makes the seal grow O(n) for nothing). The root verifies; to localize a failure we recompute the tree at verify time. Seal becomes O(1) in size: roots, counts, timestamps, anchor proof. A few KB regardless of run length.
-- **Anchor (the part that makes verify mean anything).** On seal, stamp the root with **OpenTimestamps** (trustless, Bitcoin, tiny `.ots`, async upgrade) and optionally an **RFC 3161 TSA token** (instant, trusts a named authority, good for live demos). While the run is live, anchor chain heads opportunistically so a long run is pinned to an external clock before it ends.
+- **Anchor (the part that makes verify mean anything).** On seal, stamp the root with an **RFC 3161 TSA token** (instant, a named authority — the same mechanism behind code signing — standard `.tsr`, verifiable with `openssl ts`). While the run is live, anchor chain heads opportunistically so a long run is pinned to an external clock before it ends.
 - **Honest states from verify.** Not a binary. Three outcomes: `verified + anchored` (unchanged since an outside clock witnessed it), `internally consistent, unanchored` (chain intact but never externally timestamped, e.g. offline robot), and `broken` (which chunk, which channel, which message). Offline runs anchor opportunistically when connectivity returns; the seal records its own anchor status.
 
 What this proves: the recorded run, **including the images, detections, video, and agent decisions**, has not been altered since a moment an external clock witnessed. That is the claim the black box needs and the one it cannot make today.
@@ -127,8 +127,8 @@ What this proves: the recorded run, **including the images, detections, video, a
 open run  → MCAP writer opens runs/<robot>/<run_id>.mcap, manifest links prev run's root
 record    → ros_tap taps topics at full rate; agent emits /agent/events; CLIP/YOLO write their channels
            periodic chunk seal; chain heads anchored opportunistically
-close     → final chunk flush → Merkle root → OpenTimestamps stamp → .seal + .ots written
-index     → MCAP streamed into the hot store (§3); MCAP+seal+ots uploaded to object store
+close     → final chunk flush → Merkle root → RFC 3161 stamp → .seal + .tsr written
+index     → MCAP streamed into the hot store (§3); MCAP+seal+tsr uploaded to object store
 ```
 
 Runs already link end to end via `manifest.prev_run` (events.py does this). Keep
@@ -161,7 +161,7 @@ effectively unbounded. This is "store a ton of data."
 ```
 runs/<robot_id>/<run_id>.mcap      # the recording (heavy)
 runs/<robot_id>/<run_id>.seal      # Merkle root + counts (KB)
-runs/<robot_id>/<run_id>.ots       # OpenTimestamps proof (KB)
+runs/<robot_id>/<run_id>.tsr       # RFC 3161 timestamp proof (KB)
 index/<robot_id>/<date>.parquet    # derived columnar rows (see 3.2)
 ```
 
@@ -262,8 +262,8 @@ code, not more, and nothing to operate.
 **MVP (ship behind the launch):**
 
 - ros_tap: vendor a minimal but real DDS + rosbridge transport with the common message families and tap to recorder mode. Kill the Twist only limitation.
-- recorder: MCAP writer with the five channels, chunk hash chain in a sidecar, O(1) seal, OpenTimestamps anchor, three state verify.
-- storage: MCAP → Observation extractor on close into the upgraded SQLite (indexed detections, numpy CLIP); R2 upload of MCAP + seal + ots + the `.db`; CLIP/YOLO/nearby/time queries served locally.
+- recorder: MCAP writer with the five channels, chunk hash chain in a sidecar, O(1) seal, RFC 3161 anchor, three state verify.
+- storage: MCAP → Observation extractor on close into the upgraded SQLite (indexed detections, numpy CLIP); R2 upload of MCAP + seal + tsr + the `.db`; CLIP/YOLO/nearby/time queries served locally.
 - cross robot: shared R2 prefixes (`index/*/*.parquet` queried by DuckDB on demand, `beacons/` polled). Signed beacons. No broker.
 - flight deck: replay from MCAP, verify badge, verified clip export.
 
@@ -272,14 +272,14 @@ code, not more, and nothing to operate.
 - Embedded ANN (sqlite-vec or hnswlib) only if vector count outgrows numpy.
 - Streaming extraction (index while recording, not only on close).
 - Native rclpy backend for on robot deployment.
-- Foxglove deep integration, TSA + OTS dual anchoring in prod.
+- Foxglove deep integration.
 - A broker for sub second cross robot control loops — only if that need ever becomes real, as an explicit infra decision, never a default.
 
 ---
 
 ## 5. Open decisions (need a call before building)
 
-1. **Anchor:** OpenTimestamps only (purest trustless story, hours to confirm) vs OTS + RFC 3161 TSA (instant live demo proof, trusts a named authority). Both are just files, so both honor the constraint. Leaning both.
+1. **Anchor:** ~~OpenTimestamps vs RFC 3161 TSA~~ — **decided: RFC 3161 only.** Instant proof at seal time, a named authority (the code-signing mechanism), standard `.tsr` files, and no blockchain anywhere in the project.
 2. **Vector search at scale:** stay on numpy until it hurts (simplest), or add sqlite-vec (extension, vectors in the same `.db`) vs hnswlib (library + index file) when it does. All three are embedded, no service. Leaning numpy for MVP, sqlite-vec when needed.
 3. **Fleet analytics:** DuckDB over Parquet in R2 (embedded, on demand) is the recommended path since it adds no service. Confirm DuckDB is an acceptable library dep, or we keep it to per robot SQLite and merge results in app code.
 4. **Video in container vs referenced:** `foxglove.CompressedVideo` channel inside MCAP (one sealed object) vs external mp4 with segment hashes. Support both; default to in container for robot cameras.

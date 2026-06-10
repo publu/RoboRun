@@ -13,7 +13,8 @@ Integrity (the reseal fix):
     crash-leaves-a-checkable-prefix). Segments track MCAP's own chunk flushes.
   * Sealing computes a Merkle root over segment hashes — the seal is O(1):
     roots, counts, timestamps, signature, anchor status. No per-event hash list.
-  * The root (already 32 bytes) is anchored via OpenTimestamps (anchor.py).
+  * The root (already 32 bytes) is anchored to an RFC 3161 trusted
+    timestamp authority (anchor.py) — synchronous, done at seal time.
 
 Verification is three-state, not binary:
     verified_anchored        — unchanged since an external clock witnessed it
@@ -24,11 +25,11 @@ Layout (local mirror of the R2 layout in the architecture spec):
     ~/.roborun/runs/<robot_id>/<run_id>.mcap
     ~/.roborun/runs/<robot_id>/<run_id>.chain.jsonl
     ~/.roborun/runs/<robot_id>/<run_id>.seal
-    ~/.roborun/runs/<robot_id>/<run_id>.seal.ots
+    ~/.roborun/runs/<robot_id>/<run_id>.seal.tsr
 
 CLI:
     python -m roborun.recorder verify  <run.mcap>
-    python -m roborun.recorder upgrade <run.mcap>     # pull Bitcoin attestation
+    python -m roborun.recorder upgrade <run.mcap>     # anchor a run sealed offline
     python -m roborun.recorder clip    <run.mcap> <start_ts> <end_ts>
 """
 from __future__ import annotations
@@ -351,14 +352,15 @@ class RunRecorder:
             }
             anchor_info: dict[str, Any] = {"status": "unanchored"}
             if do_anchor:
-                ots_bytes = anchor.stamp_digest(bytes.fromhex(root))
-                if ots_bytes is not None:
-                    ots_path = self.seal_path.with_suffix(".seal.ots")
-                    ots_path.write_bytes(ots_bytes)
-                    anchor_info = {"status": "pending", "ots": ots_path.name,
-                                   "stamped_at": sealed_at}
+                tsr_bytes = anchor.stamp_digest(bytes.fromhex(root))
+                if tsr_bytes is not None:
+                    tsr_path = self.seal_path.with_suffix(".seal.tsr")
+                    tsr_path.write_bytes(tsr_bytes)
+                    anchor_info = {**anchor.status(
+                        tsr_path, expected_digest=bytes.fromhex(root)),
+                        "tsr": tsr_path.name}
                 else:
-                    anchor_info["reason"] = "offline or opentimestamps unavailable"
+                    anchor_info["reason"] = "offline or asn1crypto unavailable"
             seal["anchor"] = anchor_info
             self.seal_path.write_text(json.dumps(seal, indent=1))
             return seal
@@ -383,7 +385,7 @@ def verify_mcap_run(mcap_path: str | Path) -> dict[str, Any]:
     base = mcap_path.with_suffix("")
     chain_path = Path(str(base) + ".chain.jsonl")
     seal_path = Path(str(base) + ".seal")
-    ots_path = Path(str(base) + ".seal.ots")
+    tsr_path = Path(str(base) + ".seal.tsr")
 
     if not mcap_path.exists():
         return {"state": "broken", "reason": f"missing mcap: {mcap_path}"}
@@ -446,16 +448,13 @@ def verify_mcap_run(mcap_path: str | Path) -> dict[str, Any]:
     result["sealed_at"] = seal["sealed_at"]
     result["message_counts"] = seal.get("message_counts", {})
 
-    a = anchor.status(ots_path, expected_digest=bytes.fromhex(root)) \
-        if ots_path.exists() else {"status": "unanchored", "reason": "no .ots file"}
+    a = anchor.status(tsr_path, expected_digest=bytes.fromhex(root)) \
+        if tsr_path.exists() else {"status": "unanchored", "reason": "no .tsr file"}
     result["anchor"] = a
     if a["status"] == "anchored":
         return {**result, "state": "verified_anchored",
-                "reason": f"unchanged since Bitcoin block {min(a['bitcoin_blocks'])}"}
-    if a["status"] == "pending":
-        return {**result, "state": "verified_anchored", "anchor_pending": True,
-                "reason": "calendar-witnessed; Bitcoin attestation pending "
-                          "(run `upgrade` later for the block proof)"}
+                "reason": f"unchanged since trusted timestamp {a['tsa_time']} "
+                          f"(RFC 3161)"}
     return {**result, "state": "consistent_unanchored",
             "reason": "chain and seal intact, but never externally timestamped"}
 
@@ -475,7 +474,7 @@ def list_runs(root: Path | None = None) -> list[dict]:
             "run": mcap_file.stem, "robot_id": mcap_file.parent.name,
             "mcap": str(mcap_file), "size": mcap_file.stat().st_size,
             "sealed": seal_path.exists(),
-            "anchored": Path(str(base) + ".seal.ots").exists(),
+            "anchored": Path(str(base) + ".seal.tsr").exists(),
         }
         if seal_path.exists():
             try:
@@ -628,7 +627,15 @@ def _cli() -> int:
         p.error("mcap path required")
     if args.command == "upgrade":
         base = Path(args.mcap).with_suffix("")
-        print(json.dumps(anchor.upgrade(Path(str(base) + ".seal.ots")), indent=1))
+        seal_path = Path(str(base) + ".seal")
+        digest = None
+        if seal_path.exists():
+            try:
+                digest = bytes.fromhex(json.loads(seal_path.read_text())["merkle_root"])
+            except Exception:
+                pass
+        print(json.dumps(anchor.upgrade(Path(str(base) + ".seal.tsr"), digest=digest),
+                         indent=1))
         return 0
     if args.command == "clip":
         if args.start is None or args.end is None:

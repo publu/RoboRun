@@ -1,195 +1,174 @@
-"""External timestamp anchoring for run seals — OpenTimestamps.
+"""External timestamp anchoring for run seals — RFC 3161 trusted timestamps.
 
 A seal's Merkle root proves internal consistency; anchoring proves the root
-existed at a moment an *external* clock witnessed. OpenTimestamps commits the
-digest into the Bitcoin blockchain via public calendar servers: submission is
-instant (the calendar returns a pending attestation), the Bitcoin attestation
-becomes available after the calendar's next commitment tx confirms (hours).
-`upgrade` swaps pending attestations for Bitcoin ones when they are ready.
+existed at a moment an *external* clock witnessed. We submit the digest to a
+public RFC 3161 Time-Stamp Authority — the same mechanism behind code
+signing — and store the DER TimeStampResp as a detached `.tsr` file. The
+proof is a standard token any RFC 3161 tool can inspect and verify:
 
-Everything here is best-effort and optional: no `opentimestamps` package or
-no network simply yields status "unanchored". The proof is a standard
-detached `.ots` file, verifiable with any OTS client.
+    openssl ts -reply -in run.seal.tsr -text
+    openssl ts -verify -digest <merkle_root> -in run.seal.tsr -CAfile ...
+
+Anchoring is synchronous: the TSA answers in under a second, so a sealed run
+is anchored the moment it closes. Everything here is best-effort and
+optional: no `asn1crypto` package or no network simply yields status
+"unanchored", and `upgrade()` re-stamps later (the offline-robot path).
 
 Status vocabulary (consumed by recorder.verify_mcap_run and the flight deck):
-    anchored   — at least one Bitcoin attestation (block height recorded)
-    pending    — calendars accepted the digest, Bitcoin attestation not yet
-    unanchored — no .ots / library missing / submission failed
+    anchored   — a TSA granted a timestamp over this digest (time recorded)
+    unanchored — no .tsr / library missing / all TSAs unreachable
 """
 from __future__ import annotations
 
 import hashlib
+import os
 import time
+import urllib.request
 from pathlib import Path
 from typing import Any
 
-CALENDARS = (
-    "https://a.pool.opentimestamps.org",
-    "https://b.pool.opentimestamps.org",
-    "https://alice.btc.calendar.opentimestamps.org",
-    "https://bob.btc.calendar.opentimestamps.org",
+TSAS = (
+    "http://timestamp.digicert.com",
+    "http://timestamp.sectigo.com",
+    "https://freetsa.org/tsr",
 )
 
-_SUBMIT_TIMEOUT = 10.0  # per calendar; sealing must not hang a robot
+_STAMP_TIMEOUT = 10.0  # per TSA; sealing must not hang a robot
 
 
-def _ots():
-    """Import the opentimestamps modules, or None if not installed."""
+def _tsp():
+    """Import the asn1crypto modules, or None if not installed."""
     try:
-        from opentimestamps.calendar import RemoteCalendar
-        from opentimestamps.core.timestamp import Timestamp, DetachedTimestampFile
-        from opentimestamps.core.op import OpSHA256
-        from opentimestamps.core.notary import (
-            PendingAttestation, BitcoinBlockHeaderAttestation,
-        )
-        from opentimestamps.core.serialize import (
-            BytesSerializationContext, BytesDeserializationContext,
-        )
-        return {
-            "RemoteCalendar": RemoteCalendar,
-            "Timestamp": Timestamp,
-            "DetachedTimestampFile": DetachedTimestampFile,
-            "OpSHA256": OpSHA256,
-            "PendingAttestation": PendingAttestation,
-            "BitcoinBlockHeaderAttestation": BitcoinBlockHeaderAttestation,
-            "BytesSerializationContext": BytesSerializationContext,
-            "BytesDeserializationContext": BytesDeserializationContext,
-        }
+        from asn1crypto import tsp, algos, core
+        return {"tsp": tsp, "algos": algos, "core": core}
     except ImportError:
         return None
 
 
 def available() -> bool:
-    return _ots() is not None
+    return _tsp() is not None
 
 
-def stamp_digest(digest: bytes, calendars: tuple[str, ...] = CALENDARS,
-                 min_responses: int = 1) -> bytes | None:
-    """Submit a 32-byte SHA-256 digest to OTS calendars.
+def _build_request(mods, digest: bytes, nonce: int) -> bytes:
+    return mods["tsp"].TimeStampReq({
+        "version": "v1",
+        "message_imprint": mods["tsp"].MessageImprint({
+            "hash_algorithm": mods["algos"].DigestAlgorithm({"algorithm": "sha256"}),
+            "hashed_message": digest,
+        }),
+        "nonce": nonce,
+        "cert_req": True,  # embed the TSA cert chain so the .tsr verifies standalone
+    }).dump()
 
-    Returns serialized detached-timestamp (.ots) bytes with pending
-    attestations, or None when the library is missing or every calendar
-    submission failed (offline robot — anchor opportunistically later).
+
+def _parse_tst_info(mods, resp) -> Any:
+    """TSTInfo out of a TimeStampResp; raises if the response is not granted."""
+    status = resp["status"]["status"].native
+    if status not in ("granted", "granted_with_mods"):
+        raise ValueError(f"TSA refused: {status}")
+    signed = resp["time_stamp_token"]["content"]
+    return signed["encap_content_info"]["content"].parsed
+
+
+def stamp_digest(digest: bytes, tsas: tuple[str, ...] = TSAS) -> bytes | None:
+    """Submit a 32-byte SHA-256 digest to RFC 3161 TSAs; first grant wins.
+
+    Returns the DER TimeStampResp (.tsr) bytes, or None when the library is
+    missing or every TSA failed (offline robot — anchor opportunistically
+    later via `upgrade`).
     """
-    mods = _ots()
+    mods = _tsp()
     if mods is None or len(digest) != 32:
         return None
-    timestamp = mods["Timestamp"](digest)
-    responses = 0
-    for url in calendars:
+    nonce = int.from_bytes(os.urandom(8), "big")
+    body = _build_request(mods, digest, nonce)
+    for url in tsas:
         try:
-            cal = mods["RemoteCalendar"](url)
-            timestamp.merge(cal.submit(digest, timeout=_SUBMIT_TIMEOUT))
-            responses += 1
+            req = urllib.request.Request(
+                url, data=body,
+                headers={"Content-Type": "application/timestamp-query"})
+            with urllib.request.urlopen(req, timeout=_STAMP_TIMEOUT) as r:
+                raw = r.read()
+            resp = mods["tsp"].TimeStampResp.load(raw)
+            tst = _parse_tst_info(mods, resp)
+            if tst["message_imprint"]["hashed_message"].native != digest:
+                continue  # TSA answered for the wrong digest
+            got_nonce = tst["nonce"].native
+            if got_nonce is not None and got_nonce != nonce:
+                continue  # replayed response
+            return raw
         except Exception:
             continue
-    if responses < min_responses:
-        return None
-    detached = mods["DetachedTimestampFile"](mods["OpSHA256"](), timestamp)
-    ctx = mods["BytesSerializationContext"]()
-    detached.serialize(ctx)
-    return ctx.getbytes()
+    return None
 
 
-def stamp_file(path: str | Path, ots_path: str | Path | None = None) -> dict[str, Any]:
-    """Stamp a file's SHA-256; write `<path>.ots` next to it on success."""
+def stamp_file(path: str | Path, tsr_path: str | Path | None = None) -> dict[str, Any]:
+    """Stamp a file's SHA-256; write `<path>.tsr` next to it on success."""
     path = Path(path)
     digest = hashlib.sha256(path.read_bytes()).digest()
-    ots_bytes = stamp_digest(digest)
-    out = Path(ots_path) if ots_path else path.with_suffix(path.suffix + ".ots")
-    if ots_bytes is None:
+    tsr_bytes = stamp_digest(digest)
+    out = Path(tsr_path) if tsr_path else path.with_suffix(path.suffix + ".tsr")
+    if tsr_bytes is None:
         return {"status": "unanchored", "digest": digest.hex(),
-                "reason": "opentimestamps unavailable or all calendars unreachable"}
-    out.write_bytes(ots_bytes)
-    return {"status": "pending", "digest": digest.hex(), "ots": str(out),
+                "reason": "asn1crypto unavailable or all TSAs unreachable"}
+    out.write_bytes(tsr_bytes)
+    return {**status(out, expected_digest=digest), "digest": digest.hex(),
             "stamped_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
 
 
-def _walk_attestations(timestamp) -> list[tuple[Any, Any]]:
-    """All (msg, attestation) pairs reachable from a Timestamp."""
-    return list(timestamp.all_attestations())
+def status(tsr_path: str | Path, expected_digest: bytes | None = None) -> dict[str, Any]:
+    """Inspect a .tsr file: anchored / unanchored (+ details).
 
-
-def status(ots_path: str | Path, expected_digest: bytes | None = None) -> dict[str, Any]:
-    """Inspect an .ots file: anchored / pending / unanchored (+ details).
-
-    Verifies digest binding when expected_digest is given. Does not contact
-    the network; pair with `upgrade()` to pull completed Bitcoin attestations.
+    Verifies digest binding when expected_digest is given. Offline — the
+    token is self-contained; full signature-chain verification is one
+    `openssl ts -verify` away and the proof file is standard DER.
     """
-    mods = _ots()
-    path = Path(ots_path)
+    mods = _tsp()
+    path = Path(tsr_path)
     if not path.exists():
-        return {"status": "unanchored", "reason": "no .ots file"}
+        return {"status": "unanchored", "reason": "no .tsr file"}
     if mods is None:
-        return {"status": "pending", "reason": "opentimestamps not installed; cannot inspect",
-                "ots": str(path)}
-    try:
-        ctx = mods["BytesDeserializationContext"](path.read_bytes())
-        detached = mods["DetachedTimestampFile"].deserialize(ctx)
-    except Exception as exc:
-        return {"status": "unanchored", "reason": f"corrupt .ots: {exc}"}
-    if expected_digest is not None and detached.file_digest != expected_digest:
         return {"status": "unanchored",
-                "reason": "ots digest does not match the seal: proof is for something else"}
-    bitcoin, pending = [], []
-    for _msg, att in _walk_attestations(detached.timestamp):
-        if isinstance(att, mods["BitcoinBlockHeaderAttestation"]):
-            bitcoin.append(att.height)
-        elif isinstance(att, mods["PendingAttestation"]):
-            pending.append(att.uri)
-    if bitcoin:
-        return {"status": "anchored", "bitcoin_blocks": sorted(bitcoin), "ots": str(path)}
-    if pending:
-        return {"status": "pending", "calendars": pending, "ots": str(path)}
-    return {"status": "unanchored", "reason": "ots contains no attestations"}
-
-
-def upgrade(ots_path: str | Path) -> dict[str, Any]:
-    """Ask the calendars whether pending attestations are now Bitcoin-anchored.
-
-    Rewrites the .ots in place when an upgrade lands. This is the
-    "anchor opportunistically when connectivity returns" path for offline runs.
-    """
-    mods = _ots()
-    path = Path(ots_path)
-    if mods is None or not path.exists():
-        return status(ots_path)
+                "reason": "asn1crypto not installed; cannot inspect", "tsr": str(path)}
     try:
-        ctx = mods["BytesDeserializationContext"](path.read_bytes())
-        detached = mods["DetachedTimestampFile"].deserialize(ctx)
+        resp = mods["tsp"].TimeStampResp.load(path.read_bytes())
+        tst = _parse_tst_info(mods, resp)
     except Exception as exc:
-        return {"status": "unanchored", "reason": f"corrupt .ots: {exc}"}
-
-    upgraded = False
-    for msg, att in list(detached.timestamp.all_attestations()):
-        if not isinstance(att, mods["PendingAttestation"]):
-            continue
+        return {"status": "unanchored", "reason": f"corrupt .tsr: {exc}"}
+    if expected_digest is not None and \
+            tst["message_imprint"]["hashed_message"].native != expected_digest:
+        return {"status": "unanchored",
+                "reason": "tsr digest does not match the seal: proof is for something else"}
+    gen_time = tst["gen_time"].native
+    out: dict[str, Any] = {
+        "status": "anchored",
+        "tsa_time": gen_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "serial": str(tst["serial_number"].native),
+        "policy": tst["policy"].native,
+        "tsr": str(path),
+    }
+    tsa = tst["tsa"]
+    if tsa.native is not None:
         try:
-            cal = mods["RemoteCalendar"](att.uri)
-            update = cal.get_timestamp(msg, timeout=_SUBMIT_TIMEOUT)
+            out["tsa"] = tsa.chosen.chosen.native["common_name"]
         except Exception:
-            continue
-        try:
-            _merge_into(detached.timestamp, msg, update)
-            upgraded = True
-        except Exception:
-            continue
-    if upgraded:
-        out_ctx = mods["BytesSerializationContext"]()
-        detached.serialize(out_ctx)
-        path.write_bytes(out_ctx.getbytes())
-    return status(ots_path)
+            pass
+    return out
 
 
-def _merge_into(timestamp, msg: bytes, update) -> None:
-    """Merge `update` into the sub-timestamp of `timestamp` whose message is msg."""
-    if timestamp.msg == msg:
-        timestamp.merge(update)
-        return
-    for op, stamp in timestamp.ops.items():
-        try:
-            _merge_into(stamp, msg, update)
-            return
-        except ValueError:
-            continue
-    raise ValueError("message not found in timestamp tree")
+def upgrade(tsr_path: str | Path, digest: bytes | None = None) -> dict[str, Any]:
+    """Anchor a seal that closed offline: stamp now if no valid .tsr exists.
+
+    RFC 3161 is synchronous, so there is nothing to poll — "upgrade" means
+    re-attempting the stamp with the seal's digest when connectivity returns.
+    """
+    path = Path(tsr_path)
+    current = status(path, expected_digest=digest)
+    if current["status"] == "anchored" or digest is None:
+        return current
+    tsr_bytes = stamp_digest(digest)
+    if tsr_bytes is None:
+        return {"status": "unanchored",
+                "reason": "asn1crypto unavailable or all TSAs unreachable"}
+    path.write_bytes(tsr_bytes)
+    return status(path, expected_digest=digest)

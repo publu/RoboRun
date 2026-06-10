@@ -1,7 +1,7 @@
 """R2/S3 object store sync — the cold tier and the fleet's shared blackboard.
 
 One durable store, used three ways (spec §3):
-    runs/<robot_id>/<run_id>.mcap|.seal|.seal.ots|.chain.jsonl   cold archive
+    runs/<robot_id>/<run_id>.mcap|.seal|.seal.tsr|.chain.jsonl   cold archive
     index/<robot_id>/<date>.parquet                              shared fleet index
     beacons/<robot_id>/<ts>.json                                 live-ish signed beacons
 
@@ -107,12 +107,12 @@ class R2Store:
 
     def upload_run(self, mcap_path: str | Path, robot_id: str,
                    background: bool = True) -> dict[str, Any]:
-        """Upload <run>.mcap + .seal + .seal.ots + .chain.jsonl under runs/<robot>/."""
+        """Upload <run>.mcap + .seal + .seal.tsr + .chain.jsonl under runs/<robot>/."""
         mcap_path = Path(mcap_path)
         base = str(mcap_path.with_suffix(""))
         artifacts = [p for p in (mcap_path,
                                  Path(base + ".seal"),
-                                 Path(base + ".seal.ots"),
+                                 Path(base + ".seal.tsr"),
                                  Path(base + ".chain.jsonl")) if p.exists()]
 
         def _do() -> None:

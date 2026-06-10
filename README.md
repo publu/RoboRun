@@ -81,15 +81,15 @@ python -m roborun.integrity verify ~/.roborun/runs/run_20260609_153000
 
 One changed byte, caught instantly, and the exact event named. Hash chain + SHA-256 Merkle tree + Ed25519 signature: the same primitives as Git and Certificate Transparency. The merkle root is 64 characters. Share it anywhere (an email, a ticket, a printout) and anyone holding it can later prove the run wasn't quietly edited and resealed. No cloud, works offline, MIT licensed.
 
-Sealed runs chain to each other: each new run's manifest records the previous run's merkle root, like blocks. When your robot does something weird at 3am, you **replay the run in the UI** and you can prove nobody edited it.
+Sealed runs chain to each other: each new run's manifest records the previous run's merkle root. When your robot does something weird at 3am, you **replay the run in the UI** and you can prove nobody edited it.
 
 ### MCAP recordings — the black box, now with the evidence inside
 
-Press `M` in the flight deck (or `POST /api/run/record/start`) and everything — camera keyframes, YOLO detections, CLIP embeddings, agent events, pose — records into **one MCAP file**, the same container Foxglove Studio replays natively. The hash chain moves to chunk granularity in a sidecar, the seal is O(1) (a Merkle root over chunk hashes, signed ed25519), and on seal the root is **anchored via OpenTimestamps** into Bitcoin, so the proof references an external clock, not our word:
+Press `M` in the flight deck (or `POST /api/run/record/start`) and everything — camera keyframes, YOLO detections, CLIP embeddings, agent events, pose — records into **one MCAP file**, the same container Foxglove Studio replays natively. The hash chain moves to chunk granularity in a sidecar, the seal is O(1) (a Merkle root over chunk hashes, signed ed25519), and on seal the root is **anchored to an RFC 3161 trusted timestamp authority** — the same mechanism behind code signing — so the proof references an external clock, not our word:
 
 ```bash
 python -m roborun.recorder verify ~/.roborun/runs/local/run_20260610_120000.mcap
-# VERIFIED + ANCHORED: unchanged since Bitcoin block 901442
+# VERIFIED + ANCHORED: unchanged since trusted timestamp 2026-06-10T12:01:07Z (RFC 3161)
 python -m roborun.recorder clip <run.mcap> <start_ts> <end_ts>
 # cuts a window + a signed proof binding those exact frames to the sealed run
 ```
@@ -112,7 +112,7 @@ roslaunch rosbridge_server rosbridge_websocket.launch          # ROS 1
 
 Point the UI at the robot's IP. **No ROS install on your machine.** The same `behaviors/*.py` files now drive real hardware: Unitree Go2/G1, TurtleBot, arms, drones, NVIDIA Isaac Sim, Gazebo. `robot.move()` goes to the sim if it's running, otherwise to the connected robot, always through the same safety clamps.
 
-Optional extras: `pip install ros-agent[vision]` (YOLO + CLIP), `[sim]` (MuJoCo), `[ros]` (direct DDS), `[crypto]` (Ed25519 signing), `[anchor]` (OpenTimestamps), `[fleet]` (R2 + DuckDB cross-robot), `[all]`.
+Optional extras: `pip install ros-agent[vision]` (YOLO + CLIP), `[sim]` (MuJoCo), `[ros]` (direct DDS), `[crypto]` (Ed25519 signing), `[anchor]` (RFC 3161 timestamping), `[fleet]` (R2 + DuckDB cross-robot), `[all]`.
 
 ## Configuration
 
