@@ -2,9 +2,9 @@
   <img src="assets/demo-thumb.jpg" alt="roborun" width="100%">
 </p>
 
-<h1 align="center">RoboRun: ROS 1/2 Robot Control with MCP, AI Agents, YOLO Vision, and a Tamper-Evident Black Box</h1>
+<h1 align="center">RoboRun: Write a Robot Behavior Once, Run It on Any ROS 1/2 Robot</h1>
 
-<p align="center"><b>Quickly run and manage ROS 1/2 robots. Built-in MCP, vision, sim, and hot-reload Python behaviors.<br>Merkle proofs make every run tamper-evident.</b></p>
+<p align="center"><b>The base layer for coding robots: <code>see / move / ask</code> primitives, hot-reload Python behaviors,<br>the same file from webcam + MuJoCo to real hardware. MCP-native for AI agents, every run flight-recorded.</b></p>
 
 <p align="center">
   <a href="https://pypi.org/project/ros-agent/"><img src="https://img.shields.io/pypi/v/ros-agent?style=flat-square&color=00d47e&label=pip%20install%20ros-agent" alt="PyPI"></a>
