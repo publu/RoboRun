@@ -57,6 +57,53 @@ colliders for locomotion types: the game is policy and prompt
 engineering, not contact fidelity — except the hand ladder, which exists
 *because* of contact fidelity.
 
+## The kit, and the Portal framing
+
+Every level hands the player the **full default stack** — the same one a
+real RoboRun robot has. That's the portal gun: the tools are given, the
+puzzle is using them.
+
+- `robot.see()` — detections (ground truth in sim, YOLO on hardware)
+- CLIP matching — "find the thing that looks like X"
+- `robot.remember/recall` + the tagged timeline — observations accrue as
+  the run happens, queryable by the policy
+- `robot.ask()` — budgeted; spending it is a scoring decision
+
+Framing is training chambers, not "levels": a short brief tells you what
+to train your robot to do, you write the policy, the chamber grades it.
+The voice can be dry about it the way Portal is.
+
+## Level genres (what a `win()` can test)
+
+1. **Locomotion / dexterity** — get there, push it, grasp it. Tests L1.
+2. **Coverage** — patrol every room, no collisions. `win()` checks the
+   *recorded trajectory* covered all zones — the run itself is the
+   answer sheet.
+3. **Recon** — explore, then answer a question about the environment:
+   "how many red doors?", "was a window open?". The brief doesn't say
+   what the question will be beyond a theme, so the policy must
+   *observe and log generally* (the timeline is the tool being taught).
+   `win()` checks the answer against scene ground truth **and** that the
+   sealed run contains a sighting of each counted object — you can't
+   score by guessing, the recording must hold the evidence.
+4. **Vigilance** — something changes mid-run (a door opens, an object
+   moves); flag it within N seconds. Teaches the heartbeat/supervisor
+   pattern.
+
+Genres 2–4 are where this stops being a physics game and starts training
+exactly the stack the product ships: perception → memory → timeline →
+report. The seal is load-bearing in all of them, not decoration.
+
+## The artifact: train in sim, deploy if supported
+
+What a player walks away with is not a score — it's a folder of
+Arduino-shaped policies. Each is immediately deployable to hardware
+**gated by the capability matrix**: a dog-chamber policy deploys to a
+Go2 (`roborun connect`, same `robot.move/see`), a drone policy needs
+flight, a hand policy needs an arm. The deploy screen says exactly which
+of your connected robots can run which of your policies — same
+`capabilities()` pattern the transport already uses, no new mechanism.
+
 ## Architecture: the sim is a transport backend
 
 ```
