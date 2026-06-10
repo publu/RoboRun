@@ -2,119 +2,178 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>RoboRun Arena — Chamber 01</title>
+<title>RoboRun Arena</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   html, body { margin: 0; height: 100%; background: #0b0e11; overflow: hidden;
                font: 13px/1.4 ui-monospace, "SF Mono", Menlo, monospace; color: #d7e0e8; }
-  .panel { background: rgba(11,14,17,.85); border: 1px solid #1f2a33; border-radius: 8px; }
-  #hud { position: fixed; top: 14px; left: 14px; z-index: 10; }
-  #hud .brief { padding: 10px 14px; max-width: 360px; }
-  #hud .brief b { color: #00d47e; letter-spacing: .08em; }
+  canvas.webgl { position: fixed; inset: 0; }
+
+  /* ── panel system: drag by header, resize by corner, toggle from toolbar ── */
+  .panel { position: fixed; background: rgba(11,14,17,.88); border: 1px solid #1f2a33;
+           border-radius: 8px; min-width: 180px; min-height: 70px;
+           resize: both; overflow: hidden; display: flex; flex-direction: column; }
+  .panel.hidden { display: none; }
+  .p-head { display: flex; align-items: center; gap: 8px; padding: 5px 10px;
+            background: rgba(16,22,28,.9); border-bottom: 1px solid #1f2a33;
+            cursor: grab; user-select: none; font-size: 10px; letter-spacing: .14em;
+            color: #6b7b88; flex: none; }
+  .p-head b { color: #00d47e; }
+  .p-head .x { margin-left: auto; cursor: pointer; color: #4a5a66; }
+  .p-head .x:hover { color: #d84a4a; }
+  .p-body { flex: 1; padding: 8px 10px; overflow: auto; min-height: 0; }
+
+  /* view panels render the 3D scene through a transparent body */
+  .view-panel .p-body { padding: 0; background: transparent; }
+  .view-panel { background: transparent; }
+  .viewport { width: 100%; height: 100%; }
+  .camSel, #levelSel { background: #10161c; color: #d7e0e8; border: 1px solid #2a3a46;
+                       border-radius: 4px; font: inherit; font-size: 11px; padding: 1px 4px; }
+
+  /* toolbar */
+  #toolbar { position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+             z-index: 50; display: flex; gap: 6px; background: rgba(11,14,17,.88);
+             border: 1px solid #1f2a33; border-radius: 8px; padding: 5px 8px; }
+  #toolbar button { background: #10161c; color: #6b7b88; border: 1px solid #2a3a46;
+                    border-radius: 4px; font: inherit; font-size: 11px;
+                    padding: 2px 9px; cursor: pointer; }
+  #toolbar button.on { color: #00d47e; border-color: #1f4434; }
+  #toolbar button.accent { color: #e0c050; border-color: #4a3f1f; }
+  #toolbar .sep { width: 1px; background: #1f2a33; margin: 0 2px; }
+
+  /* mission */
   #rooms { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
   .room-chip { border: 1px solid #2a3a46; border-radius: 4px; padding: 2px 8px; color: #6b7b88; }
   .room-chip.seen { border-color: #00d47e; color: #00d47e; }
-  #levelSel { background: #10161c; color: #d7e0e8; border: 1px solid #2a3a46;
-              border-radius: 4px; padding: 3px 6px; font: inherit; width: 100%; }
-  #status { position: fixed; top: 14px; right: 14px; z-index: 10; text-align: right;
-            padding: 8px 12px; }
-  #status .link.on { color: #00d47e; }
-  #status .link.off { color: #e0a030; }
-  #status .rec { color: #d84a4a; }
-  #status .tele { color: #6b7b88; }
-  #policy { margin-top: 10px; width: 460px; padding: 10px 12px; }
-  #policyHead b { color: #00d47e; letter-spacing: .08em; }
-  #policyHead .hint { color: #6b7b88; }
-  #policyHead button { background: #10161c; color: #00d47e; border: 1px solid #1f4434;
-                       border-radius: 4px; font: inherit; padding: 2px 10px; cursor: pointer; }
-  #policyHead button:hover { background: #14241c; }
-  #code { display: block; width: 100%; box-sizing: border-box; height: 300px; margin-top: 8px;
-          background: #0a0f13; color: #d7e0e8; border: 1px solid #1f2a33; border-radius: 6px;
-          font: 12px/1.5 ui-monospace, Menlo, monospace; padding: 10px; resize: vertical;
-          tab-size: 4; white-space: pre; }
-  #code:focus { outline: 1px solid #1f4434; }
-  #policyStatus { margin-top: 6px; color: #6b7b88; min-height: 16px; }
+
+  /* policy editor */
+  #p-policy .p-body { display: flex; flex-direction: column; padding: 0; }
+  #editorHost { flex: 1; min-height: 0; overflow: auto; display: none; }
+  #editorHost .cm-editor { height: 100%; font-size: 12px; }
+  #code { flex: 1; width: 100%; box-sizing: border-box; background: #0a0f13;
+          color: #d7e0e8; border: none; font: 12px/1.5 ui-monospace, Menlo, monospace;
+          padding: 10px; resize: none; tab-size: 4; white-space: pre; }
+  #code:focus { outline: none; }
+  #policyBar { display: flex; gap: 8px; align-items: center; padding: 6px 10px;
+               border-top: 1px solid #1f2a33; flex: none; }
+  #policyBar button { background: #10161c; color: #00d47e; border: 1px solid #1f4434;
+                      border-radius: 4px; font: inherit; padding: 2px 12px; cursor: pointer; }
+  #policyBar button:hover { background: #14241c; }
+  #policyStatus { color: #6b7b88; min-height: 16px; flex: 1; text-align: right;
+                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #policyStatus.err { color: #d84a4a; }
   #policyStatus.ok { color: #00d47e; }
-  #btnConnect { background: #10161c; color: #e0c050; border: 1px solid #4a3f1f;
-                border-radius: 4px; font: inherit; padding: 2px 10px; cursor: pointer; }
-  #connect { position: fixed; inset: 0; display: none; place-items: center; z-index: 30;
-             background: rgba(5,8,10,.8); }
-  #connect.show { display: grid; }
-  #connect .card { border: 1px solid #2a3a46; border-radius: 10px; padding: 24px 28px;
-                   background: #0b0e11; max-width: 680px; max-height: 86vh; overflow: auto; }
+
+  /* status / telemetry */
+  #p-status .tele { color: #6b7b88; }
+  #p-status .link.on { color: #00d47e; }
+  #p-status .link.off { color: #e0a030; }
+  #p-status .rec { color: #d84a4a; }
+
+  #map { display: block; image-rendering: pixelated; width: 100%; border-radius: 4px; }
+
+  /* overlays */
+  #win, #connect { position: fixed; inset: 0; display: none; place-items: center; z-index: 60;
+                   background: rgba(5,8,10,.78); }
+  #win.show, #connect.show { display: grid; }
+  .card { border: 2px solid #00d47e; border-radius: 10px; padding: 28px 40px;
+          background: #0b0e11; text-align: center; max-width: 640px; max-height: 86vh; overflow: auto; }
+  .card h1 { color: #00d47e; margin: 0 0 6px; letter-spacing: .12em; font-size: 18px; }
+  .card.practice { border-color: #e0a030; }
+  .card.practice h1 { color: #e0a030; }
+  .card .stats { color: #9fb0bd; margin-bottom: 16px; }
+  .card .hash { font-size: 14px; color: #00d47e; background: #0f1a15; border: 1px solid #1f4434;
+                border-radius: 6px; padding: 10px 14px; letter-spacing: .03em;
+                user-select: all; cursor: copy; word-break: break-all; }
+  .card .hash .k { color: #5a7a6a; margin-right: 10px; }
+  .card .after { margin-top: 12px; }
+  .card .after a, #connect a { color: #00d47e; }
+  .card .sealing { color: #e0a030; }
+  #connect .card { border-color: #2a3a46; text-align: left; }
   #connect h2 { color: #00d47e; margin: 0 0 4px; letter-spacing: .08em; font-size: 14px; }
-  #connect h3 { color: #9fb0bd; margin: 16px 0 4px; font-size: 12px; letter-spacing: .08em; }
+  #connect h3 { color: #9fb0bd; margin: 14px 0 4px; font-size: 12px; letter-spacing: .08em; }
   #connect pre { background: #0a0f13; border: 1px solid #1f2a33; border-radius: 6px;
-                 padding: 10px 12px; overflow-x: auto; cursor: copy; margin: 4px 0;
-                 color: #d7e0e8; }
+                 padding: 10px 12px; overflow-x: auto; cursor: copy; margin: 4px 0; }
   #connect pre:hover { border-color: #1f4434; }
   #connect .note { color: #6b7b88; }
   #connect .close { float: right; background: none; border: none; color: #6b7b88;
                     font: inherit; font-size: 16px; cursor: pointer; }
-  /* robot-built map */
-  #mapwrap { position: fixed; top: 110px; right: 14px; z-index: 10; padding: 8px; }
-  #mapwrap .lbl, .viewlbl { font-size: 10px; letter-spacing: .14em; color: #6b7b88; }
-  #map { display: block; margin-top: 4px; image-rendering: pixelated;
-         width: 192px; height: 192px; border-radius: 4px; }
-  /* inset 3D views (rendered via scissor) get labels positioned over them */
-  #povlbl  { position: fixed; z-index: 10; }
-  #toplbl  { position: fixed; z-index: 10; }
-  #win { position: fixed; inset: 0; display: none; place-items: center; z-index: 20;
-         background: rgba(5,8,10,.78); }
-  #win.show { display: grid; }
-  #win .card { border: 2px solid #00d47e; border-radius: 10px; padding: 30px 44px;
-               background: #0b0e11; text-align: center; max-width: 560px; }
-  #win .card h1 { color: #00d47e; margin: 0 0 6px; letter-spacing: .12em; }
-  #win .card.practice { border-color: #e0a030; }
-  #win .card.practice h1 { color: #e0a030; }
-  #win .stats { color: #9fb0bd; margin-bottom: 16px; }
-  #win .hash { font-size: 15px; color: #00d47e; background: #0f1a15;
-               border: 1px solid #1f4434; border-radius: 6px; padding: 10px 14px;
-               letter-spacing: .04em; user-select: all; cursor: copy; }
-  #win .hash .k { color: #5a7a6a; margin-right: 10px; }
-  #win .after { margin-top: 12px; }
-  #win .after a { color: #00d47e; }
-  #win .sealing { color: #e0a030; }
-  #keys { position: fixed; bottom: 14px; left: 14px; color: #4a5a66; z-index: 10; }
+  #keys { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
+          color: #4a5a66; z-index: 5; white-space: nowrap; }
+  #keys a { color: #3a8a6a; }
 </style>
 </head>
 <body>
-<div id="hud">
-  <div class="brief panel">
-    <select id="levelSel"></select>
-    <div style="margin-top:6px"><b id="briefTitle"></b></div>
+
+<div id="toolbar">
+  <button data-panel="p-brief">MISSION</button>
+  <button data-panel="p-policy">POLICY</button>
+  <button data-panel="p-status">STATUS</button>
+  <button data-panel="p-map">MAP</button>
+  <button data-panel="p-view1">VIEW 1</button>
+  <button data-panel="p-view2">VIEW 2</button>
+  <div class="sep"></div>
+  <button id="btnConnect" class="accent">⚡ CONNECT AGENT</button>
+  <button id="btnReset" title="restore default layout">reset</button>
+</div>
+
+<div class="panel" id="p-brief">
+  <div class="p-head"><b>MISSION</b><select id="levelSel"></select><span class="x">✕</span></div>
+  <div class="p-body">
+    <div><b id="briefTitle" style="color:#00d47e"></b></div>
     <span id="briefText"></span>
     <div id="rooms"></div>
   </div>
-  <div class="panel" id="policy">
-    <div id="policyHead">
-      <b>YOUR POLICY</b> <span class="hint">— this is how you play</span>
-      <button id="btnConnect" title="connect Claude Code / Codex / Claude Desktop"
-              style="float:right;margin-left:8px">⚡ CONNECT AGENT</button>
-      <span style="float:right">
-        <button id="btnRun" title="save + run (hot reload)">▶ RUN</button>
-        <button id="btnStop" title="disable the policy">■ STOP</button>
-      </span>
-    </div>
+</div>
+
+<div class="panel" id="p-policy">
+  <div class="p-head"><b>POLICY</b><span>— the way you play</span><span class="x">✕</span></div>
+  <div class="p-body">
+    <div id="editorHost"></div>
     <textarea id="code" spellcheck="false"></textarea>
-    <div id="policyStatus">demo policy loaded — press RUN, or rewrite it (or let your agent: MCP <code>write_behavior</code>)</div>
+    <div id="policyBar">
+      <button id="btnRun" title="save + run (⌘⏎ / Ctrl⏎)">▶ RUN</button>
+      <button id="btnStop" title="disable the policy">■ STOP</button>
+      <span id="policyStatus">loading editor…</span>
+    </div>
   </div>
 </div>
-<div id="status" class="panel">
-  <div>⏱ <span id="clock">0.0s</span> <span class="rec" id="rec"></span></div>
-  <div class="link off" id="link">behaviors: searching…</div>
-  <div id="cmdline">cmd —</div>
-  <div class="tele" id="teleRoom">room —</div>
-  <div class="tele" id="teleOdo">odometer 0.0 m</div>
-  <div class="tele" id="telePose">x 0.0 · z 0.0</div>
+
+<div class="panel" id="p-status">
+  <div class="p-head"><b>STATUS</b><span class="x">✕</span></div>
+  <div class="p-body">
+    <div>⏱ <span id="clock">0.0s</span> <span class="rec" id="rec"></span></div>
+    <div class="link off" id="link">behaviors: searching…</div>
+    <div id="cmdline">cmd —</div>
+    <div class="tele" id="teleRoom">room —</div>
+    <div class="tele" id="teleOdo">odometer 0.0 m</div>
+    <div class="tele" id="telePose">x 0.0 · z 0.0</div>
+  </div>
 </div>
-<div id="mapwrap" class="panel">
-  <span class="lbl">ROBOT MAP — built from lidar</span>
-  <canvas id="map" width="96" height="96"></canvas>
+
+<div class="panel" id="p-map">
+  <div class="p-head"><b>ROBOT MAP</b><span>— lidar fog of war</span><span class="x">✕</span></div>
+  <div class="p-body"><canvas id="map" width="96" height="96"></canvas></div>
 </div>
-<span class="viewlbl" id="povlbl">ROBOT CAM — all it can see</span>
-<span class="viewlbl" id="toplbl">TOP</span>
+
+<div class="panel view-panel" id="p-view1">
+  <div class="p-head"><b>VIEW</b>
+    <select class="camSel"><option value="pov" selected>robot cam</option>
+      <option value="top">top</option><option value="chase">chase</option>
+      <option value="orbit">orbit</option></select>
+    <span class="x">✕</span></div>
+  <div class="p-body"><div class="viewport"></div></div>
+</div>
+
+<div class="panel view-panel" id="p-view2">
+  <div class="p-head"><b>VIEW</b>
+    <select class="camSel"><option value="pov">robot cam</option>
+      <option value="top" selected>top</option><option value="chase">chase</option>
+      <option value="orbit">orbit</option></select>
+    <span class="x">✕</span></div>
+  <div class="p-body"><div class="viewport"></div></div>
+</div>
+
 <div id="connect"><div class="card">
   <button class="close" id="connectClose">✕</button>
   <h2>CONNECT YOUR AGENT</h2>
@@ -135,13 +194,15 @@ player_policy and poll arena_status until won. No teleop.</pre>
   standalone <b>roborun-mcp</b> stdio command is for driving robots without the deck and
   can't see this arena.</span>
 </div></div>
+
 <div id="win"><div class="card">
   <h1 id="winTitle">CHAMBER COMPLETE</h1>
   <div class="stats" id="winDetail"></div>
   <div class="hash" id="winHash"><span class="sealing">sealing run…</span></div>
   <div class="after">check your <a href="/" target="_blank">timeline →</a></div>
 </div></div>
-<div id="keys">the editor (left) is the game · L lidar cloud · C camera · N level · WASD = debug (practice) · deck at <a href="/" style="color:#3a8a6a">/</a></div>
+
+<div id="keys">drag headers · resize corners · ⌘⏎ run · L lidar cloud · C main camera · N level · WASD debug (practice) · <a href="/">deck</a></div>
 
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }

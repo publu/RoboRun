@@ -112,6 +112,7 @@ renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.autoClear = false;
+renderer.domElement.className = "webgl";
 document.body.appendChild(renderer.domElement);
 
 scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x223038, 0.85));
@@ -130,6 +131,9 @@ topCam.position.set(0, 30, 0);
 topCam.lookAt(0, 0, 0);
 let camMode = 0;
 const CAM_MODES = ["chase", "orbit", "top"];
+const chaseCam = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 100);
+const orbitCam = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 100);
+const CAM_POOL = { pov: povCam, top: topCam, chase: chaseCam, orbit: orbitCam };
 addEventListener("resize", () => {
   renderer.setSize(innerWidth, innerHeight);
   specCam.aspect = innerWidth / innerHeight;
@@ -478,7 +482,7 @@ function loadLevel(i) {
   CELL = (LV.bounds * 2) / GRID;
   cloudReset();
   odo = 0;
-  codeEl.value = LV.demo || "";
+  setCode(LV.demo || "");
   policyStatus("demo policy loaded — press RUN, or rewrite it", "");
   document.getElementById("win").classList.remove("show");
   roomsEl.innerHTML = "";
@@ -605,8 +609,41 @@ function postEvent(type, title, detail) {
 const codeEl = document.getElementById("code");
 const statusEl = document.getElementById("policyStatus");
 function policyStatus(msg, cls) { statusEl.textContent = msg; statusEl.className = cls; }
+
+let cm = null;   // CodeMirror view when the CDN loads; textarea otherwise
+function getCode() { return cm ? cm.state.doc.toString() : codeEl.value; }
+function setCode(text) {
+  if (cm) cm.dispatch({ changes: { from: 0, to: cm.state.doc.length, insert: text } });
+  else codeEl.value = text;
+}
+(async () => {
+  try {
+    const [{ basicSetup, EditorView }, { python }, { oneDark }] = await Promise.all([
+      import("https://esm.sh/codemirror@6.0.1"),
+      import("https://esm.sh/@codemirror/lang-python@6.1.6"),
+      import("https://esm.sh/@codemirror/theme-one-dark@6.1.2"),
+    ]);
+    cm = new EditorView({
+      doc: codeEl.value,
+      extensions: [basicSetup, python(), oneDark],
+      parent: document.getElementById("editorHost"),
+    });
+    codeEl.style.display = "none";
+    document.getElementById("editorHost").style.display = "block";
+    policyStatus("editor ready — ⌘⏎ runs", "");
+  } catch {
+    policyStatus("plain editor (CDN offline) — ⌘⏎ runs", "");
+  }
+})();
+document.getElementById("p-policy").addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+    e.preventDefault();
+    document.getElementById("btnRun").click();
+  }
+  e.stopPropagation();          // typing must not drive the dog
+});
+document.getElementById("p-policy").addEventListener("keyup", (e) => e.stopPropagation());
 codeEl.addEventListener("keydown", (e) => {
-  e.stopPropagation();                       // typing must not drive the dog
   if (e.key === "Tab") {
     e.preventDefault();
     const { selectionStart: a, selectionEnd: b, value: v } = codeEl;
@@ -614,11 +651,10 @@ codeEl.addEventListener("keydown", (e) => {
     codeEl.selectionStart = codeEl.selectionEnd = a + 4;
   }
 });
-codeEl.addEventListener("keyup", (e) => e.stopPropagation());
 document.getElementById("btnRun").addEventListener("click", async () => {
   policyStatus("saving…", "");
   try {
-    const w = await api("/api/behaviors/write", { name: "player_policy", source: codeEl.value });
+    const w = await api("/api/behaviors/write", { name: "player_policy", source: getCode() });
     if (!w.ok) { policyStatus(w.error, "err"); return; }
     await api("/api/behaviors/enable", { name: "player_policy" });
     policyStatus("running — hot reload applies edits on every RUN", "ok");
@@ -664,7 +700,8 @@ function updateTelemetry() {
 /* ---------- input ---------- */
 const keys = {};
 addEventListener("keydown", (e) => {
-  if (e.target.tagName === "SELECT") return;
+  if (e.target.closest?.("#p-policy") ||
+      ["SELECT", "TEXTAREA", "INPUT"].includes(e.target.tagName)) return;
   keys[e.key.toLowerCase()] = true;
   if (e.key.toLowerCase() === "c") camMode = (camMode + 1) % CAM_MODES.length;
   if (e.key.toLowerCase() === "n") loadLevel(levelIndex + 1);
@@ -679,15 +716,83 @@ function keyboardCmd() {
   return null;
 }
 
-/* ---------- multi-view render ---------- */
-function placeLabels(povRect, topRect) {
-  const pl = document.getElementById("povlbl");
-  pl.style.left = `${povRect.x + 6}px`;
-  pl.style.top = `${innerHeight - povRect.y - povRect.h + 4}px`;
-  const tl = document.getElementById("toplbl");
-  tl.style.left = `${topRect.x + 6}px`;
-  tl.style.top = `${innerHeight - topRect.y - topRect.h + 4}px`;
+/* ---------- panel system: drag, resize, toggle, persist ---------- */
+const LAYOUT_KEY = "arena-layout-v2";
+const PANEL_IDS = ["p-brief", "p-policy", "p-status", "p-map", "p-view1", "p-view2"];
+let zTop = 100;
+
+function defaultLayout() {
+  const w = innerWidth, h = innerHeight;
+  return {
+    "p-brief":  { l: 14, t: 52, w: 360, h: 170, hidden: false },
+    "p-policy": { l: 14, t: 232, w: 470, h: Math.min(430, h - 250), hidden: false },
+    "p-status": { l: w - 230, t: 52, w: 216, h: 150, hidden: false },
+    "p-map":    { l: w - 230, t: 212, w: 216, h: 240, hidden: false },
+    "p-view1":  { l: w - 340, t: h - 230, w: 326, h: 216, hidden: false },
+    "p-view2":  { l: w - 680, t: h - 230, w: 326, h: 216, hidden: false },
+  };
 }
+function loadLayout() {
+  try { return { ...defaultLayout(), ...JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}") }; }
+  catch { return defaultLayout(); }
+}
+let layout = loadLayout();
+function saveLayout() { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); }
+function applyLayout() {
+  for (const id of PANEL_IDS) {
+    const el = document.getElementById(id), st = layout[id];
+    if (!el || !st) continue;
+    el.style.left = `${Math.max(0, Math.min(st.l, innerWidth - 60))}px`;
+    el.style.top = `${Math.max(0, Math.min(st.t, innerHeight - 40))}px`;
+    el.style.width = `${st.w}px`;
+    el.style.height = `${st.h}px`;
+    el.classList.toggle("hidden", !!st.hidden);
+    document.querySelector(`#toolbar [data-panel="${id}"]`)
+      ?.classList.toggle("on", !st.hidden);
+  }
+}
+function initPanels() {
+  for (const id of PANEL_IDS) {
+    const el = document.getElementById(id);
+    const head = el.querySelector(".p-head");
+    el.addEventListener("pointerdown", () => { el.style.zIndex = ++zTop; });
+    head.addEventListener("pointerdown", (e) => {
+      if (e.target.tagName === "SELECT" || e.target.classList.contains("x")) return;
+      e.preventDefault();
+      const sx = e.clientX - el.offsetLeft, sy = e.clientY - el.offsetTop;
+      function move(ev) {
+        layout[id].l = ev.clientX - sx; layout[id].t = ev.clientY - sy;
+        el.style.left = `${layout[id].l}px`; el.style.top = `${layout[id].t}px`;
+      }
+      function up() {
+        removeEventListener("pointermove", move); removeEventListener("pointerup", up);
+        saveLayout();
+      }
+      addEventListener("pointermove", move); addEventListener("pointerup", up);
+    });
+    head.querySelector(".x").addEventListener("click", () => {
+      layout[id].hidden = true; saveLayout(); applyLayout();
+    });
+    new ResizeObserver(() => {
+      if (el.classList.contains("hidden")) return;
+      layout[id].w = el.offsetWidth; layout[id].h = el.offsetHeight; saveLayout();
+    }).observe(el);
+  }
+  for (const btn of document.querySelectorAll("#toolbar [data-panel]")) {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.panel;
+      layout[id].hidden = !layout[id].hidden;
+      saveLayout(); applyLayout();
+    });
+  }
+  document.getElementById("btnReset").addEventListener("click", () => {
+    layout = defaultLayout(); saveLayout(); applyLayout();
+  });
+  applyLayout();
+}
+initPanels();
+
+/* ---------- multi-view render: viewports are DOM rects ---------- */
 function renderViews() {
   const w = innerWidth, h = innerHeight;
   renderer.setScissorTest(true);
@@ -695,21 +800,22 @@ function renderViews() {
   renderer.setScissor(0, 0, w, h);
   renderer.clear();
   renderer.render(scene, camMode === 2 ? topCam : specCam);
-  const pw = Math.round(Math.min(w * 0.24, 360)), ph = Math.round(pw * 9 / 16);
-  const povRect = { x: w - pw - 14, y: 14, w: pw, h: ph };
-  renderer.setViewport(povRect.x, povRect.y, pw, ph);
-  renderer.setScissor(povRect.x, povRect.y, pw, ph);
-  renderer.clear(true, true, false);
-  renderer.render(scene, povCam);
-  const topRect = { x: w - pw * 2 - 24, y: 14, w: pw, h: ph };
-  if (camMode !== 2) {
-    renderer.setViewport(topRect.x, topRect.y, pw, ph);
-    renderer.setScissor(topRect.x, topRect.y, pw, ph);
+  for (const panel of document.querySelectorAll(".view-panel")) {
+    if (panel.classList.contains("hidden")) continue;
+    const vp = panel.querySelector(".viewport").getBoundingClientRect();
+    if (vp.width < 40 || vp.height < 40) continue;
+    const cam = CAM_POOL[panel.querySelector(".camSel").value] || povCam;
+    if (cam.isPerspectiveCamera) {
+      cam.aspect = vp.width / vp.height;
+      cam.updateProjectionMatrix();
+    }
+    const x = Math.round(vp.left), y = Math.round(h - vp.bottom);
+    renderer.setViewport(x, y, Math.round(vp.width), Math.round(vp.height));
+    renderer.setScissor(x, y, Math.round(vp.width), Math.round(vp.height));
     renderer.clear(true, true, false);
-    renderer.render(scene, topCam);
+    renderer.render(scene, cam);
   }
   renderer.setScissorTest(false);
-  placeLabels(povRect, camMode === 2 ? povRect : topRect);
 }
 
 /* ---------- loop ---------- */
@@ -740,14 +846,20 @@ function frame(now) {
       dog.pos.z + Math.sin(dog.heading) * 3.4), 0.06);
     specCam.lookAt(dog.pos.x, 0.5, dog.pos.z);
   } else if (camMode === 1) {
-    orbitAngle += dt * 0.25;
-    specCam.position.set(dog.pos.x + Math.cos(orbitAngle) * 6, 4.2,
-                         dog.pos.z + Math.sin(orbitAngle) * 6);
-    specCam.lookAt(dog.pos.x, 0.4, dog.pos.z);
+    specCam.position.copy(orbitCam.position);
+    specCam.quaternion.copy(orbitCam.quaternion);
   }
   const fwd = fwdVec();
   povCam.position.set(dog.pos.x + fwd.x * 0.35, 0.45, dog.pos.z + fwd.z * 0.35);
   povCam.lookAt(dog.pos.x + fwd.x * 5, 0.4, dog.pos.z + fwd.z * 5);
+  chaseCam.position.lerp(new THREE.Vector3(
+    dog.pos.x - Math.cos(dog.heading) * 3.4, 2.4,
+    dog.pos.z + Math.sin(dog.heading) * 3.4), 0.08);
+  chaseCam.lookAt(dog.pos.x, 0.5, dog.pos.z);
+  orbitCam.position.set(dog.pos.x + Math.cos(orbitAngle) * 6, 4.2,
+                        dog.pos.z + Math.sin(orbitAngle) * 6);
+  orbitCam.lookAt(dog.pos.x, 0.4, dog.pos.z);
+  orbitAngle += dt * 0.25;
 
   if (!won) clockEl.textContent = `${((now - t0) / 1000).toFixed(1)}s`;
   cmdEl.textContent = `cmd f=${cmd.forward.toFixed(2)} t=${cmd.turn.toFixed(2)} · cam ${CAM_MODES[camMode]}`;
