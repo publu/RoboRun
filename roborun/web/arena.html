@@ -7,12 +7,13 @@
 <style>
   html, body { margin: 0; height: 100%; background: #0b0e11; overflow: hidden;
                font: 13px/1.4 ui-monospace, "SF Mono", Menlo, monospace; color: #d7e0e8; }
-  canvas.webgl { position: fixed; inset: 0; }
+  canvas.webgl { position: fixed; inset: 0; z-index: 0; }
 
   /* ── panel system: drag by header, resize by corner, toggle from toolbar ── */
-  .panel { position: fixed; background: rgba(11,14,17,.88); border: 1px solid #1f2a33;
-           border-radius: 8px; min-width: 180px; min-height: 70px;
-           resize: both; overflow: hidden; display: flex; flex-direction: column; }
+  .panel { position: fixed; z-index: 10; background: rgba(11,14,17,.88);
+           border: 1px solid #1f2a33; border-radius: 8px; min-width: 180px;
+           min-height: 70px; resize: both; overflow: hidden;
+           display: flex; flex-direction: column; }
   .panel.hidden { display: none; }
   .p-head { display: flex; align-items: center; gap: 8px; padding: 5px 10px;
             background: rgba(16,22,28,.9); border-bottom: 1px solid #1f2a33;
