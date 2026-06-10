@@ -223,6 +223,14 @@ def main() -> None:
         client = get_client(robot["host"], robot.get("port", 9090))
         state = "connected" if client and client.is_connected else "unreachable — will retry"
         print(f"  Robot {robot['host']} ({robot.get('type', '?')}): {state}")
+        if client and client.is_connected:
+            try:
+                from roborun.ros_camera import get_ros_camera
+                cam = get_ros_camera().start()
+                if cam.get("ok"):
+                    print(f"  Robot camera: {cam['topic']} → YOLO → robot.see()")
+            except Exception:
+                pass
 
     # Load skills
     from roborun.skills import load_skills

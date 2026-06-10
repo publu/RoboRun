@@ -241,3 +241,17 @@ def ros_health(h):
     health["dds_available"] = _check_dds()
     health["ok"] = health.get("connected", False) or health["dds_available"]
     send_json(h, 200, health)
+
+
+@post("/api/ros/camera")
+def ros_camera(h, payload):
+    """Robot-camera perception: {action: start|stop|status, topic?}."""
+    from roborun.ros_camera import get_ros_camera
+    cam = get_ros_camera()
+    action = payload.get("action", "status")
+    if action == "start":
+        send_json(h, 200, cam.start(payload.get("topic")))
+    elif action == "stop":
+        send_json(h, 200, cam.stop())
+    else:
+        send_json(h, 200, {"ok": True, **cam.state()})

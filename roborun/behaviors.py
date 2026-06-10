@@ -109,12 +109,21 @@ class Robot:
                 things = [Thing(d, 1280, 720) for d in arena.detections()
                           if d.get("confidence", 1.0) >= min_conf]
             else:
-                from roborun.routes._singletons import get_webcam
-                wc = get_webcam()
-                frame = wc.snapshot()
-                fh, fw = frame.shape[:2] if frame is not None else (720, 1280)
-                things = [Thing(d, fw, fh) for d in wc.get_detections()
-                          if d["confidence"] >= min_conf]
+                from roborun.ros_camera import get_ros_camera
+                cam = get_ros_camera()
+                if cam.is_active():
+                    # connected robot: its camera, its YOLO detections
+                    frame = cam.snapshot()
+                    fh, fw = frame.shape[:2] if frame is not None else (720, 1280)
+                    things = [Thing(d, fw, fh) for d in cam.get_detections()
+                              if d["confidence"] >= min_conf]
+                else:
+                    from roborun.routes._singletons import get_webcam
+                    wc = get_webcam()
+                    frame = wc.snapshot()
+                    fh, fw = frame.shape[:2] if frame is not None else (720, 1280)
+                    things = [Thing(d, fw, fh) for d in wc.get_detections()
+                              if d["confidence"] >= min_conf]
         except Exception:
             return []
         if label:
