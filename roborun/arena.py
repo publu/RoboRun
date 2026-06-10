@@ -44,6 +44,10 @@ class ArenaState:
         with self._lock:
             return list(self._state.get("detections", []))
 
+    def lidar(self) -> list:
+        with self._lock:
+            return list(self._state.get("lidar", []))
+
     def pose(self) -> dict | None:
         with self._lock:
             return self._state.get("pose")

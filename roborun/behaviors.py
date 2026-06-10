@@ -59,14 +59,16 @@ def behavior(hz: float | None = None, every: float | None = None,
 
 
 class Thing:
-    """A detection, normalized to [0,1] coordinates."""
-    __slots__ = ("label", "conf", "track_id", "cx", "cy", "w", "h")
+    """A detection, normalized to [0,1] coordinates. `dist` is meters when
+    the source knows it (arena ground truth), else None (webcam)."""
+    __slots__ = ("label", "conf", "track_id", "cx", "cy", "w", "h", "dist")
 
     def __init__(self, det: dict, fw: float, fh: float) -> None:
         x1, y1, x2, y2 = det["bbox"]
         self.label = det["label"]
         self.conf = det["confidence"]
         self.track_id = det.get("track_id", -1)
+        self.dist = det.get("distance")
         self.cx = ((x1 + x2) / 2) / fw
         self.cy = ((y1 + y2) / 2) / fh
         self.w = (x2 - x1) / fw
@@ -110,6 +112,26 @@ class Robot:
         if label:
             things = [t for t in things if t.label == label]
         return sorted(things, key=lambda t: -t.conf)
+
+    def lidar(self) -> list[float]:
+        """360° range scan in meters, index 0 = straight ahead, CCW.
+        Arena provides it; webcam mode has no lidar -> []."""
+        try:
+            from roborun.arena import get_arena
+            a = get_arena()
+            return a.lidar() if a.is_active() else []
+        except Exception:
+            return []
+
+    def tool(self, name: str, **args: Any) -> dict:
+        """Call any MCP tool from inside a behavior — same registry your
+        Claude uses (camera_snapshot, navigate, skill tools, ...). Slow
+        tools belong in `every=` loops, same rule as robot.ask()."""
+        try:
+            from roborun.ros_mcp import handle_tool_call
+            return handle_tool_call(name, args)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
 
     def frame_jpeg(self) -> bytes | None:
         p = Path("/tmp/roborun_frame.jpg")
@@ -487,6 +509,27 @@ def heartbeat(robot):
     robot.say(answer)
 ''',
 }
+
+
+def write_behavior_file(name: str, source: str) -> dict:
+    """Validated write into behaviors/ — shared by the MCP tool and the
+    arena editor. Never executes the source; hot reload does that."""
+    import re
+    name = name.strip().removesuffix(".py")
+    if not re.match(r"^[a-z0-9_]+$", name):
+        return {"ok": False, "error": "name must be a snake_case slug"}
+    if "def " not in source or "@behavior" not in source:
+        return {"ok": False, "error": "source must define an @behavior-decorated "
+                                      "function (from roborun.behaviors import behavior)"}
+    try:
+        compile(source, f"{name}.py", "exec")
+    except SyntaxError as exc:
+        return {"ok": False, "error": f"syntax error: {exc}"}
+    path = Path("behaviors") / f"{name}.py"
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(source)
+    return {"ok": True, "path": str(path),
+            "note": "hot reload picks it up within ~1s"}
 
 
 def write_examples(target: Path | None = None) -> Path | None:

@@ -946,25 +946,8 @@ def _tool_arena_status(args: dict) -> dict:
 
 def _tool_write_behavior(args: dict) -> dict:
     """Write/overwrite a behavior file. Hot reload runs it within ~1s."""
-    import re as _re
-    from pathlib import Path as _P
-    name = str(args.get("name", "")).strip().removesuffix(".py")
-    source = str(args.get("source", ""))
-    if not _re.match(r"^[a-z0-9_]+$", name):
-        return {"ok": False, "error": "name must be a snake_case slug"}
-    if "def " not in source or "@behavior" not in source:
-        return {"ok": False, "error": "source must define an @behavior-decorated function "
-                                      "(from roborun.behaviors import behavior)"}
-    try:
-        compile(source, f"{name}.py", "exec")
-    except SyntaxError as exc:
-        return {"ok": False, "error": f"syntax error: {exc}"}
-    path = _P("behaviors") / f"{name}.py"
-    path.parent.mkdir(exist_ok=True)
-    path.write_text(source)
-    return {"ok": True, "path": str(path),
-            "note": "hot reload picks it up within ~1s; check `behaviors` "
-                    "with action=list, enable/disable it by name"}
+    from roborun.behaviors import write_behavior_file
+    return write_behavior_file(str(args.get("name", "")), str(args.get("source", "")))
 
 
 def _tool_behaviors(args: dict) -> dict:

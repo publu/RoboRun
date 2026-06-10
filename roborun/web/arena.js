@@ -39,6 +39,20 @@ const LEVELS = [
       { id: "d5", x: -1, z: -4.7, color: "red" },
       { id: "d6", x: 1, z: 4.7, color: "blue" },
     ],
+    demo: `from roborun.behaviors import behavior
+
+@behavior(hz=10)
+def player_policy(robot):
+    # demo: wall-avoiding wanderer. Replace me with something smarter —
+    # robot.lidar() -> 36 ranges (m), [0] = straight ahead, CCW
+    # robot.see("red door") -> [.cx .cy .w .h .dist], robot.move(...)
+    scan = robot.lidar()
+    ahead = min(scan[0:3] + scan[-3:]) if scan else 8
+    if ahead < 1.2:
+        robot.move(turn=1.1)           # blocked: rotate
+    else:
+        robot.move(forward=0.8, turn=0.15)
+`,
   },
   {
     name: "chamber-02",
@@ -56,6 +70,21 @@ const LEVELS = [
     ],
     doors: [{ id: "d1", x: 0, z: -3, color: "red" }],
     goal: { x: 6.5, z: 6.5, r: 1.1, hold: 1.5 },
+    demo: `from roborun.behaviors import behavior
+
+@behavior(hz=10)
+def player_policy(robot):
+    # demo: beacon seeker. robot.see("beacon")[0].cx is bearing (0.5 = centered)
+    beacon = robot.see("beacon")
+    scan = robot.lidar()
+    ahead = min(scan[0:3] + scan[-3:]) if scan else 8
+    if ahead < 1.0:
+        robot.move(turn=1.2)           # dodge the pillar
+    elif beacon:
+        robot.move(forward=0.9, turn=-1.5 * (beacon[0].cx - 0.5))
+    else:
+        robot.move(forward=0.5, turn=0.6)   # search pattern
+`,
   },
 ];
 
@@ -328,6 +357,38 @@ function senseLidar() {
   return ranges;
 }
 
+/* ---------- lidar point cloud (the world as the robot has sensed it) ---------- */
+const CLOUD_MAX = 80000;
+const cloudPos = new Float32Array(CLOUD_MAX * 3);
+const cloudCol = new Float32Array(CLOUD_MAX * 3);
+let cloudCount = 0, cloudHead = 0;
+const cloudGeo = new THREE.BufferGeometry();
+cloudGeo.setAttribute("position", new THREE.BufferAttribute(cloudPos, 3).setUsage(THREE.DynamicDrawUsage));
+cloudGeo.setAttribute("color", new THREE.BufferAttribute(cloudCol, 3).setUsage(THREE.DynamicDrawUsage));
+const cloud = new THREE.Points(cloudGeo,
+  new THREE.PointsMaterial({ size: 0.035, vertexColors: true, sizeAttenuation: true }));
+cloud.frustumCulled = false;
+let cloudOn = true;
+scene.add(cloud);
+const _tmpColor = new THREE.Color();
+function cloudAdd(x, y, z) {
+  const i = cloudHead * 3;
+  cloudPos[i] = x; cloudPos[i + 1] = y; cloudPos[i + 2] = z;
+  _tmpColor.setHSL(0.66 - (y / 1.7) * 0.55, 0.9, 0.45 + (y / 1.7) * 0.2);
+  cloudCol[i] = _tmpColor.r; cloudCol[i + 1] = _tmpColor.g; cloudCol[i + 2] = _tmpColor.b;
+  cloudHead = (cloudHead + 1) % CLOUD_MAX;
+  cloudCount = Math.min(cloudCount + 1, CLOUD_MAX);
+}
+function cloudCommit() {
+  cloudGeo.attributes.position.needsUpdate = true;
+  cloudGeo.attributes.color.needsUpdate = true;
+  cloudGeo.setDrawRange(0, cloudCount);
+}
+function cloudReset() {
+  cloudCount = 0; cloudHead = 0;
+  cloudGeo.setDrawRange(0, 0);
+}
+
 /* ---------- robot-built map ---------- */
 const GRID = 96;
 let CELL = 32 / GRID;
@@ -347,8 +408,13 @@ function integrateLidar(ranges) {
         occ[cz * GRID + cx] = 1;
     }
     if (ranges[i] < LIDAR_RANGE) {
-      const [cx, cz] = cellOf(dog.pos.x + dx * ranges[i], dog.pos.z + dz * ranges[i]);
+      const hx = dog.pos.x + dx * ranges[i], hz = dog.pos.z + dz * ranges[i];
+      const [cx, cz] = cellOf(hx, hz);
       if (cx >= 0 && cx < GRID && cz >= 0 && cz < GRID) occ[cz * GRID + cx] = 2;
+      for (let k = 0; k < 5; k++)   // vertical spread up the wall + noise
+        cloudAdd(hx + (Math.random() - 0.5) * 0.05,
+                 Math.random() * 1.55,
+                 hz + (Math.random() - 0.5) * 0.05);
     }
   }
 }
@@ -395,6 +461,10 @@ function loadLevel(i) {
   usedManual = false;
   occ = new Uint8Array(GRID * GRID);
   CELL = (LV.bounds * 2) / GRID;
+  cloudReset();
+  odo = 0;
+  codeEl.value = LV.demo || "";
+  policyStatus("demo policy loaded — press RUN, or rewrite it", "");
   document.getElementById("win").classList.remove("show");
   roomsEl.innerHTML = "";
   for (const r of LV.rooms || []) {
@@ -504,7 +574,8 @@ async function pushState() {
         lidar: lastLidar,
         pose: { x: +dog.pos.x.toFixed(2), z: +dog.pos.z.toFixed(2),
                 heading: +dog.heading.toFixed(3) },
-        level: { name: LV.name, rooms_visited: [...visited], won },
+        level: { name: LV.name, room: currentRoom(), rooms_visited: [...visited],
+                 odometer_m: +odo.toFixed(1), won },
       });
     } catch {}
   }
@@ -515,6 +586,53 @@ function postEvent(type, title, detail) {
   api("/api/arena/event", { type, title, detail }).catch(() => {});
 }
 
+/* ---------- the policy editor: this is how you play ---------- */
+const codeEl = document.getElementById("code");
+const statusEl = document.getElementById("policyStatus");
+function policyStatus(msg, cls) { statusEl.textContent = msg; statusEl.className = cls; }
+codeEl.addEventListener("keydown", (e) => {
+  e.stopPropagation();                       // typing must not drive the dog
+  if (e.key === "Tab") {
+    e.preventDefault();
+    const { selectionStart: a, selectionEnd: b, value: v } = codeEl;
+    codeEl.value = v.slice(0, a) + "    " + v.slice(b);
+    codeEl.selectionStart = codeEl.selectionEnd = a + 4;
+  }
+});
+codeEl.addEventListener("keyup", (e) => e.stopPropagation());
+document.getElementById("btnRun").addEventListener("click", async () => {
+  policyStatus("saving…", "");
+  try {
+    const w = await api("/api/behaviors/write", { name: "player_policy", source: codeEl.value });
+    if (!w.ok) { policyStatus(w.error, "err"); return; }
+    await api("/api/behaviors/enable", { name: "player_policy" });
+    policyStatus("running — hot reload applies edits on every RUN", "ok");
+  } catch { policyStatus("no server — run `roborun` first", "err"); }
+});
+document.getElementById("btnStop").addEventListener("click", async () => {
+  try {
+    await api("/api/behaviors/disable", { name: "player_policy" });
+    policyStatus("stopped", "");
+  } catch {}
+});
+
+/* ---------- telemetry: room, odometer, pose ---------- */
+let odo = 0;
+const prevPos = new THREE.Vector3();
+function currentRoom() {
+  for (const r of LV.rooms || []) {
+    const [x1, z1, x2, z2] = r.rect;
+    if (dog.pos.x > x1 && dog.pos.x < x2 && dog.pos.z > z1 && dog.pos.z < z2) return r.id;
+  }
+  return LV.goal ? "field" : "corridor";
+}
+function updateTelemetry() {
+  document.getElementById("teleRoom").textContent = `room ${currentRoom()}`;
+  document.getElementById("teleOdo").textContent = `odometer ${odo.toFixed(1)} m`;
+  document.getElementById("telePose").textContent =
+    `x ${dog.pos.x.toFixed(1)} · z ${dog.pos.z.toFixed(1)} · θ ${dog.heading.toFixed(2)}`;
+}
+
 /* ---------- input ---------- */
 const keys = {};
 addEventListener("keydown", (e) => {
@@ -522,6 +640,7 @@ addEventListener("keydown", (e) => {
   keys[e.key.toLowerCase()] = true;
   if (e.key.toLowerCase() === "c") camMode = (camMode + 1) % CAM_MODES.length;
   if (e.key.toLowerCase() === "n") loadLevel(levelIndex + 1);
+  if (e.key.toLowerCase() === "l") { cloudOn = !cloudOn; cloud.visible = cloudOn; }
 });
 addEventListener("keyup", (e) => keys[e.key.toLowerCase()] = false);
 function keyboardCmd() {
@@ -574,12 +693,16 @@ function frame(now) {
   updateDog(dt, cmd);
   tickChamber(dt);
 
+  odo += prevPos.distanceTo(dog.pos);
+  prevPos.copy(dog.pos);
   senseTick += dt;
   if (senseTick > 0.12) {
     senseTick = 0;
     lastLidar = senseLidar();
     integrateLidar(lastLidar);
+    cloudCommit();
     drawMap();
+    updateTelemetry();
   }
 
   if (camMode === 0) {
