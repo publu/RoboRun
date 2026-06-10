@@ -19,7 +19,11 @@ The `robot` handle:
     robot.move(forward=0, strafe=0, turn=0)   sim or real robot, safety-clamped
     robot.stop()
     robot.say(text)          speaks into the event timeline
-    robot.ask(prompt, image=False, model="fast")   LLM — any provider, tiered
+    robot.ask(prompt, image=False, model="fast")   LLM, sync — every= loops only
+    robot.think(prompt) / robot.thought()    async LLM — safe at 10 Hz
+    robot.delegate(task)     async LLM with tools — may rewrite this policy live
+    robot.tool(name, **args) call any MCP tool
+    robot.lidar()            360° ranges (m), [0] = straight ahead
     robot.remember(k, v) / robot.recall(k)    persistent key-value memory
     robot.log(msg)           write to the black box
     robot.state              dict that survives across loop ticks (not reloads)
@@ -42,6 +46,10 @@ from roborun.events import emit
 MAX_LINEAR = float(os.environ.get("ROBORUN_MAX_LINEAR_VEL", "1.0"))
 MAX_ANGULAR = float(os.environ.get("ROBORUN_MAX_ANGULAR_VEL", "1.5"))
 _MEMORY_PATH = Path(".roborun") / "behavior_memory.json"
+
+# async thought store: (behavior_name, key) -> {"pending": bool, "answer": str|None}
+_thoughts: dict[tuple[str, str], dict] = {}
+_thoughts_lock = threading.Lock()
 
 
 def behavior(hz: float | None = None, every: float | None = None,
@@ -112,6 +120,108 @@ class Robot:
         if label:
             things = [t for t in things if t.label == label]
         return sorted(things, key=lambda t: -t.conf)
+
+    # ---- async LLM: the policy never stops driving while it thinks ----
+
+    def think(self, prompt: str, key: str = "default", image: bool = False,
+              system: str | None = None, max_tokens: int = 300,
+              model: str = "smart") -> bool:
+        """Fire-and-forget ask — safe inside `hz=` loops. Returns True if a
+        new thought started, False if one with this key is still pending
+        (re-calls are no-ops, so calling every tick is fine). Collect the
+        answer later with robot.thought(key)."""
+        k = (self._name, key)
+        with _thoughts_lock:
+            slot = _thoughts.get(k)
+            if slot is not None and slot["pending"]:
+                return False
+            _thoughts[k] = {"pending": True, "answer": None}
+        jpeg = self.frame_jpeg() if image else None
+
+        def _run() -> None:
+            from roborun import llm
+            try:
+                ans = llm.complete(prompt, system=system, image_jpeg=jpeg,
+                                   tier=model, max_tokens=max_tokens)
+            except Exception as exc:
+                ans = f"[think failed: {exc}]"
+            with _thoughts_lock:
+                _thoughts[k] = {"pending": False, "answer": ans}
+            emit("agent", self._name, f"thought ready · {key}", {"key": key})
+
+        threading.Thread(target=_run, daemon=True, name=f"think-{key}").start()
+        return True
+
+    def thought(self, key: str = "default") -> str | None:
+        """Pop a completed thought, or None while pending/absent."""
+        with _thoughts_lock:
+            slot = _thoughts.get((self._name, key))
+            if slot is not None and not slot["pending"]:
+                del _thoughts[(self._name, key)]
+                return slot["answer"]
+        return None
+
+    def thinking(self, key: str = "default") -> bool:
+        with _thoughts_lock:
+            slot = _thoughts.get((self._name, key))
+            return slot is not None and slot["pending"]
+
+    def delegate(self, task: str, key: str = "delegate", max_steps: int = 4,
+                 model: str = "smart") -> bool:
+        """Hand a task to the LLM *with hands*: it may call any MCP tool —
+        move, navigate, camera_snapshot, write_behavior (yes, it can
+        rewrite this very policy; hot reload applies it live). Async like
+        think(); every action lands in the timeline; the final report
+        arrives via robot.thought(key). Actuation still passes through the
+        same clamps and estop as everything else."""
+        k = (self._name, key)
+        with _thoughts_lock:
+            slot = _thoughts.get(k)
+            if slot is not None and slot["pending"]:
+                return False
+            _thoughts[k] = {"pending": True, "answer": None}
+
+        def _run() -> None:
+            from roborun import llm
+            from roborun.ros_mcp import get_all_tools, handle_tool_call
+            catalog = "\n".join(f"- {t['name']}: {t['description'][:140]}"
+                                 for t in get_all_tools())
+            system = (
+                "You are a robot's delegated executor. Reply with ONLY one JSON "
+                "object per turn, no prose, no code fences:\n"
+                '  {"tool": "<name>", "args": {...}}   to act, or\n'
+                '  {"done": "<short report>"}          when finished.\n'
+                f"Available tools:\n{catalog}")
+            transcript = f"Task from the running policy '{self._name}': {task}"
+            report = "[delegate: no result]"
+            try:
+                for _ in range(max_steps):
+                    raw = llm.complete(transcript, system=system,
+                                       tier=model, max_tokens=500)
+                    action = _parse_action(raw)
+                    if action is None or "done" in action:
+                        report = (action or {}).get("done", raw.strip())
+                        break
+                    name = str(action.get("tool", ""))
+                    args = action.get("args") or {}
+                    result = handle_tool_call(name, args)
+                    emit("agent", self._name,
+                         f"delegate · {name}({json.dumps(args)[:80]}) → "
+                         f"{'ok' if result.get('ok') else result.get('error', 'failed')}",
+                         {"tool": name})
+                    transcript += (f"\n\nYou called {name} with {json.dumps(args)}."
+                                   f"\nResult: {json.dumps(result, default=str)[:1200]}"
+                                   f"\nNext JSON:")
+                else:
+                    report = f"[delegate: stopped after {max_steps} steps]"
+            except Exception as exc:
+                report = f"[delegate failed: {exc}]"
+            with _thoughts_lock:
+                _thoughts[k] = {"pending": False, "answer": report}
+            emit("agent", self._name, f"delegate done · {report[:120]}", {"key": key})
+
+        threading.Thread(target=_run, daemon=True, name=f"delegate-{key}").start()
+        return True
 
     def lidar(self) -> list[float]:
         """360° range scan in meters, index 0 = straight ahead, CCW.
@@ -509,6 +619,30 @@ def heartbeat(robot):
     robot.say(answer)
 ''',
 }
+
+
+def _parse_action(raw: str) -> dict | None:
+    """First JSON object in an LLM reply; tolerates code fences."""
+    text = raw.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.startswith("json"):
+            text = text[4:]
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start:i + 1])
+                except Exception:
+                    return None
+    return None
 
 
 def write_behavior_file(name: str, source: str) -> dict:

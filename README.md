@@ -49,6 +49,10 @@ Change `0.3` to `0.6`. Save. The robot speeds up **while it's running**. No rest
 | `robot.move(forward, strafe, turn)` | drives the sim or a real robot, always safety-clamped |
 | `robot.ask("is the door open?", image=True)` | LLM with the camera frame — Anthropic/OpenAI/Gemini/**local Ollama**, `model="fast"` or `"smart"` |
 | `robot.say(...)` / `robot.log(...)` | speak into the event timeline |
+| `robot.think("…")` / `robot.thought()` | **async** LLM — fire at 10 Hz, collect when ready, loop never blocks |
+| `robot.delegate("fix my search pattern")` | async LLM **with tools** — it can call any MCP tool, including rewriting the running policy (hot reload applies it live) |
+| `robot.tool("navigate", x=2, y=3)` | call any MCP tool from inside the policy |
+| `robot.lidar()` | 360° ranges in meters, `[0]` = straight ahead |
 | `robot.remember(k, v)` / `robot.recall(k)` | memory that survives restarts |
 | `robot.state` | dict that survives across loop ticks |
 

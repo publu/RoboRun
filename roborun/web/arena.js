@@ -43,15 +43,30 @@ const LEVELS = [
 
 @behavior(hz=10)
 def player_policy(robot):
-    # demo: wall-avoiding wanderer. Replace me with something smarter —
-    # robot.lidar() -> 36 ranges (m), [0] = straight ahead, CCW
-    # robot.see("red door") -> [.cx .cy .w .h .dist], robot.move(...)
-    scan = robot.lidar()
+    # L1 reflex — runs at 10 Hz, never waits on anything
+    scan = robot.lidar()               # 36 ranges (m), [0] = ahead
     ahead = min(scan[0:3] + scan[-3:]) if scan else 8
     if ahead < 1.2:
-        robot.move(turn=1.1)           # blocked: rotate
+        robot.move(turn=1.1)
     else:
         robot.move(forward=0.8, turn=0.15)
+
+    # keep a ledger of what we saw (recon levels ask questions later)
+    for d in robot.see("red door"):
+        robot.state.setdefault("red_doors", set()).add(round(d.cx, 1))
+
+    # escalate when stuck: async — the loop keeps driving while the
+    # LLM thinks, and it has tools (it may even rewrite this file).
+    st = robot.state
+    st["blocked"] = st.get("blocked", 0) + 1 if ahead < 1.2 else 0
+    if st["blocked"] > 60 and not robot.thinking("fix"):
+        robot.delegate(
+            "I'm a wall-following policy stuck spinning in the arena. "
+            "Check arena_status and see, then write_behavior a smarter "
+            "player_policy (hz=10, use robot.lidar()).", key="fix")
+    report = robot.thought("fix")
+    if report:
+        robot.say(report)
 `,
   },
   {

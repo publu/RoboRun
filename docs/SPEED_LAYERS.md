@@ -19,9 +19,12 @@ the bottom of this page are what keep the layers from corrupting each other.
 - L1 loops read **snapshots** (latest value wins), never call inference, and
   never block on the network. `robot.see()` is a cache read by design — keep
   it that way.
-- `robot.ask()` is forbidden in `hz=` loops; it belongs in `every=` loops or
-  tools. (Today this is convention; the runner can warn on tick overrun
-  later.)
+- `robot.ask()` (sync) is forbidden in `hz=` loops; it belongs in `every=`
+  loops or tools. The sanctioned L1→L3/L4 escalation from a fast loop is
+  **`robot.think()` / `robot.thought()`** (async ask; pending re-calls are
+  no-ops) and **`robot.delegate()`** (async LLM with the MCP tool registry —
+  the higher layer acts by parameterizing or rewriting the lower one, which
+  is contract 2 working as intended).
 - L2 models run at whatever rate the hardware allows and publish; they do
   not push into behavior loops.
 - Nothing anywhere blocks on L5. A robot with no connectivity is a fully
