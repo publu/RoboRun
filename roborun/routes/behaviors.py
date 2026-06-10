@@ -36,3 +36,11 @@ def write(h, payload):
     result = write_behavior_file(str(payload.get("name", "")),
                                  str(payload.get("source", "")))
     send_json(h, 200 if result["ok"] else 400, result)
+
+
+@post("/api/behaviors/compile")
+def compile_mission(h, payload):
+    """Plain language -> policy source (the editor's words-first path)."""
+    from roborun.mission import compile_mission as cm
+    result = cm(str(payload.get("mission", "")), str(payload.get("context", "")))
+    send_json(h, 200 if result["ok"] else 400, result)

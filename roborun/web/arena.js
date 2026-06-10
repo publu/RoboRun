@@ -1253,9 +1253,19 @@ for (const pre of connectEl.querySelectorAll("pre")) {
 }
 
 document.getElementById("btnRun").addEventListener("click", async () => {
-  policyStatus("saving…", "");
+  let source = getCode();
   try {
-    const w = await api("/api/behaviors/write", { name: "player_policy", source: getCode() });
+    if (!source.includes("@behavior")) {
+      // words, not code: compile the mission into a policy first
+      policyStatus("✨ compiling mission via LLM… (~10s)", "");
+      const c = await api("/api/behaviors/compile",
+                          { mission: source, context: LV.title + ": " + LV.brief });
+      if (!c.ok) { policyStatus(c.error, "err"); return; }
+      source = c.source;
+      setCode(source);                 // language in, code out — inspect/edit it
+    }
+    policyStatus("saving…", "");
+    const w = await api("/api/behaviors/write", { name: "player_policy", source });
     if (!w.ok) { policyStatus(w.error, "err"); return; }
     await api("/api/behaviors/enable", { name: "player_policy" });
     policyStatus("running — hot reload applies edits on every RUN", "ok");
