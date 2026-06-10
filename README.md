@@ -22,7 +22,7 @@ pip install ros-agent     # the package keeps its PyPI name; the command is robo
 roborun
 ```
 
-The browser opens live: your webcam becomes the robot's eyes (YOLO autostarts), MuJoCo becomes its body, and a `behaviors/` folder appears with its brain:
+The browser opens live, and a `behaviors/` folder appears with the robot's brain. Two ways to give it a world: open **`/arena`** — a robot dog in a browser sim, body and eyes in the same world (what it does changes what it sees) — or point the webcam at your room and use it as a pure perception playground. Either way, the same brain:
 
 ```python
 # behaviors/follow_person.py (already running)
