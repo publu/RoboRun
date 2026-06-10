@@ -91,12 +91,20 @@ class Robot:
 
     def see(self, label: str | None = None, min_conf: float = 0.4) -> list[Thing]:
         try:
-            from roborun.routes._singletons import get_webcam
-            wc = get_webcam()
-            frame = wc.snapshot()
-            fh, fw = frame.shape[:2] if frame is not None else (720, 1280)
-            things = [Thing(d, fw, fh) for d in wc.get_detections()
-                      if d["confidence"] >= min_conf]
+            from roborun.arena import get_arena
+            arena = get_arena()
+            if arena.is_active():
+                # The arena publishes ground-truth detections on a virtual
+                # 1280x720 frame — same shape as the webcam pipeline.
+                things = [Thing(d, 1280, 720) for d in arena.detections()
+                          if d.get("confidence", 1.0) >= min_conf]
+            else:
+                from roborun.routes._singletons import get_webcam
+                wc = get_webcam()
+                frame = wc.snapshot()
+                fh, fw = frame.shape[:2] if frame is not None else (720, 1280)
+                things = [Thing(d, fw, fh) for d in wc.get_detections()
+                          if d["confidence"] >= min_conf]
         except Exception:
             return []
         if label:
@@ -119,13 +127,22 @@ class Robot:
 
         sent = False
         try:
-            from roborun.routes._singletons import get_simulator
-            sim = get_simulator()
-            if sim.is_running:
-                sim.set_cmd_vel(forward, strafe, turn)
+            from roborun.arena import get_arena
+            arena = get_arena()
+            if arena.is_active():
+                arena.set_cmd(forward, strafe, turn)
                 sent = True
         except Exception:
             pass
+        if not sent:
+            try:
+                from roborun.routes._singletons import get_simulator
+                sim = get_simulator()
+                if sim.is_running:
+                    sim.set_cmd_vel(forward, strafe, turn)
+                    sent = True
+            except Exception:
+                pass
         if not sent:
             try:
                 from roborun.rosbridge import get_client
@@ -401,6 +418,21 @@ def patrol(robot):
         robot.log(f"patrol: {leg['mode']}")
     robot.move(forward=0.4 if leg["mode"] == "walk" else 0.0,
                turn=0.9 if leg["mode"] == "turn" else 0.0)
+''',
+    "explore.py": '''\
+"""Chamber explorer: forward until something blocks, then turn. Good enough
+to clear Arena chamber 01 — open http://localhost:8765/arena and enable me.
+Sighted doors and explored rooms land in the timeline as you go."""
+from roborun.behaviors import behavior
+
+
+@behavior(hz=10, autostart=False)
+def explore(robot):
+    blocked = [t for t in robot.see("obstacle") if t.h > 0.45]
+    if blocked:
+        robot.move(turn=1.1)          # too close to a wall: rotate
+    else:
+        robot.move(forward=0.8, turn=0.15)   # gentle arc covers rooms
 ''',
     "heartbeat.py": '''\
 """User-defined supervisor: write a HEARTBEAT.md and this runs it on your
