@@ -1233,23 +1233,43 @@ function updateTelemetry() {
 }
 
 /* ════════════════ panels ════════════════ */
-const LAYOUT_KEY = "arena-layout-v2";
+const LAYOUT_KEY = "arena-layout-v3";
 const PANEL_IDS = ["p-brief", "p-policy", "p-status", "p-map", "p-view1", "p-view2"];
 let zTop = 100;
 function defaultLayout() {
+  // Two docked rails, open stage in the middle. Left rail: what you read
+  // and write (mission, policy). Right rail: what you watch (status, map,
+  // robot cam). Top view starts hidden — the map already covers it; one
+  // toolbar click brings it back.
   const w = innerWidth, h = innerHeight;
+  const GAP = 10, TOP = 52;
+  const L = Math.min(440, Math.max(340, Math.round(w * 0.3)));
+  const R = Math.min(290, Math.max(230, Math.round(w * 0.18)));
+  const briefH = 185, statusH = 168;
+  const mapH = Math.max(180, Math.round((h - TOP - statusH - 3 * GAP) * 0.45));
   return {
-    "p-brief":  { l: 14, t: 52, w: 360, h: 190, hidden: false },
-    "p-policy": { l: 14, t: 252, w: 470, h: Math.min(430, h - 270), hidden: false },
-    "p-status": { l: w - 230, t: 52, w: 216, h: 150, hidden: false },
-    "p-map":    { l: w - 230, t: 212, w: 216, h: 240, hidden: false },
-    "p-view1":  { l: w - 340, t: h - 230, w: 326, h: 216, hidden: false },
-    "p-view2":  { l: w - 680, t: h - 230, w: 326, h: 216, hidden: false },
+    "p-brief":  { l: GAP, t: TOP, w: L, h: briefH, hidden: false },
+    "p-policy": { l: GAP, t: TOP + briefH + GAP, w: L,
+                  h: h - TOP - briefH - 2 * GAP - 4, hidden: false },
+    "p-status": { l: w - R - GAP, t: TOP, w: R, h: statusH, hidden: false },
+    "p-map":    { l: w - R - GAP, t: TOP + statusH + GAP, w: R, h: mapH, hidden: false },
+    "p-view2":  { l: w - R - GAP, t: TOP + statusH + mapH + 2 * GAP, w: R,
+                  h: h - TOP - statusH - mapH - 3 * GAP - 4, hidden: false },
+    "p-view1":  { l: Math.round(w / 2 - 170), t: h - 244, w: 340, h: 230, hidden: true },
   };
 }
 function loadLayout() {
-  try { return { ...defaultLayout(), ...JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}") }; }
-  catch { return defaultLayout(); }
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}");
+    const base = defaultLayout();
+    if (!saved._custom) {
+      // only hidden/shown choices persist; positions stay window-fitted
+      for (const id of PANEL_IDS)
+        if (saved[id]) base[id].hidden = !!saved[id].hidden;
+      return base;
+    }
+    return { ...base, ...saved };
+  } catch { return defaultLayout(); }
 }
 let layout = loadLayout();
 function saveLayout() { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); }
@@ -1276,12 +1296,27 @@ function initPanels() {
       e.preventDefault();
       const sx = e.clientX - el.offsetLeft, sy = e.clientY - el.offsetTop;
       function move(ev) {
-        layout[id].l = ev.clientX - sx; layout[id].t = ev.clientY - sy;
-        el.style.left = `${layout[id].l}px`; el.style.top = `${layout[id].t}px`;
+        const pw = el.offsetWidth, ph = el.offsetHeight;
+        let l = ev.clientX - sx, t = ev.clientY - sy;
+        // snap to screen edges, the toolbar line, and other panels' edges,
+        // so dragged panels land aligned instead of scattered
+        const SNAP = 14, GAP = 10;
+        const xs = [GAP, innerWidth - pw - GAP];
+        const ys = [52, innerHeight - ph - GAP];
+        for (const oid of PANEL_IDS) {
+          if (oid === id || layout[oid].hidden) continue;
+          const o = layout[oid];
+          xs.push(o.l, o.l + o.w - pw, o.l + o.w + GAP, o.l - pw - GAP);
+          ys.push(o.t, o.t + o.h - ph, o.t + o.h + GAP, o.t - ph - GAP);
+        }
+        for (const x of xs) if (Math.abs(l - x) < SNAP) { l = x; break; }
+        for (const y of ys) if (Math.abs(t - y) < SNAP) { t = y; break; }
+        layout[id].l = l; layout[id].t = t;
+        el.style.left = `${l}px`; el.style.top = `${t}px`;
       }
       function up() {
         removeEventListener("pointermove", move); removeEventListener("pointerup", up);
-        saveLayout();
+        layout._custom = true; saveLayout();
       }
       addEventListener("pointermove", move); addEventListener("pointerup", up);
     });
@@ -1290,7 +1325,10 @@ function initPanels() {
     });
     new ResizeObserver(() => {
       if (el.classList.contains("hidden")) return;
-      layout[id].w = el.offsetWidth; layout[id].h = el.offsetHeight; saveLayout();
+      if (el.offsetWidth !== layout[id].w || el.offsetHeight !== layout[id].h) {
+        layout[id].w = el.offsetWidth; layout[id].h = el.offsetHeight;
+        layout._custom = true; saveLayout();
+      }
     }).observe(el);
   }
   for (const btn of document.querySelectorAll("#toolbar [data-panel]")) {
@@ -1302,6 +1340,14 @@ function initPanels() {
   }
   document.getElementById("btnReset").addEventListener("click", () => {
     layout = defaultLayout(); saveLayout(); applyLayout();
+  });
+  // until the user rearranges something, the rails track the window size
+  addEventListener("resize", () => {
+    if (layout._custom) return;
+    const hid = Object.fromEntries(PANEL_IDS.map((p) => [p, layout[p].hidden]));
+    layout = defaultLayout();
+    for (const p of PANEL_IDS) layout[p].hidden = hid[p];
+    applyLayout();
   });
   applyLayout();
 }
