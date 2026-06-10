@@ -36,6 +36,22 @@
   #policyStatus { margin-top: 6px; color: #6b7b88; min-height: 16px; }
   #policyStatus.err { color: #d84a4a; }
   #policyStatus.ok { color: #00d47e; }
+  #btnConnect { background: #10161c; color: #e0c050; border: 1px solid #4a3f1f;
+                border-radius: 4px; font: inherit; padding: 2px 10px; cursor: pointer; }
+  #connect { position: fixed; inset: 0; display: none; place-items: center; z-index: 30;
+             background: rgba(5,8,10,.8); }
+  #connect.show { display: grid; }
+  #connect .card { border: 1px solid #2a3a46; border-radius: 10px; padding: 24px 28px;
+                   background: #0b0e11; max-width: 680px; max-height: 86vh; overflow: auto; }
+  #connect h2 { color: #00d47e; margin: 0 0 4px; letter-spacing: .08em; font-size: 14px; }
+  #connect h3 { color: #9fb0bd; margin: 16px 0 4px; font-size: 12px; letter-spacing: .08em; }
+  #connect pre { background: #0a0f13; border: 1px solid #1f2a33; border-radius: 6px;
+                 padding: 10px 12px; overflow-x: auto; cursor: copy; margin: 4px 0;
+                 color: #d7e0e8; }
+  #connect pre:hover { border-color: #1f4434; }
+  #connect .note { color: #6b7b88; }
+  #connect .close { float: right; background: none; border: none; color: #6b7b88;
+                    font: inherit; font-size: 16px; cursor: pointer; }
   /* robot-built map */
   #mapwrap { position: fixed; top: 110px; right: 14px; z-index: 10; padding: 8px; }
   #mapwrap .lbl, .viewlbl { font-size: 10px; letter-spacing: .14em; color: #6b7b88; }
@@ -74,6 +90,8 @@
   <div class="panel" id="policy">
     <div id="policyHead">
       <b>YOUR POLICY</b> <span class="hint">— this is how you play</span>
+      <button id="btnConnect" title="connect Claude Code / Codex / Claude Desktop"
+              style="float:right;margin-left:8px">⚡ CONNECT AGENT</button>
       <span style="float:right">
         <button id="btnRun" title="save + run (hot reload)">▶ RUN</button>
         <button id="btnStop" title="disable the policy">■ STOP</button>
@@ -97,6 +115,26 @@
 </div>
 <span class="viewlbl" id="povlbl">ROBOT CAM — all it can see</span>
 <span class="viewlbl" id="toplbl">TOP</span>
+<div id="connect"><div class="card">
+  <button class="close" id="connectClose">✕</button>
+  <h2>CONNECT YOUR AGENT</h2>
+  <span class="note">The game's MCP endpoint is this server: <b>http://localhost:8765/mcp</b>.
+  Click any block to copy. Then just ask your agent to beat the chamber.</span>
+  <h3>CLAUDE CODE</h3>
+  <pre>claude mcp add --transport http roborun http://localhost:8765/mcp</pre>
+  <h3>CODEX CLI</h3>
+  <pre>codex mcp add roborun -- npx -y mcp-remote http://localhost:8765/mcp</pre>
+  <h3>CLAUDE DESKTOP / OTHER MCP CLIENTS (config json)</h3>
+  <pre>{ "mcpServers": { "roborun": {
+    "command": "npx", "args": ["-y", "mcp-remote", "http://localhost:8765/mcp"] } } }</pre>
+  <h3>THEN SAY</h3>
+  <pre>Beat the current RoboRun arena chamber: call arena_status for the goal,
+use see to learn the labels, then write_behavior a policy named
+player_policy and poll arena_status until won. No teleop.</pre>
+  <span class="note">Heads-up: use this HTTP endpoint while the server is running — the
+  standalone <b>roborun-mcp</b> stdio command is for driving robots without the deck and
+  can't see this arena.</span>
+</div></div>
 <div id="win"><div class="card">
   <h1 id="winTitle">CHAMBER COMPLETE</h1>
   <div class="stats" id="winDetail"></div>

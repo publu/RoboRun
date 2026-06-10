@@ -609,6 +609,19 @@ document.getElementById("btnRun").addEventListener("click", async () => {
     policyStatus("running — hot reload applies edits on every RUN", "ok");
   } catch { policyStatus("no server — run `roborun` first", "err"); }
 });
+const connectEl = document.getElementById("connect");
+document.getElementById("btnConnect").addEventListener("click", () => connectEl.classList.add("show"));
+document.getElementById("connectClose").addEventListener("click", () => connectEl.classList.remove("show"));
+connectEl.addEventListener("click", (e) => { if (e.target === connectEl) connectEl.classList.remove("show"); });
+for (const pre of connectEl.querySelectorAll("pre")) {
+  pre.title = "click to copy";
+  pre.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(pre.textContent.trim());
+          pre.style.borderColor = "#00d47e";
+          setTimeout(() => pre.style.borderColor = "", 600); } catch {}
+  });
+}
+
 document.getElementById("btnStop").addEventListener("click", async () => {
   try {
     await api("/api/behaviors/disable", { name: "player_policy" });
@@ -641,6 +654,7 @@ addEventListener("keydown", (e) => {
   if (e.key.toLowerCase() === "c") camMode = (camMode + 1) % CAM_MODES.length;
   if (e.key.toLowerCase() === "n") loadLevel(levelIndex + 1);
   if (e.key.toLowerCase() === "l") { cloudOn = !cloudOn; cloud.visible = cloudOn; }
+  if (e.key === "Escape") connectEl.classList.remove("show");
 });
 addEventListener("keyup", (e) => keys[e.key.toLowerCase()] = false);
 function keyboardCmd() {

@@ -25,7 +25,7 @@ from roborun.ros_mcp import get_all_tools, get_mcp_manifest, handle_tool_call
 
 SERVER_INFO = {
     "name": "roborun",
-    "version": "0.9.0",
+    "version": __import__("roborun").__version__,
 }
 
 CAPABILITIES = {

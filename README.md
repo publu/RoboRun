@@ -65,11 +65,14 @@ export ROBORUN_MODEL_SMART=anthropic:claude-opus-4-8   # or openai:…, gemini:�
 
 There's no always-on narration burning tokens. Instead there's a **heartbeat**: write a `HEARTBEAT.md` (in the project or `~/.roborun/`) with your own supervision prompt and an optional `every: 600` first line, and the shipped `heartbeat.py` behavior runs it on your schedule against live system status — behavior states, recording state — and reports into the timeline. No file, no LLM calls, zero cost.
 
-The whole robot is also an MCP server. One line and Claude or Cursor drives it directly:
+The whole robot is also an MCP server. With `roborun` running, point any agent at the live endpoint:
 
-```json
-{ "mcpServers": { "roborun": { "command": "roborun-mcp" } } }
+```bash
+claude mcp add --transport http roborun http://localhost:8765/mcp     # Claude Code
+codex mcp add roborun -- npx -y mcp-remote http://localhost:8765/mcp  # Codex
 ```
+
+(There's also a standalone stdio server, `roborun-mcp`, for driving robots without the deck — but the live HTTP endpoint is the one that sees the arena, the camera, and your behaviors. The arena page has a **⚡ CONNECT AGENT** button with all the copy-paste configs.)
 
 ## The black box
 
