@@ -47,7 +47,7 @@ Change `0.3` to `0.6`. Save. The robot speeds up **while it's running**. No rest
 |---|---|
 | `robot.see("person")` | live detections, normalized `.cx .cy .w .h .label .conf` |
 | `robot.move(forward, strafe, turn)` | drives the sim or a real robot, always safety-clamped |
-| `robot.ask("is the door open?", image=True)` | LLM with the camera frame. Anthropic API **or local Ollama** |
+| `robot.ask("is the door open?", image=True)` | LLM with the camera frame — Anthropic/OpenAI/Gemini/**local Ollama**, `model="fast"` or `"smart"` |
 | `robot.say(...)` / `robot.log(...)` | speak into the event timeline |
 | `robot.remember(k, v)` / `robot.recall(k)` | memory that survives restarts |
 | `robot.state` | dict that survives across loop ticks |
@@ -56,7 +56,14 @@ Change `0.3` to `0.6`. Save. The robot speeds up **while it's running**. No rest
 
 ## LLMs, local or online
 
-`robot.ask()` uses the Anthropic API when `ANTHROPIC_API_KEY` is set, or a local [Ollama](https://ollama.com) otherwise (`OLLAMA_MODEL=llama3.2` by default). The shipped `narrator.py` behavior asks a vision model what the robot is looking at, every 10 seconds, and says it into the timeline.
+`robot.ask()` is provider-agnostic and tiered. **Anthropic, OpenAI, Gemini, local Ollama**, or any OpenAI-compatible endpoint (vLLM, LM Studio, Groq — set `OPENAI_BASE_URL`); the provider is whichever API key you set, falling back to local Ollama, no SDKs required. Calls declare a *tier*, not a vendor — `robot.ask(..., model="fast")` for frequent cheap calls, `model="smart"` for reasoning — and you map tiers to whatever wins for you:
+
+```bash
+export ROBORUN_MODEL_FAST=ollama:llama3.2          # frequent checks stay local & free
+export ROBORUN_MODEL_SMART=anthropic:claude-opus-4-8   # or openai:…, gemini:…
+```
+
+There's no always-on narration burning tokens. Instead there's a **heartbeat**: write a `HEARTBEAT.md` (in the project or `~/.roborun/`) with your own supervision prompt and an optional `every: 600` first line, and the shipped `heartbeat.py` behavior runs it on your schedule against live system status — behavior states, recording state — and reports into the timeline. No file, no LLM calls, zero cost.
 
 The whole robot is also an MCP server. One line and Claude or Cursor drives it directly:
 

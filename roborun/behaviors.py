@@ -19,7 +19,7 @@ The `robot` handle:
     robot.move(forward=0, strafe=0, turn=0)   sim or real robot, safety-clamped
     robot.stop()
     robot.say(text)          speaks into the event timeline
-    robot.ask(prompt, image=False)   LLM — Anthropic API or local Ollama
+    robot.ask(prompt, image=False, model="fast")   LLM — any provider, tiered
     robot.remember(k, v) / robot.recall(k)    persistent key-value memory
     robot.log(msg)           write to the black box
     robot.state              dict that survives across loop ticks (not reloads)
@@ -28,7 +28,6 @@ Every move/say/log lands in the tamper-evident event timeline.
 """
 from __future__ import annotations
 
-import base64
 import importlib.util
 import json
 import os
@@ -188,65 +187,25 @@ class Robot:
         except Exception:
             return {}
 
-    # ---- LLM (online or local) ----
+    # ---- LLM (provider-agnostic, tiered — see roborun/llm.py) ----
 
     def ask(self, prompt: str, image: bool = False, system: str | None = None,
-            max_tokens: int = 300) -> str:
-        """Ask an LLM. Uses the Anthropic API when ANTHROPIC_API_KEY is set,
-        otherwise a local Ollama at OLLAMA_HOST (default 127.0.0.1:11434).
-        `image=True` attaches the current camera frame (Anthropic only)."""
-        backend = os.environ.get("ROBORUN_LLM") or (
-            "anthropic" if os.environ.get("ANTHROPIC_API_KEY") else "ollama")
+            max_tokens: int = 300, model: str = "fast") -> str:
+        """Ask an LLM. `model` is a tier ("fast" for frequent cheap calls,
+        "smart" for reasoning) or an explicit "provider:model" spec —
+        anthropic, openai, gemini, ollama, or any OpenAI-compatible endpoint
+        via OPENAI_BASE_URL. `image=True` attaches the current camera frame.
+
+        Never call this from a `hz=` loop — it belongs in `every=` loops
+        and tools (docs/SPEED_LAYERS.md, contract 1)."""
+        from roborun import llm
         try:
-            if backend == "anthropic":
-                return self._ask_anthropic(prompt, image, system, max_tokens)
-            return self._ask_ollama(prompt, system)
+            return llm.complete(prompt, system=system,
+                                image_jpeg=self.frame_jpeg() if image else None,
+                                tier=model, max_tokens=max_tokens)
         except Exception as exc:
             emit("system", self._name, f"ask() failed: {exc}", {})
             return f"[ask failed: {exc}]"
-
-    def _ask_anthropic(self, prompt: str, image: bool, system: str | None,
-                       max_tokens: int) -> str:
-        import urllib.request
-        content: list[dict] = []
-        if image:
-            jpeg = self.frame_jpeg()
-            if jpeg:
-                content.append({"type": "image", "source": {
-                    "type": "base64", "media_type": "image/jpeg",
-                    "data": base64.b64encode(jpeg).decode()}})
-        content.append({"type": "text", "text": prompt})
-        body: dict[str, Any] = {
-            "model": os.environ.get("ROBORUN_MODEL", "claude-haiku-4-5-20251001"),
-            "max_tokens": max_tokens,
-            "messages": [{"role": "user", "content": content}],
-        }
-        if system:
-            body["system"] = system
-        req = urllib.request.Request(
-            "https://api.anthropic.com/v1/messages",
-            data=json.dumps(body).encode(),
-            headers={"x-api-key": os.environ["ANTHROPIC_API_KEY"],
-                     "anthropic-version": "2023-06-01",
-                     "content-type": "application/json"})
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = json.loads(resp.read())
-        return "".join(b.get("text", "") for b in data.get("content", [])).strip()
-
-    def _ask_ollama(self, prompt: str, system: str | None) -> str:
-        import urllib.request
-        host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
-        if not host.startswith("http"):
-            host = f"http://{host}"
-        body = {"model": os.environ.get("OLLAMA_MODEL", "llama3.2"),
-                "prompt": prompt, "stream": False}
-        if system:
-            body["system"] = system
-        req = urllib.request.Request(
-            f"{host}/api/generate", data=json.dumps(body).encode(),
-            headers={"content-type": "application/json"})
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            return json.loads(resp.read()).get("response", "").strip()
 
 
 class _Loop:
@@ -443,20 +402,56 @@ def patrol(robot):
     robot.move(forward=0.4 if leg["mode"] == "walk" else 0.0,
                turn=0.9 if leg["mode"] == "turn" else 0.0)
 ''',
-    "narrator.py": '''\
-"""Every 10s, ask an LLM what the robot is looking at. Needs ANTHROPIC_API_KEY
-(or a local Ollama). The answer lands in the event timeline."""
+    "heartbeat.py": '''\
+"""User-defined supervisor: write a HEARTBEAT.md and this runs it on your
+schedule against live system status. No file, no LLM calls — this loop
+idles for free until you create one.
+
+HEARTBEAT.md is your prompt: what to watch, what to flag, what to propose.
+Optional first line `every: 600` sets the interval in seconds (default 600).
+
+    every: 900
+    You supervise this robot. Flag anything odd in the behavior statuses,
+    check whether a run is being recorded, and propose one improvement.
+"""
+import json
+import time
+from pathlib import Path
+
 from roborun.behaviors import behavior
 
+_PATHS = (Path("HEARTBEAT.md"), Path.home() / ".roborun" / "HEARTBEAT.md")
 
-@behavior(every=10.0, autostart=False)
-def narrator(robot):
-    seen = ", ".join(t.label for t in robot.see()) or "nothing"
+
+def _status_snapshot():
+    from roborun.behaviors import BehaviorRunner
+    from roborun.recorder import active_recorder
+    rec = active_recorder()
+    return {
+        "behaviors": BehaviorRunner.get().statuses(),
+        "recording": rec.status() if rec else None,
+        "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+
+
+@behavior(every=30.0)
+def heartbeat(robot):
+    path = next((p for p in _PATHS if p.exists()), None)
+    if path is None:
+        return  # no HEARTBEAT.md — do nothing, cost nothing
+    text = path.read_text().strip()
+    interval = 600.0
+    if text.startswith("every:"):
+        first, _, text = text.partition("\\n")
+        interval = float(first.split(":", 1)[1].strip() or 600)
+    if time.time() - robot.recall("heartbeat_last", 0) < interval:
+        return
+    robot.remember("heartbeat_last", time.time())
     answer = robot.ask(
-        f"You are a robot. Your camera detects: {seen}. "
-        "In one short dry sentence, say what you make of the scene.",
-        image=True,
-    )
+        f"{text}\\n\\nCurrent system status:\\n"
+        f"{json.dumps(_status_snapshot(), default=str, indent=1)}",
+        model="smart", max_tokens=500)
+    robot.log("heartbeat", report=answer)
     robot.say(answer)
 ''',
 }

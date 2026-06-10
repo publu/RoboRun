@@ -111,5 +111,5 @@ def test_write_examples(tmp_path):
     target = write_examples(tmp_path / "behaviors")
     assert target is not None
     names = {p.name for p in target.glob("*.py")}
-    assert {"follow_person.py", "patrol.py", "narrator.py"} <= names
+    assert {"follow_person.py", "patrol.py", "heartbeat.py"} <= names
     assert write_examples(tmp_path / "behaviors") is None  # second call: no-op
