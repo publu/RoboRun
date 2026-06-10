@@ -12,7 +12,10 @@ const LEVELS = [
   {
     name: "chamber-01",
     title: "CHAMBER 01 — RECON",
-    brief: "Explore every room. Observe as you go — there will be questions.",
+    brief: "POLICY GOAL: visit all four rooms, autonomously. The robot has "
+         + "see() — doors, obstacles — and move(). Drop a file in behaviors/ "
+         + "or let your agent write it over MCP (write_behavior). "
+         + "WASD is debug-drive only: manual runs count as practice.",
     bounds: 16,
     spawn: { x: 0, z: 0, heading: 0 },
     rooms: [
@@ -40,7 +43,9 @@ const LEVELS = [
   {
     name: "chamber-02",
     title: "CHAMBER 02 — SPRINT",
-    brief: "Reach the green beacon and hold position inside it. The pillars do not move. You might.",
+    brief: "POLICY GOAL: reach the beacon and hold it 1.5s. see('beacon') "
+         + "gives bearing via .cx; see('obstacle') warns of walls. "
+         + "The pillars do not move. Your policy might.",
     bounds: 16,
     spawn: { x: -6.5, z: -6.5, heading: -0.7 },
     rooms: [],
@@ -374,6 +379,7 @@ for (let i = 0; i < LEVELS.length; i++) {
   levelSel.appendChild(o);
 }
 let visited = new Set(), won = false, t0 = performance.now(), goalHeld = 0;
+let usedManual = false;
 let levelIndex = 0;
 
 function loadLevel(i) {
@@ -386,6 +392,7 @@ function loadLevel(i) {
   dog.heading = LV.spawn.heading;
   for (const leg of dog.legs) homeFoot(leg, leg.foot);
   visited = new Set(); won = false; goalHeld = 0; t0 = performance.now();
+  usedManual = false;
   occ = new Uint8Array(GRID * GRID);
   CELL = (LV.bounds * 2) / GRID;
   document.getElementById("win").classList.remove("show");
@@ -432,9 +439,15 @@ async function sealAttempt() {
 function winChamber(detail) {
   won = true;
   const secs = ((performance.now() - t0) / 1000).toFixed(1);
-  document.getElementById("winDetail").textContent = `${detail} · ${secs}s`;
+  const mode = usedManual ? "manual" : "autonomous";
+  document.getElementById("winTitle").textContent =
+    usedManual ? "PRACTICE RUN — MANUAL DRIVE" : "CHAMBER COMPLETE — AUTONOMOUS";
+  document.getElementById("winDetail").textContent = `${detail} · ${secs}s` +
+    (usedManual ? " · write a policy to make it count" : "");
   document.getElementById("win").classList.add("show");
-  postEvent("task", `${LV.title} COMPLETE · ${secs}s`, { time_s: +secs, level: LV.name });
+  document.querySelector("#win .card").classList.toggle("practice", usedManual);
+  postEvent("task", `${LV.title} ${usedManual ? "cleared MANUALLY (practice)" : "COMPLETE — autonomous"} · ${secs}s`,
+            { time_s: +secs, level: LV.name, mode });
   sealAttempt();
 }
 
@@ -514,7 +527,7 @@ addEventListener("keyup", (e) => keys[e.key.toLowerCase()] = false);
 function keyboardCmd() {
   const f = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
   const t = (keys.a ? 1 : 0) - (keys.d ? 1 : 0);
-  if (f || t) return { forward: f * 0.9, strafe: 0, turn: t * 1.2 };
+  if (f || t) { usedManual = true; return { forward: f * 0.9, strafe: 0, turn: t * 1.2 }; }
   return null;
 }
 

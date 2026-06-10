@@ -35,6 +35,8 @@
   #win .card { border: 2px solid #00d47e; border-radius: 10px; padding: 30px 44px;
                background: #0b0e11; text-align: center; max-width: 560px; }
   #win .card h1 { color: #00d47e; margin: 0 0 6px; letter-spacing: .12em; }
+  #win .card.practice { border-color: #e0a030; }
+  #win .card.practice h1 { color: #e0a030; }
   #win .stats { color: #9fb0bd; margin-bottom: 16px; }
   #win .hash { font-size: 15px; color: #00d47e; background: #0f1a15;
                border: 1px solid #1f4434; border-radius: 6px; padding: 10px 14px;
@@ -67,12 +69,12 @@
 <span class="viewlbl" id="povlbl">ROBOT CAM — all it can see</span>
 <span class="viewlbl" id="toplbl">TOP</span>
 <div id="win"><div class="card">
-  <h1>CHAMBER COMPLETE</h1>
+  <h1 id="winTitle">CHAMBER COMPLETE</h1>
   <div class="stats" id="winDetail"></div>
   <div class="hash" id="winHash"><span class="sealing">sealing run…</span></div>
   <div class="after">check your <a href="/" target="_blank">timeline →</a></div>
 </div></div>
-<div id="keys">WASD drive · C camera · N next level · deck at <a href="/" style="color:#3a8a6a">/</a></div>
+<div id="keys">feed it a policy: <code>behaviors/*.py</code> hot-reloads, or MCP <code>write_behavior</code> · WASD = debug (practice) · C camera · N level · deck at <a href="/" style="color:#3a8a6a">/</a></div>
 
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
