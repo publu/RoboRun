@@ -47,24 +47,17 @@ const LEVELS = [
     win: { type: "answer", value: "6", question: "how many doors?" },
     demo: `from roborun.behaviors import behavior
 
-# Explore new places. While exploring, look for doors; when you find
-# one, mark its location in memory. When everywhere is explored,
-# answer how many distinct doors there are.
+# Explore new places. The system logs every sighting automatically and
+# dedupes by location (robot.seen) — no bookkeeping in the policy.
+# When everywhere is mapped, read the count and answer.
 
 @behavior(hz=10)
 def player_policy(robot):
-    doors = robot.state.setdefault("doors", set())
-    for d in robot.see():
-        if "door" in d.label:
-            spot = robot.locate(d)                 # sighting -> world (x, z)
-            if spot:
-                doors.add((round(spot[0] / 1.5), round(spot[1] / 1.5)))
-
-    if robot.explore():                            # True once fully mapped
-        if not robot.state.get("answered"):
-            robot.state["answered"] = True
-            robot.answer(str(len(doors)))
-            robot.say("counted " + str(len(doors)) + " doors")
+    if robot.explore() and not robot.state.get("answered"):
+        robot.state["answered"] = True        # state survives between ticks
+        doors = sum(s["distinct"] for s in robot.seen() if "door" in s["label"])
+        robot.answer(str(doors))
+        robot.say("counted " + str(doors) + " doors")
 `,
   },
 

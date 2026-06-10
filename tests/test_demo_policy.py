@@ -77,13 +77,11 @@ class SimRobot:
             out.append(best)
         return out
 
-    def see(self, label=None, min_conf=0.4):
-        """Door sensing with the arena's exact encoding: cone, occlusion,
-        cx from bearing, dist in meters."""
+    def sense_dicts(self):
+        """Door sensing with the arena's exact encoding — runs every tick
+        like the live browser does, independent of what the policy calls."""
         out = []
         for name, dx_, dz_ in DOORS:
-            if label and name != label:
-                continue
             tx, tz = dx_ - self.x, dz_ - self.z
             dist = math.hypot(tx, tz)
             if dist > 7 or dist < 0.05:
@@ -106,22 +104,35 @@ class SimRobot:
             if blocked:
                 continue
             cx_px = 640 - (bearing / 0.62) * 600
+            size = min(420, 2200 / max(dist, 0.4))
+            out.append({"label": name, "confidence": 0.95,
+                        "bbox": [cx_px - size / 4, 360 - size / 2,
+                                 cx_px + size / 4, 360 + size / 2],
+                        "distance": round(dist, 2)})
+        return out
+
+    def see(self, label=None, min_conf=0.4):
+        out = []
+        for d in self.sense_dicts():
+            if label and d["label"] != label:
+                continue
 
             class T:
                 pass
             th = T()
-            th.label, th.conf, th.dist = name, 0.95, round(dist, 2)
-            th.cx, th.cy = cx_px / 1280, 0.5
-            th.w = th.h = 0.1
+            th.label, th.conf, th.dist = d["label"], d["confidence"], d["distance"]
+            th.cx = (d["bbox"][0] + d["bbox"][2]) / 2 / 1280
+            th.cy, th.w, th.h = 0.5, 0.1, 0.1
             out.append(th)
         return out
+
+    def seen(self, label=None):
+        import roborun.sightings as sg
+        return sg.summary(label)
 
     def answer(self, text):
         self.answers = getattr(self, "answers", [])
         self.answers.append(str(text))
-
-    def seen(self, label=None):
-        return []
 
     # action
     def move(self, forward=0.0, strafe=0.0, turn=0.0):
@@ -168,6 +179,8 @@ class SimRobot:
 
 
 def run_policy(source: str, budget_ticks: int):
+    import roborun.sightings as sg
+    sg.reset()
     ns = {"behavior": lambda **kw: (lambda fn: fn)}
     code = source.replace("from roborun.behaviors import behavior\n", "")
     exec(compile(code, "demo.py", "exec"), ns)
@@ -176,6 +189,8 @@ def run_policy(source: str, budget_ticks: int):
     visited = set()
     for _ in range(budget_ticks):
         policy(robot)
+        # the perception pipeline's side effect, same as the live server
+        sg.observe(robot.sense_dicts(), robot.pose(), source="sim")
         robot.step()
         for name, (a, b, c, d) in ROOMS.items():
             if a < robot.x < c and b < robot.z < d:
@@ -190,6 +205,7 @@ def test_census_demo_explores_all_rooms_without_a_map():
     assert "TOUR" not in source, "hardcoded waypoints = cheating the benchmark"
     visited, robot = run_policy(source, budget_ticks=3600)  # 6 sim-minutes
     assert visited == {"NW", "NE", "SW", "SE"}, f"only explored {sorted(visited)}"
-    # the census itself: perception-counted, deduped, correct
+    # the census itself: counted by the SYSTEM's sighting memory
+    # (distinct-location dedup), no bookkeeping in the policy
     assert getattr(robot, "answers", []) == ["6"], \
         f"answered {getattr(robot, 'answers', [])!r}, there are 6 doors"

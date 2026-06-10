@@ -47,3 +47,20 @@ def test_reset_clears():
     sg.observe([{"label": "x"}])
     sg.reset()
     assert sg.summary() == []
+
+
+def test_distinct_dedup_by_projected_location():
+    # same door seen twice from different poses = ONE distinct object
+    det = {"label": "red door", "confidence": 0.9,
+           "bbox": [590, 250, 690, 470], "distance": 2.0}   # dead ahead, 2 m
+    sg.observe([det], pose={"x": 0, "z": 0, "heading": 0}, source="arena")
+    # second sighting of the SAME spot (2,0) from behind it, facing back
+    det2 = {"label": "red door", "confidence": 0.9,
+            "bbox": [590, 250, 690, 470], "distance": 2.0}
+    sg.observe([det2], pose={"x": 4, "z": 0, "heading": 3.14159}, source="arena")
+    # a genuinely different door far away
+    det3 = {"label": "red door", "confidence": 0.9,
+            "bbox": [590, 250, 690, 470], "distance": 2.0}
+    sg.observe([det3], pose={"x": 10, "z": 10, "heading": 0}, source="arena")
+    row = sg.summary("red door")[0]
+    assert row["distinct"] == 2, row["locations"]

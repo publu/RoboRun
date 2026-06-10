@@ -25,7 +25,9 @@ called 10x/second. It must never block. The handle:
       world point of a sighting:
         a = pose["heading"] + (0.5 - t.cx) * 1.323
         wx = pose["x"] + cos(a) * t.dist;  wz = pose["z"] - sin(a) * t.dist
-  robot.seen(label=None) -> the run's automatic sighting memory
+  robot.seen(label=None) -> automatic sighting memory: [{"label", "count",
+      "distinct" (deduped object count), "locations" [(x,z)...]}] — use this
+      for "how many X did I see" questions; never hand-roll a ledger
   robot.move(forward=0, strafe=0, turn=0, climb=0)   (clamped; climb = drones)
   robot.goto(x, z, tol=0.45) -> True when arrived (steers one tick)
   robot.explore() -> one tick of frontier exploration; True once fully mapped
