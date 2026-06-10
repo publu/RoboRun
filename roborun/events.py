@@ -36,7 +36,6 @@ _counter = 0
 _journal: IO[str] | None = None
 _journal_dir: Path | None = None
 _prev_hash = GENESIS
-_last_sealed: dict[str, str] | None = None  # {"run": ..., "merkle_root": ...}
 
 EVENT_TYPES = ("mcp_tool", "detection", "ros", "agent", "system", "task", "frame")
 ICONS = {
@@ -72,8 +71,6 @@ def _start_journal_locked() -> None:
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "format": "chained-jsonl-v1",
     }
-    if _last_sealed:
-        manifest["prev_run"] = _last_sealed
     (d / "manifest.json").write_text(json.dumps(manifest, indent=2))
     _journal = open(d / "run.jsonl", "a", buffering=1)  # line-buffered
     _journal_dir = d
@@ -98,13 +95,6 @@ def close_journal() -> Path | None:
         _journal = None
         _journal_dir = None
         return d
-
-
-def record_sealed(run_name: str, merkle_root: str) -> None:
-    """Remember the last sealed run so the next journal's manifest links to it."""
-    global _last_sealed
-    with _lock:
-        _last_sealed = {"run": run_name, "merkle_root": merkle_root}
 
 
 def emit(event_type: str, source: str, title: str,

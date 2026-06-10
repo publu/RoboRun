@@ -1,6 +1,6 @@
 /* roborun flight deck — wiring. Everything on screen is real:
    MJPEG camera, SSE event bus, streaming agent, seal/verify API.
-   Director keys: S seal · V verify · T tamper · Esc clear · ? toggle help */
+   Director keys: M record/seal · V verify · T tamper · R runs · Esc clear · ? help */
 
 const $ = (id) => document.getElementById(id);
 
@@ -9,7 +9,6 @@ const MAX_FEED = 80;
 
 let eventCount = 0;
 let replaying = false;
-let sealedRootShownAt = 0;
 
 /* ---------- canonical hash (matches roborun/integrity.py) ---------- */
 
@@ -50,7 +49,7 @@ async function addEvent(evt, opts = {}) {
 
   const hash = (await sha256hex(canonicalJson(evt))).slice(0, 8);
   // Live chain head in the header (the same hash chain the journal writes)
-  if (!opts.replay && Date.now() - sealedRootShownAt > 6000) {
+  if (!opts.replay) {
     $("rootLabel").textContent = "CHAIN HEAD";
     $("rootHash").textContent = hash + "…";
   }
@@ -238,51 +237,34 @@ function showStamp(word, sub, meta, bad) {
 
 function hideStamp() { $("stampLayer").classList.remove("show", "shake"); }
 
-async function doSeal() {
-  const r = await api("/api/run/seal");
-  if (!r.ok) { showStamp("NO RUN", r.error || "", "", true); return; }
-  sealedRootShownAt = Date.now();
-  $("rootLabel").textContent = "MERKLE ROOT";
-  $("rootHash").textContent = r.merkle_root.slice(0, 16) + "…";
-  showStamp("SEALED",
-    `${r.event_count} events · chained · merkle root computed`,
-    `${r.merkle_root.slice(0, 32)}… · ${r.signed ? "signed ed25519" : "unsigned"}`);
-  setTimeout(hideStamp, 2600);
-  loadRuns();
-}
-
 async function doVerify() {
-  const r = await api("/api/run/verify");
-  if (!r.ok && r.error) { showStamp("NO RUN", r.error, "", true); return; }
-  if (r.verified) {
-    const chain = r.chain_intact ? "chain intact · " : "";
-    showStamp("VERIFIED",
-      `${r.event_count} events · ${chain}nothing was edited`,
-      `merkle root ${r.merkle_root.slice(0, 24)}…`);
+  const r = await api("/api/run/mcap/verify");
+  if (!r.ok) { showStamp("NO RUN", r.error || "record a run first (M)", "", true); return; }
+  if (r.state === "broken") {
+    showStamp("BROKEN", r.reason || "integrity failure",
+      r.byte_range ? `bytes ${r.byte_range[0]}–${r.byte_range[1]}` : "", true);
+  } else if (r.state === "verified_anchored") {
+    showStamp("VERIFIED", `${r.run} · anchored to an external clock`,
+      `${r.reason} · merkle root ${(r.merkle_root || "").slice(0, 24)}…`);
   } else {
-    const which = r.failed_event != null
-      ? `event ${String(r.failed_event).padStart(4, "0")} hash mismatch`
-      : r.reason;
-    showStamp("FAILED", which,
-      r.expected ? `expected sha256:${r.expected.slice(0, 12)}… found sha256:${r.found.slice(0, 12)}…` : "",
-      true);
+    showStamp("CONSISTENT", `${r.run} · chain + seal intact · unanchored`, r.reason || "");
   }
+  pollBadgeSoon();
 }
 
 async function doTamper() {
-  const r = await api("/api/run/tamper");
-  if (!r.ok) { showStamp("NO RUN", r.error || "", "", true); return; }
-  showStamp("TAMPERED",
-    `event ${String(r.tampered_event).padStart(4, "0")} · one value changed`,
+  const r = await api("/api/run/mcap/tamper");
+  if (!r.ok) { showStamp("NO RUN", r.error || "record a run first (M)", "", true); return; }
+  showStamp("TAMPERED", `${r.run} · byte ${r.byte} flipped`,
     "now press V to verify", true);
   setTimeout(hideStamp, 2200);
+  pollBadgeSoon();
 }
 
 document.addEventListener("keydown", (e) => {
   if (e.target === input && e.key !== "Escape") return;
   if (e.target.tagName === "INPUT") return;
   switch (e.key) {
-    case "s": case "S": doSeal(); break;
     case "v": case "V": doVerify(); break;
     case "t": case "T": doTamper(); break;
     case "m": case "M": toggleRecord(); break;
@@ -479,7 +461,7 @@ async function loadRuns() {
   list.innerHTML = "";
   const runs = (data.runs || []).slice(-12).reverse();
   if (!runs.length) {
-    list.innerHTML = `<div class="run-empty">no runs yet — press S to seal the first one</div>`;
+    list.innerHTML = `<div class="run-empty">no timeline sessions yet</div>`;
     return;
   }
   for (const r of runs) {
@@ -487,25 +469,13 @@ async function loadRuns() {
     row.className = "run-row";
     const badges = [
       r.recording ? `<span class="run-badge rec">REC</span>` : "",
-      r.sealed ? `<span class="run-badge sealed">SEALED</span>` : "",
     ].join("");
     row.innerHTML = `
       <span class="run-name">${r.run.replace("run_", "")}</span>
       <span class="run-n">${r.events} ev</span>${badges}
       <span class="run-actions">
-        ${r.sealed ? `<button class="src-btn" data-act="verify">verify</button>` : ""}
         ${!r.recording ? `<button class="src-btn" data-act="replay">replay</button>` : ""}
       </span>`;
-    row.querySelector('[data-act="verify"]')?.addEventListener("click", async () => {
-      const v = await api("/api/run/verify", { run: r.run });
-      closeDrawer();
-      if (v.verified) {
-        showStamp("VERIFIED", `${r.run} · ${v.event_count} events intact`,
-          `merkle root ${v.merkle_root.slice(0, 24)}…`);
-      } else {
-        showStamp("FAILED", v.reason || "verification failed", "", true);
-      }
-    });
     row.querySelector('[data-act="replay"]')?.addEventListener("click", () => replayRun(r.run));
     list.appendChild(row);
   }
@@ -542,16 +512,15 @@ document.addEventListener("click", (e) => {
   if (!e.target.closest(".director")) input.focus();
 });
 
-/* ?do=seal|verify — runs the real seal/verify API on load (for screenshots) */
+/* ?do=verify — runs the real verify API on load (for screenshots) */
 const act = new URLSearchParams(location.search).get("do");
-if (act === "seal") setTimeout(doSeal, 1500);
 if (act === "verify") setTimeout(doVerify, 1500);
 
 /* ?stamp=verified|failed|sealed — layout preview only, clearly labeled */
 const preview = new URLSearchParams(location.search).get("stamp");
-if (preview === "verified") showStamp("VERIFIED", "1,284 events · nothing was edited", "PREVIEW — not a real verification");
-if (preview === "failed") showStamp("FAILED", "event 0042 hash mismatch", "PREVIEW — not a real verification", true);
-if (preview === "sealed") showStamp("SEALED", "1,284 events · merkle root computed", "PREVIEW — not a real seal");
+if (preview === "verified") showStamp("VERIFIED", "412 chunks · anchored to an external clock", "PREVIEW — not a real verification");
+if (preview === "failed") showStamp("BROKEN", "segment 0042 hash mismatch", "PREVIEW — not a real verification", true);
+if (preview === "sealed") showStamp("SEALED", "412 chunks · merkle root computed", "PREVIEW — not a real seal");
 
 connectEvents();
 pollHud();
