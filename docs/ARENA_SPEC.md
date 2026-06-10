@@ -61,16 +61,43 @@ behaviors/*.py (10 Hz, L1)             three.js arena (browser, 60 fps)
   live sim. The site is simultaneously playable by hand (built-in editor)
   for people without an MCP client.
 
-## Levels
+## Levels — Python, Arduino-shaped (never JSON)
 
-A level = scene + goal + budget, shipped as JSON (+ optional assets):
-spawn poses, objects, win predicate ("cube inside zone for 2s", "all
-waypoints visited, zero collisions"), time/energy/LLM-call budgets.
-Levels are repos — same fork-and-install story as skills
-(`ros-agent level add owner/repo` locally; the site loads community levels
-by GitHub URL). Campaign sketch: L1 drive to the beacon → L2 push the cube
-→ L3 patrol with moving obstacles → L4 find the *described* object (first
-level where `robot.ask()` earns its cost) → L5 multi-robot relay (beacons).
+Everything a dev authors in this system is a small Python file that reads
+like Arduino code: module level is `setup()`, the decorated/named hooks are
+`loop()`. Policies already have this shape (`@behavior(hz=10)`). Levels get
+the same treatment — a scene is *built*, dynamics are *coded*, the win
+condition is a *function*, because real levels need logic (moving hazards,
+buttons, doors, staged goals) and JSON can't express logic without growing
+an awkward mini-language:
+
+```python
+"""Level 2 — push the cube into the glowing zone."""
+NAME, TIME_LIMIT, LLM_BUDGET = "push-it", 90, 2
+
+def build(world):                     # setup()
+    world.robot(x=0, y=0)
+    world.box("cube", x=2, y=1, color="orange")
+    world.zone("goal", x=4, y=3, r=0.8, glow=True)
+    world.bot("patroller", x=3, y=0)
+
+def tick(world):                      # loop() — optional dynamics
+    world.get("patroller").follow([(3, 0), (3, 4)], speed=0.5)
+
+def win(world):
+    return world.inside("cube", "goal", for_seconds=2.0)
+```
+
+The `world` API is the level-author's mirror of the `robot` handle: a
+handful of verbs, no framework. In hosted mode levels run in the same
+Pyodide runtime as policies (sandboxed); locally they're files, hot-reload
+included. Levels are repos — same fork-and-install story as skills
+(`ros-agent level add owner/repo`; the site loads community levels by
+GitHub URL, SHA-pinned like skills so a leaderboard level can't be edited
+after scores exist). Campaign sketch: L1 drive to the beacon → L2 push the
+cube → L3 patrol with moving obstacles → L4 find the *described* object
+(first level where `robot.ask()` earns its cost) → L5 multi-robot relay
+(beacons).
 
 ## Scoring + merkleized timelines
 
