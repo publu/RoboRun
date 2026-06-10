@@ -1,19 +1,21 @@
-"""Robot agents for RoboRun — Claude, Fast (Anthropic SDK), and Gemini.
+"""The flight deck's in-process agent (command bar → /api/agent/chat).
 
-Three agent implementations:
-  1. RobotAgent — Claude CLI subprocess with MCP server connections
-  2. FastRobotAgent — Direct Anthropic SDK with sensor pre-injection
-  3. GeminiAgent — Google Gemini with function calling
+One implementation: an agentic loop with sensor pre-injection — the
+current camera frame and YOLO detections are attached to every message,
+so the model sees live state without a tool round-trip. Tools cover
+physical actions and memory. Velocity-clamped like everything else.
 
-All agents share: safety velocity clamping, persistent cross-agent memory,
-dynamic ROS context injection, and SOUL.md behavioral identity.
+This is the *in-process* agent for the deck's command bar. The primary
+way to drive RoboRun with an LLM remains the MCP server (Claude Code /
+Cursor / any client connects to us, not the other way around). The model
+follows the "smart" tier (ROBORUN_MODEL_SMART) when it resolves to an
+Anthropic model; the agent loop currently requires the anthropic SDK.
 """
 from __future__ import annotations
 
 import json
 import logging
 import os
-import subprocess
 import threading
 import time
 import urllib.request
@@ -23,7 +25,6 @@ from typing import Iterator
 log = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent.parent
-SESSION_FILE = ROOT / ".roborun" / "agent_session.txt"
 MEMORY_FILE = ROOT / ".roborun" / "agent_memory.json"
 SOUL_FILE = ROOT / ".roborun" / "SOUL.md"
 
@@ -139,194 +140,6 @@ def _get_soul() -> str:
         except Exception:
             pass
     return ""
-
-
-def _ensure_soul() -> None:
-    if not SOUL_FILE.exists():
-        SOUL_FILE.parent.mkdir(parents=True, exist_ok=True)
-        SOUL_FILE.write_text(
-            "# ros-agent Identity\n\n"
-            "1. **Safety first** — never exceed velocity limits, stop on uncertainty\n"
-            "2. **Observe before acting** — check camera/sensors before physical actions\n"
-            "3. **Verify after acting** — confirm actions succeeded via sensor feedback\n"
-            "4. **Be concise** — this is a control panel, not a chatbot\n"
-        )
-
-
-def _build_operator_context() -> str:
-    parts = [
-        "You are the operator control agent for a robot powered by ros-agent.",
-        "",
-        "## Available Tools",
-        "You have MCP tools for direct robot control: move, navigate, estop, "
-        "publish/subscribe to any ROS topic, call services, send action goals, "
-        "camera snapshots, YOLO detection, patrol, follow-me, and more.",
-        "",
-        "Use `robot_brief` at the start to discover what's connected.",
-        "Use `run_sequence` to chain multiple tools together.",
-        "",
-        "## Rules",
-        "1. Use tools for ALL physical actions — don't describe, execute.",
-        "2. After commands, verify they worked via sensor feedback.",
-        "3. Never claim the robot moved unless confirmed.",
-        "4. Be concise — this is a control panel.",
-    ]
-    soul = _get_soul()
-    if soul:
-        parts.extend(["", "## Identity", soul])
-    return "\n".join(parts)
-
-
-class RobotAgent:
-    def __init__(self) -> None:
-        self._proc: subprocess.Popen | None = None
-        self._session_id: str | None = self._load_session()
-        self._lock = threading.Lock()
-
-    def _load_session(self) -> str | None:
-        try:
-            return SESSION_FILE.read_text().strip() or None
-        except FileNotFoundError:
-            return None
-
-    def _save_session(self, sid: str) -> None:
-        SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
-        SESSION_FILE.write_text(sid)
-
-    @property
-    def is_alive(self) -> bool:
-        return self._proc is not None and self._proc.poll() is None
-
-    def _start(self) -> None:
-        _ensure_soul()
-        port = int(os.environ.get("ROBORUN_PORT", "8765"))
-        mcp_config = json.dumps({
-            "mcpServers": {
-                "ros-agent": {
-                    "type": "http",
-                    "url": f"http://127.0.0.1:{port}/mcp",
-                },
-            }
-        })
-        cmd = [
-            "claude",
-            "--input-format", "stream-json",
-            "--output-format", "stream-json",
-            "--verbose",
-            "--model", "claude-sonnet-4-6",
-            "--permission-mode", "bypassPermissions",
-            "--mcp-config", mcp_config,
-        ]
-        if self._session_id:
-            cmd += ["--resume", self._session_id]
-        self._proc = subprocess.Popen(
-            cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            cwd=str(ROOT), bufsize=0,
-        )
-
-    def _ensure_started(self) -> None:
-        if not self.is_alive:
-            self._start()
-
-    def stop(self) -> None:
-        if self._proc:
-            try:
-                self._proc.terminate()
-                self._proc.wait(timeout=3)
-            except Exception:
-                try: self._proc.kill()
-                except Exception: pass
-            self._proc = None
-
-    def send(self, message: str) -> Iterator[dict]:
-        with self._lock:
-            try:
-                self._ensure_started()
-            except Exception as exc:
-                yield {"type": "error", "error": f"Failed to start agent: {exc}"}
-                return
-
-            if self._session_id is None:
-                context = _build_operator_context()
-                instructed = f"{context}\n\nOperator request:\n{message}"
-            else:
-                instructed = message
-
-            msg_json = json.dumps({
-                "type": "user",
-                "message": {"role": "user", "content": [{"type": "text", "text": instructed}]},
-            }) + "\n"
-
-            try:
-                self._proc.stdin.write(msg_json.encode())
-                self._proc.stdin.flush()
-            except OSError as exc:
-                self._proc = None
-                yield {"type": "error", "error": f"Write failed: {exc}"}
-                return
-
-            accumulated = ""
-            while True:
-                try:
-                    raw = self._proc.stdout.readline()
-                except OSError:
-                    break
-                if not raw:
-                    yield {"type": "error", "error": "Agent process ended"}
-                    self._proc = None
-                    return
-                try:
-                    event = json.loads(raw.decode())
-                except json.JSONDecodeError:
-                    continue
-
-                etype = event.get("type")
-                if etype == "system":
-                    sid = event.get("session_id")
-                    if sid:
-                        self._session_id = sid
-                        self._save_session(sid)
-                elif etype == "assistant":
-                    for block in event.get("message", {}).get("content", []):
-                        btype = block.get("type")
-                        if btype == "text":
-                            chunk = block.get("text", "")
-                            accumulated += chunk
-                            yield {"type": "text", "text": chunk, "accumulated": accumulated}
-                        elif btype == "tool_use":
-                            from roborun.events import emit
-                            emit("agent", "claude", f"tool: {block.get('name', '')}",
-                                 dict(block.get("input") or {}))
-                            yield {"type": "tool_use", "tool_id": block.get("id", ""),
-                                   "tool_name": block.get("name", ""), "tool_input": block.get("input", {})}
-                        elif btype == "thinking":
-                            thinking = block.get("thinking", "")
-                            if thinking:
-                                yield {"type": "thinking", "thinking": thinking}
-                elif etype == "user":
-                    for block in event.get("message", {}).get("content", []):
-                        if isinstance(block, dict) and block.get("type") == "tool_result":
-                            content = block.get("content", [])
-                            result_text = ""
-                            if isinstance(content, list):
-                                for c in content:
-                                    if isinstance(c, dict) and c.get("type") == "text":
-                                        result_text += c.get("text", "")
-                            elif isinstance(content, str):
-                                result_text = content
-                            yield {"type": "tool_result", "tool_use_id": block.get("tool_use_id", ""),
-                                   "result": result_text[:1200], "is_error": block.get("is_error", False)}
-                elif etype == "result":
-                    final = accumulated or event.get("result", "")
-                    yield {"type": "done", "text": final, "cost": event.get("total_cost_usd", 0.0),
-                           "error": event.get("result") if event.get("is_error") else None}
-                    return
-
-    def clear_session(self) -> None:
-        self.stop()
-        self._session_id = None
-        try: SESSION_FILE.unlink()
-        except FileNotFoundError: pass
 
 
 # ── Fast agent (direct Anthropic SDK, sensor pre-injection) ───────────────────
@@ -630,8 +443,13 @@ class FastRobotAgent:
     Requires ANTHROPIC_API_KEY in environment.
     """
 
-    MODEL = "claude-sonnet-4-6"
     MAX_TOOL_ROUNDS = 6
+
+    @property
+    def MODEL(self) -> str:
+        from roborun import llm
+        provider, model = llm.resolve("smart")
+        return model if provider == "anthropic" else "claude-opus-4-8"
 
     def __init__(self) -> None:
         self._client = None
@@ -866,188 +684,3 @@ def _call_local_api(path: str, payload: dict | None = None, method: str = "POST"
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
-
-def _execute_gemini_tool(name: str, args: dict) -> str:
-    if name == "camera_snapshot":
-        result = _call_local_api("/api/camera", {}, method="GET")
-        if result.get("ok") and result.get("image"):
-            return "Camera frame captured (base64 JPEG available). Robot camera is active."
-        return f"Camera unavailable: {result.get('error', 'no frame')}"
-
-    elif name == "move_robot":
-        lx, ly, az = _clamp_velocity(
-            float(args.get("linear_x", 0.0)),
-            float(args.get("linear_y", 0.0)),
-            float(args.get("angular_z", 0.0)))
-        result = _call_local_api("/api/ros/move", {
-            "linear_x": lx, "linear_y": ly, "angular_z": az,
-            "topic": args.get("topic", "/cmd_vel"),
-        })
-        return "Move command sent." if result.get("ok") else f"Move failed: {result.get('error')}"
-
-    elif name == "ros_publish":
-        result = _call_local_api("/api/ros/publish", {
-            "topic": args["topic"],
-            "type": args["type"],
-            "message": args["message"],
-        })
-        return "Published." if result.get("ok") else f"Publish failed: {result.get('error')}"
-
-    elif name == "ros_subscribe_once":
-        result = _call_local_api("/api/ros/subscribe-once", {
-            "topic": args["topic"],
-            "type": args.get("type", ""),
-            "timeout": args.get("timeout_ms", 5000),
-        })
-        if result.get("ok"):
-            msg = result.get("message")
-            return json.dumps(msg) if msg else "No message received within timeout."
-        return f"Subscribe failed: {result.get('error')}"
-
-    elif name == "ros_list_topics":
-        result = _call_local_api("/api/ros/topics", method="GET")
-        if result.get("ok"):
-            topics = result.get("topics", [])
-            return "\n".join(f"{t['topic']} [{t['type']}]" for t in topics[:30]) or "No topics found."
-        return f"Failed: {result.get('error')}"
-
-    elif name == "call_skill":
-        from roborun.ros_mcp import handle_tool_call
-        skill_name = args.get("skill", "")
-        skill_args = args.get("args", {})
-        result = handle_tool_call(skill_name, skill_args)
-        if result.get("ok", False):
-            return json.dumps(result, default=str)
-        return f"Skill failed: {result.get('error', 'unknown')}"
-
-    elif name == "memory_search":
-        result = _call_local_api("/api/memory/search", {
-            "query": args["query"],
-            "top_k": args.get("top_k", 5),
-        })
-        if result.get("ok"):
-            memories = result.get("memories", [])
-            if not memories:
-                return "No matching memories found."
-            lines = []
-            for m in memories:
-                loc = f"({m.get('x','?')}, {m.get('y','?')})" if m.get("x") is not None else "unknown location"
-                dets = m.get("detections", [])
-                labels = [d.get("label", "") for d in (dets if isinstance(dets, list) else [])]
-                lines.append(f"[{m.get('ts','?')}] at {loc}: {', '.join(labels) or 'no detections'}")
-            return "\n".join(lines)
-        return f"Memory search failed: {result.get('error')}"
-
-    elif name == "memory_search_nearby":
-        result = _call_local_api("/api/memory/search", {
-            "mode": "nearby",
-            "x": args["x"],
-            "y": args["y"],
-            "radius": args.get("radius", 2.0),
-            "top_k": 10,
-        })
-        if result.get("ok"):
-            return json.dumps(result.get("memories", []))
-        return f"Failed: {result.get('error')}"
-
-    return f"Unknown tool: {name}"
-
-
-class GeminiAgent:
-    """Gemini robot agent using function calling — no MCP required.
-
-    Exposes the same robot tool surface as agenticROS's MCP tool definitions.
-    Requires: pip install google-generativeai
-    Set GEMINI_API_KEY in environment.
-    """
-
-    def __init__(self, model: str = "gemini-2.0-flash") -> None:
-        self._model_name = model
-        self._model = None
-        self._history: list[dict] = []
-        self._lock = threading.Lock()
-
-    def _ensure_loaded(self) -> None:
-        if self._model is not None:
-            return
-        import google.generativeai as genai
-        import os
-        api_key = os.environ.get("GEMINI_API_KEY", "")
-        if not api_key:
-            raise RuntimeError("GEMINI_API_KEY environment variable not set")
-        genai.configure(api_key=api_key)
-        tool_defs = [{"function_declarations": _GEMINI_TOOLS}]
-        self._model = genai.GenerativeModel(
-            model_name=self._model_name,
-            system_instruction=_GEMINI_SYSTEM,
-            tools=tool_defs,
-        )
-        self._chat = self._model.start_chat(history=self._history)
-
-    def send(self, message: str) -> Iterator[dict]:
-        with self._lock:
-            try:
-                self._ensure_loaded()
-            except Exception as exc:
-                yield {"type": "error", "error": str(exc)}
-                return
-
-            try:
-                response = self._chat.send_message(message)
-            except Exception as exc:
-                yield {"type": "error", "error": f"Gemini API error: {exc}"}
-                return
-
-            # agentic loop: execute tool calls until final text
-            MAX_ROUNDS = 8
-            for _ in range(MAX_ROUNDS):
-                tool_calls = []
-                text_parts = []
-
-                for part in response.parts:
-                    if hasattr(part, "function_call") and part.function_call.name:
-                        tool_calls.append(part.function_call)
-                    elif hasattr(part, "text") and part.text:
-                        text_parts.append(part.text)
-
-                for tc in tool_calls:
-                    args = dict(tc.args) if tc.args else {}
-                    yield {"type": "tool_use", "tool_name": tc.name, "tool_input": args}
-                    result_text = _execute_gemini_tool(tc.name, args)
-                    yield {"type": "tool_result", "tool_name": tc.name, "result": result_text[:1200]}
-
-                    try:
-                        import google.generativeai as genai
-                        tool_response = genai.protos.Part(
-                            function_response=genai.protos.FunctionResponse(
-                                name=tc.name,
-                                response={"result": result_text},
-                            )
-                        )
-                        response = self._chat.send_message(tool_response)
-                    except Exception as exc:
-                        yield {"type": "error", "error": f"Tool response error: {exc}"}
-                        return
-
-                if text_parts:
-                    text = "".join(text_parts)
-                    yield {"type": "text", "text": text, "accumulated": text}
-                    yield {"type": "done", "result": text}
-                    return
-
-                if not tool_calls:
-                    yield {"type": "done", "result": ""}
-                    return
-
-            yield {"type": "error", "error": "Agent loop limit reached"}
-
-    def clear_session(self) -> None:
-        with self._lock:
-            self._history = []
-            if self._model is not None:
-                import google.generativeai as genai
-                self._chat = self._model.start_chat(history=[])
-
-    @property
-    def is_alive(self) -> bool:
-        return self._model is not None

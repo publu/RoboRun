@@ -9,7 +9,6 @@ _dataset = None
 _simulator = None
 _spatial_memory = None
 _agent = None
-_gemini_agent = None
 
 
 def get_webcam():
@@ -56,29 +55,11 @@ def get_scene_builder():
 def get_agent():
     global _agent
     if _agent is None:
-        if os.environ.get("ANTHROPIC_API_KEY"):
-            try:
-                from roborun.agent import FastRobotAgent
-                _agent = FastRobotAgent()
-                return _agent
-            except Exception:
-                pass
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            return "unavailable"
         try:
-            from roborun.agent import RobotAgent
-            _agent = RobotAgent()
+            from roborun.agent import FastRobotAgent
+            _agent = FastRobotAgent()
         except Exception:
             _agent = "unavailable"
     return _agent
-
-
-def get_gemini_agent():
-    global _gemini_agent
-    if _gemini_agent is None:
-        if not os.environ.get("GEMINI_API_KEY"):
-            return "unavailable"
-        try:
-            from roborun.agent import GeminiAgent
-            _gemini_agent = GeminiAgent()
-        except Exception:
-            _gemini_agent = "unavailable"
-    return _gemini_agent
