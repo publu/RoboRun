@@ -115,6 +115,41 @@
   .wasm-mode .wasm-only { display: block !important; }
   .wasm-mode .server-only { display: none !important; }
 
+  /* start screen: pick a robot, pick a task */
+  #start { position: fixed; inset: 0; display: none; place-items: center; z-index: 70;
+           background: rgba(5,8,10,.8); backdrop-filter: blur(6px);
+           -webkit-backdrop-filter: blur(6px); }
+  #start.show { display: grid; }
+  .start-card { text-align: center; max-width: 1000px; padding: 18px; position: relative; }
+  .start-card h1 { color: #00d47e; letter-spacing: .22em; font-size: 22px; margin: 0 0 8px; }
+  .start-card .sub { color: #9fb0bd; margin: 0 auto 20px; max-width: 660px; line-height: 1.6; }
+  .start-card .sub b { color: #d7e0e8; }
+  .start-card .close { position: absolute; top: 0; right: 6px; background: none; border: none;
+                       color: #6b7b88; font: inherit; font-size: 18px; cursor: pointer; }
+  #startGrid { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .bot-card { width: 205px; background: rgba(11,14,17,.85); border: 1px solid #1f2a33;
+              border-radius: 10px; padding: 10px 10px 12px; transition: border-color .2s; }
+  .bot-card:hover { border-color: #1f6e4c; }
+  .bot-card canvas { width: 165px; height: 140px; display: block; margin: 0 auto; }
+  .bot-card h3 { color: #d7e0e8; margin: 6px 0 2px; font-size: 12px; letter-spacing: .14em; }
+  .bot-card .tag { color: #6b7b88; font-size: 11px; min-height: 30px; }
+  .bot-card .tasks { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
+  .bot-card .tasks button { background: #10161c; border: 1px solid #2a3a46; color: #9fb0bd;
+              border-radius: 5px; font: inherit; font-size: 11px; padding: 6px;
+              cursor: pointer; letter-spacing: .06em; }
+  .bot-card .tasks button:hover { color: #00d47e; border-color: #1f6e4c; }
+  .start-foot { color: #4a5a66; margin-top: 18px; }
+  .start-foot b { color: #6b7b88; }
+
+  /* RUN is the one button a first-time visitor must find */
+  #btnRun { background: #0d3325 !important; color: #00d47e !important;
+            border-color: #1f6e4c !important; font-weight: 700; padding: 3px 16px; }
+  #btnRun.pulse { animation: runPulse 1.8s ease-in-out infinite; }
+  @keyframes runPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(0,212,126,.45); }
+    50% { box-shadow: 0 0 0 9px rgba(0,212,126,0); }
+  }
+
   /* stored runs */
   #runsList { display: flex; flex-direction: column; gap: 8px; }
   .runs-empty { color: #4a5a66; padding: 12px 0; }
@@ -134,6 +169,7 @@
 <body>
 
 <div id="toolbar">
+  <button id="btnLevels" title="pick a robot + task">⊞ LEVELS</button>
   <button data-panel="p-brief">MISSION</button>
   <button data-panel="p-policy">POLICY</button>
   <button data-panel="p-status">STATUS</button>
@@ -161,7 +197,7 @@
     <div id="editorHost"></div>
     <textarea id="code" spellcheck="false"></textarea>
     <div id="policyBar">
-      <button id="btnRun" title="save + run (⌘⏎ / Ctrl⏎)">▶ RUN</button>
+      <button id="btnRun" class="pulse" title="save + run (⌘⏎ / Ctrl⏎)">▶ RUN</button>
       <button id="btnStop" title="disable the policy">■ STOP</button>
       <span id="policyStatus">loading editor…</span>
     </div>
@@ -208,6 +244,17 @@
   <div class="p-body"><div id="runsList"></div></div>
 </div>
 
+<div id="start"><div class="start-card">
+  <button class="close" id="startClose">✕</button>
+  <h1>ROBORUN ARENA</h1>
+  <p class="sub">Pick a robot, pick a task. A starter policy is already loaded —
+  <b>edit it if you want, then press ▶ RUN</b> and watch the robot work.
+  Grab the wheel anytime with <b>WASD</b> (counts as practice, not autonomous).</p>
+  <div id="startGrid"></div>
+  <div class="start-foot">your policy is real python on a real robot handle —
+  <b>the same code drives ROS 1/2 robots</b> · every win is a merkle-sealed recording</div>
+</div></div>
+
 <div id="connect"><div class="card">
   <button class="close" id="connectClose">✕</button>
   <h2>CONNECT YOUR AGENT</h2>
@@ -243,7 +290,7 @@ player_policy and poll arena_status until won. No teleop.</pre>
   <div class="after wasm-only" style="display:none"><a href="#" onclick="document.querySelector('#toolbar [data-panel=p-runs]').click();document.getElementById('win').classList.remove('show');return false">view all recorded attempts → RUNS</a></div>
 </div></div>
 
-<div id="keys">drag headers · resize corners · ⌘⏎ run · L lidar cloud · C main camera · N level · WASD debug (practice)<span class="server-only"> · <a href="/">deck</a></span></div>
+<div id="keys">drag headers · resize corners · ⌘⏎ run · L lidar cloud · C main camera · N level · <b style="color:#6b7b88">WASD takes over anytime</b> (practice run)<span class="server-only"> · <a href="/">deck</a></span></div>
 
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }

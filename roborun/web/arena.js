@@ -1344,6 +1344,137 @@ codeEl.addEventListener("keydown", (e) => {
   }
 });
 
+/* ════════════════ start screen ════════════════ */
+const ROBOTS = [
+  { type: "dog",   label: "QUADRUPED", tag: "trot, explore, count — lidar + camera" },
+  { type: "biped", label: "HUMANOID",  tag: "walk, press buttons, carry things" },
+  { type: "arm",   label: "ARM",       tag: "pick and place from a fixed base" },
+  { type: "drone", label: "DRONE",     tag: "fly the rings — altitude is yours" },
+];
+function previewModel(type) {
+  const g = new THREE.Group();
+  const body = new THREE.MeshStandardMaterial({ color: 0xc8cdd4, roughness: .5, metalness: .35 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x2a323a, roughness: .6 });
+  const parts = { legs: [], rotors: [], joints: [] };
+  const box = (w, h, d, m, x = 0, y = 0, z = 0, parent = g) => {
+    const k = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    k.position.set(x, y, z); parent.add(k); return k;
+  };
+  const limb = (w, len, d, m, x, hipY, z) => {   // pivots at the hip, not the center
+    const k = new THREE.Mesh(new THREE.BoxGeometry(w, len, d), m);
+    k.geometry.translate(0, -len / 2, 0);
+    k.position.set(x, hipY, z); g.add(k); return k;
+  };
+  if (type === "dog") {
+    box(.62, .18, .3, body, 0, .42, 0);
+    box(.16, .14, .18, dark, .41, .48, 0);
+    for (const [x, z] of [[.25, -.15], [.25, .15], [-.25, -.15], [-.25, .15]])
+      parts.legs.push(limb(.06, .38, .05, dark, x, .38, z));
+  } else if (type === "biped") {
+    box(.3, .55, .38, body, 0, 1.05, 0);
+    box(.18, .2, .18, dark, 0, 1.48, 0);
+    for (const z of [-.11, .11]) parts.legs.push(limb(.08, .76, .08, dark, 0, .78, z));
+  } else if (type === "arm") {
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(.3, .4, .35, 20), dark);
+    base.position.y = .18; g.add(base);
+    const j1 = new THREE.Group(); j1.position.y = .4; g.add(j1);
+    box(.13, .13, .9, body, 0, 0, .45, j1);
+    const j2 = new THREE.Group(); j2.position.z = .9; j1.add(j2);
+    box(.09, .09, .7, dark, 0, 0, .35, j2);
+    const eff = new THREE.Mesh(new THREE.SphereGeometry(.08, 12, 12),
+      new THREE.MeshStandardMaterial({ color: 0x00d47e, emissive: 0x00d47e, emissiveIntensity: .5 }));
+    eff.position.z = .7; j2.add(eff);
+    j1.rotation.x = -.5; j2.rotation.x = .7;
+    parts.joints = [j1, j2];
+  } else {
+    box(.4, .12, .4, body, 0, .9, 0);
+    for (const [x, z] of [[.26, .26], [.26, -.26], [-.26, .26], [-.26, -.26]]) {
+      const r = new THREE.Mesh(new THREE.CylinderGeometry(.15, .15, .02, 16),
+        new THREE.MeshStandardMaterial({ color: 0x4a7ad8, transparent: true, opacity: .55 }));
+      r.position.set(x, .98, z); g.add(r); parts.rotors.push(r);
+    }
+  }
+  return { group: g, parts };
+}
+const startEl = document.getElementById("start");
+const previews = [];
+function buildStartScreen() {
+  const grid = document.getElementById("startGrid");
+  for (const r of ROBOTS) {
+    const card = document.createElement("div");
+    card.className = "bot-card";
+    card.innerHTML = `<canvas width="330" height="280"></canvas>
+      <h3>${r.label}</h3><div class="tag">${r.tag}</div><div class="tasks"></div>`;
+    const tasks = card.querySelector(".tasks");
+    LEVELS.forEach((lv, i) => {
+      if (lv.robot !== r.type) return;
+      const b = document.createElement("button");
+      b.textContent = lv.title.replace(/^[^—]*— /, "");
+      b.addEventListener("click", () => enterLevel(i));
+      tasks.appendChild(b);
+    });
+    grid.appendChild(card);
+
+    const canvas = card.querySelector("canvas");
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    renderer.setSize(330, 280, false);
+    const pscene = new THREE.Scene();
+    const pcam = new THREE.PerspectiveCamera(34, 330 / 280, .1, 10);
+    pcam.position.set(1.7, 1.35, 1.7);
+    pcam.lookAt(0, .6, 0);
+    pscene.add(new THREE.AmbientLight(0xffffff, .55));
+    const key = new THREE.DirectionalLight(0xffffff, 1.7);
+    key.position.set(2, 3, 1.5);
+    pscene.add(key);
+    const pv = previewModel(r.type);
+    pscene.add(pv.group);
+    const p = { renderer, scene: pscene, cam: pcam, ...pv,
+                hover: 0, hoverTarget: 0, spin: Math.random() * 6 };
+    card.addEventListener("pointerenter", () => { p.hoverTarget = 1; });
+    card.addEventListener("pointerleave", () => { p.hoverTarget = 0; });
+    previews.push(p);
+  }
+}
+let startRaf = 0;
+function animateStart(t) {
+  const s = t / 1000;
+  for (const p of previews) {
+    p.hover += (p.hoverTarget - p.hover) * .06;     // ease in and out of life
+    p.spin += .0025 + p.hover * .012;
+    p.group.rotation.y = p.spin;
+    const amp = .1 + p.hover * .45;
+    p.parts.legs.forEach((leg, i) => {
+      leg.rotation.z = Math.sin(s * (1.5 + p.hover * 4) + i * Math.PI) * amp * .8;
+    });
+    for (const r of p.parts.rotors) r.rotation.y += .04 + p.hover * .9;
+    if (p.parts.rotors.length) p.group.position.y = Math.sin(s * (1 + p.hover * 2)) * .05;
+    if (p.parts.joints.length) {
+      p.parts.joints[0].rotation.x = -.5 + Math.sin(s * (.7 + p.hover * 2)) * amp;
+      p.parts.joints[1].rotation.x = .7 + Math.cos(s * (.9 + p.hover * 2)) * amp * 1.3;
+    }
+    p.renderer.render(p.scene, p.cam);
+  }
+  if (startEl.classList.contains("show")) startRaf = requestAnimationFrame(animateStart);
+}
+function showStart() {
+  startEl.classList.add("show");
+  cancelAnimationFrame(startRaf);
+  startRaf = requestAnimationFrame(animateStart);
+}
+function enterLevel(i) {
+  startEl.classList.remove("show");
+  loadLevel(i);
+  policyStatus("starter policy loaded — edit it (or don't), then press ▶ RUN · WASD grabs the wheel anytime", "ok");
+}
+buildStartScreen();
+showStart();
+document.getElementById("startClose").addEventListener("click", () => startEl.classList.remove("show"));
+startEl.addEventListener("click", (e) => { if (e.target === startEl) startEl.classList.remove("show"); });
+document.getElementById("btnLevels").addEventListener("click", showStart);
+document.getElementById("btnRun").addEventListener("click", () => {
+  document.getElementById("btnRun").classList.remove("pulse");
+}, { once: true });
+
 const connectEl = document.getElementById("connect");
 document.getElementById("btnConnect").addEventListener("click", () => connectEl.classList.add("show"));
 document.getElementById("connectClose").addEventListener("click", () => connectEl.classList.remove("show"));
@@ -1551,7 +1682,7 @@ addEventListener("keydown", (e) => {
   if (e.key.toLowerCase() === "c") camMode = (camMode + 1) % CAM_MODES.length;
   if (e.key.toLowerCase() === "n") loadLevel(levelIndex + 1);
   if (e.key.toLowerCase() === "l") { cloudOn = !cloudOn; cloud.visible = cloudOn; }
-  if (e.key === "Escape") connectEl.classList.remove("show");
+  if (e.key === "Escape") { connectEl.classList.remove("show"); startEl.classList.remove("show"); }
 });
 addEventListener("keyup", (e) => keys[e.key.toLowerCase()] = false);
 function keyboardCmd() {
