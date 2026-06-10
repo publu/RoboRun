@@ -25,9 +25,14 @@ PY_MODULES = ["__init__.py", "arena.py", "behaviors.py", "sightings.py",
 
 
 def main() -> None:
+    vercel_link = None
+    if (SITE / ".vercel").exists():        # survive rebuilds: keep the deploy link
+        vercel_link = (SITE / ".vercel").rename(ROOT / ".vercel-link-tmp")
     if SITE.exists():
         shutil.rmtree(SITE)
     shutil.copytree(ROOT / "roborun" / "web", SITE)
+    if vercel_link is not None:
+        vercel_link.rename(SITE / ".vercel")
     dst = SITE / "py" / "roborun"
     dst.mkdir(parents=True, exist_ok=True)
     for name in PY_MODULES:
