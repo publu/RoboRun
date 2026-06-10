@@ -28,6 +28,10 @@ called 10x/second. It must never block. The handle:
   robot.seen(label=None) -> the run's automatic sighting memory
   robot.move(forward=0, strafe=0, turn=0, climb=0)   (clamped; climb = drones)
   robot.goto(x, z, tol=0.45) -> True when arrived (steers one tick)
+  robot.explore() -> one tick of frontier exploration; True once fully mapped
+      (use this for "move around / search / wander" — it is systematic)
+  robot.locate(thing) -> (x, z) world position of a sighting, or None
+  robot.approach(thing, tol=0.45) -> locate + goto; True when arrived
   robot.stop() / robot.say(text) / robot.log(msg)
   robot.grasp(True|False)        (arm levels: magnet effector)
   robot.answer(text)             (submit the chamber's answer)

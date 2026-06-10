@@ -137,6 +137,10 @@ class SimRobot:
     # pose/move/stop, which this stub provides)
     from roborun.behaviors import Robot as _R
     goto = _R.goto
+    explore = _R.explore
+    locate = _R.locate
+    approach = _R.approach
+    FOV = _R.FOV
 
     def log(self, *_a, **_k):
         pass

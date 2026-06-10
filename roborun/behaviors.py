@@ -19,6 +19,9 @@ The `robot` handle:
     robot.pose()             {x, z, heading} odometry (arena / robots with odom)
     robot.seen(label=None)   the system's automatic sighting memory this run
     robot.goto(x, z)         one tick of drive-toward; True when arrived
+    robot.explore()          one tick of frontier exploration; True when done
+    robot.locate(thing)      project a sighting to world (x, z)
+    robot.approach(thing)    locate + goto in one verb
     robot.move(climb=)       vertical for drones (Twist linear.z)
     robot.grasp(closed)      gripper for arm levels
     robot.answer("6")        submit the chamber's answer (recon levels)
@@ -259,6 +262,72 @@ class Robot:
             return a.pose() if a.is_active() else None
         except Exception:
             return None
+
+    FOV = 1.323   # see(): bearing_rad = (0.5 - cx) * FOV
+
+    def locate(self, thing) -> tuple[float, float] | None:
+        """Project a see() sighting into world coordinates (x, z).
+        Needs pose and the thing's dist; None if either is missing."""
+        import math
+        pose = self.pose()
+        if pose is None or getattr(thing, "dist", None) is None:
+            return None
+        a = pose["heading"] + (0.5 - thing.cx) * self.FOV
+        return (pose["x"] + math.cos(a) * thing.dist,
+                pose["z"] - math.sin(a) * thing.dist)
+
+    def approach(self, thing, tol: float = 0.45) -> bool:
+        """Drive toward a sighting: locate() + goto() in one verb.
+        True when arrived (or unlocatable -> False, stopped)."""
+        t = self.locate(thing)
+        if t is None:
+            self.stop()
+            return False
+        return self.goto(t[0], t[1], tol=tol)
+
+    def explore(self) -> bool:
+        """One tick of frontier exploration — build an occupancy map from
+        lidar + pose, chase the nearest known/unknown boundary, route via
+        BFS with obstacle inflation. Call every tick; returns True once
+        nothing reachable is unknown. All state lives in
+        robot.state["_explore"]. This is the 'wander with intent' verb:
+
+            if robot.explore():        # finished mapping everything
+                robot.answer(...)
+        """
+        import math
+        pose, scan = self.pose(), self.lidar()
+        if not pose or not scan:
+            self.stop()
+            return False
+        ex = self.state.setdefault("_explore", {"grid": {}, "path": None, "tick": 0})
+        grid = ex["grid"]
+        _explore_integrate(grid, pose, scan)
+        ex["tick"] += 1
+        if ex.get("done"):
+            if ex["tick"] % 50 != 0:       # re-check occasionally (movers)
+                return True
+            ex["done"] = False
+        if ex["tick"] % 10 == 1 or not ex["path"]:
+            ex["path"] = _explore_plan(grid, pose)
+        path = ex["path"]
+        if not path:
+            ex["done"] = True
+            self.stop()
+            return True
+        while path and math.hypot(path[0][0] * _EXPLORE_CELL - pose["x"],
+                                  path[0][1] * _EXPLORE_CELL - pose["z"]) < 0.45:
+            path.pop(0)
+        if not path:
+            return False
+        tx, tz = path[min(4, len(path) - 1)]
+        ahead = min(scan[:2] + scan[-2:])
+        if ahead < 0.6:
+            left, right = sum(scan[6:12]), sum(scan[-12:-6])
+            self.move(turn=1.0 if left > right else -1.0)
+        else:
+            self.goto(tx * _EXPLORE_CELL, tz * _EXPLORE_CELL)
+        return False
 
     def goto(self, x: float, z: float, speed: float = 0.9,
              tol: float = 0.45) -> bool:
@@ -702,6 +771,57 @@ def heartbeat(robot):
     robot.say(answer)
 ''',
 }
+
+
+_EXPLORE_CELL = 0.25   # finer than the narrowest doorway, or maps plug them
+
+
+def _explore_integrate(grid: dict, pose: dict, scan: list) -> None:
+    import math
+    n = len(scan)
+    for i, r in enumerate(scan):
+        a = pose["heading"] + i / n * 2 * math.pi
+        d = _EXPLORE_CELL * 0.5
+        while d < r:
+            c = (round((pose["x"] + math.cos(a) * d) / _EXPLORE_CELL),
+                 round((pose["z"] - math.sin(a) * d) / _EXPLORE_CELL))
+            if grid.get(c) != 2:
+                grid[c] = 1
+            d += _EXPLORE_CELL * 0.5
+        if r < 7.5:
+            grid[(round((pose["x"] + math.cos(a) * r) / _EXPLORE_CELL),
+                  round((pose["z"] - math.sin(a) * r) / _EXPLORE_CELL))] = 2
+
+
+def _explore_clear(grid: dict, c: tuple) -> bool:
+    # traversable = free and not hugging a wall (robots are fatter than cells)
+    if grid.get(c) != 1:
+        return False
+    for dx in (-1, 0, 1):
+        for dz in (-1, 0, 1):
+            if grid.get((c[0] + dx, c[1] + dz)) == 2:
+                return False
+    return True
+
+
+def _explore_plan(grid: dict, pose: dict) -> list | None:
+    """BFS through clear cells to the nearest known/unknown frontier."""
+    start = (round(pose["x"] / _EXPLORE_CELL), round(pose["z"] / _EXPLORE_CELL))
+    prev, queue, seen = {}, [start], {start}
+    while queue:
+        c = queue.pop(0)
+        for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            n = (c[0] + dx, c[1] + dz)
+            if n in seen:
+                continue
+            if grid.get(n) is None:
+                path = [c]
+                while path[-1] != start:
+                    path.append(prev[path[-1]])
+                return path[::-1]
+            if _explore_clear(grid, n):
+                seen.add(n); prev[n] = c; queue.append(n)
+    return None
 
 
 def _parse_action(raw: str) -> dict | None:

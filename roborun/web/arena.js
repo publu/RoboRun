@@ -46,97 +46,25 @@ const LEVELS = [
     ],
     win: { type: "answer", value: "6", question: "how many doors?" },
     demo: `from roborun.behaviors import behavior
-from math import hypot, pi, cos, sin
 
-# Explore (frontier search), project every door sighting into world
-# coordinates, dedupe by position, answer when nothing is left unknown.
-CELL = 0.25
-FOV = 1.323     # see(): bearing = (0.5 - cx) * FOV  (radians)
-
-def integrate(grid, pose, scan):
-    n = len(scan)
-    for i, r in enumerate(scan):
-        a = pose["heading"] + i / n * 2 * pi
-        d = CELL * 0.5
-        while d < r:
-            c = (round((pose["x"] + cos(a) * d) / CELL),
-                 round((pose["z"] - sin(a) * d) / CELL))
-            if grid.get(c) != 2:
-                grid[c] = 1
-            d += CELL * 0.5
-        if r < 7.5:
-            grid[(round((pose["x"] + cos(a) * r) / CELL),
-                  round((pose["z"] - sin(a) * r) / CELL))] = 2
-
-def clear(grid, c):
-    if grid.get(c) != 1:
-        return False
-    for dx in (-1, 0, 1):
-        for dz in (-1, 0, 1):
-            if grid.get((c[0] + dx, c[1] + dz)) == 2:
-                return False
-    return True
-
-def plan(grid, pose):
-    start = (round(pose["x"] / CELL), round(pose["z"] / CELL))
-    prev, queue, seen = {}, [start], {start}
-    while queue:
-        c = queue.pop(0)
-        for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            n = (c[0] + dx, c[1] + dz)
-            if n in seen:
-                continue
-            if grid.get(n) is None:
-                path = [c]
-                while path[-1] != start:
-                    path.append(prev[path[-1]])
-                return path[::-1]
-            if clear(grid, n):
-                seen.add(n); prev[n] = c; queue.append(n)
-    return None
+# Explore new places. While exploring, look for doors; when you find
+# one, mark its location in memory. When everywhere is explored,
+# answer how many distinct doors there are.
 
 @behavior(hz=10)
 def player_policy(robot):
-    pose, scan = robot.pose(), robot.lidar()
-    if not pose or not scan:
-        return robot.stop()
-    st = robot.state
-    grid = st.setdefault("grid", {})
-    integrate(grid, pose, scan)
-
-    # perception-based door census: project each sighting to a world
-    # point, snap to a 1.5 m cell — one cell, one door, however often seen
-    doors = st.setdefault("doors", set())
+    doors = robot.state.setdefault("doors", set())
     for d in robot.see():
-        if "door" in d.label and d.dist:
-            a = pose["heading"] + (0.5 - d.cx) * FOV
-            wx = pose["x"] + cos(a) * d.dist
-            wz = pose["z"] - sin(a) * d.dist
-            doors.add((round(wx / 1.5), round(wz / 1.5)))
+        if "door" in d.label:
+            spot = robot.locate(d)                 # sighting -> world (x, z)
+            if spot:
+                doors.add((round(spot[0] / 1.5), round(spot[1] / 1.5)))
 
-    st["tick"] = st.get("tick", 0) + 1
-    if st["tick"] % 10 == 1 or not st.get("path"):
-        st["path"] = plan(grid, pose)
-    path = st.get("path")
-    if not path:
-        if not st.get("done"):           # fully explored: commit the count
-            st["done"] = True
+    if robot.explore():                            # True once fully mapped
+        if not robot.state.get("answered"):
+            robot.state["answered"] = True
             robot.answer(str(len(doors)))
             robot.say("counted " + str(len(doors)) + " doors")
-        return robot.stop()
-
-    while path and hypot(path[0][0] * CELL - pose["x"],
-                         path[0][1] * CELL - pose["z"]) < 0.45:
-        path.pop(0)
-    if not path:
-        return
-    tx, tz = path[min(4, len(path) - 1)]
-    ahead = min(scan[:2] + scan[-2:])
-    if ahead < 0.6:
-        left, right = sum(scan[6:12]), sum(scan[-12:-6])
-        robot.move(turn=1.0 if left > right else -1.0)
-    else:
-        robot.goto(tx * CELL, tz * CELL)
 `,
   },
 
@@ -158,34 +86,14 @@ def player_policy(robot):
     props: "reddoor-random",
     win: { type: "near", label: "red door", dist: 1.6, hold: 1.5 },
     demo: `from roborun.behaviors import behavior
-from math import cos, sin
-
-FOV = 1.323
 
 @behavior(hz=10)
 def player_policy(robot):
-    pose, scan = robot.pose(), robot.lidar()
-    if not pose or not scan:
-        return robot.stop()
-    st = robot.state
-
     red = robot.see("red door")
-    if red and red[0].dist:
-        a = pose["heading"] + (0.5 - red[0].cx) * FOV
-        st["target"] = (pose["x"] + cos(a) * red[0].dist,
-                        pose["z"] - sin(a) * red[0].dist)
-    t = st.get("target")
-    if t:
-        robot.goto(t[0], t[1], tol=1.0)   # the chamber checks the hold
-        return
-
-    # sweep the corridor until red shows up
-    ahead = min(scan[:2] + scan[-2:])
-    if ahead < 1.0:
-        st["dir"] = -st.get("dir", 1)
-        robot.move(turn=1.2)
+    if red:
+        robot.approach(red[0], tol=1.0)   # the chamber checks the hold
     else:
-        robot.move(forward=0.8 * st.get("dir", 1), turn=0.25)
+        robot.explore()                   # search until red shows up
 `,
   },
 
@@ -249,33 +157,22 @@ def player_policy(robot):
     ],
     win: { type: "buttons", order: [0, 1, 2], dist: 0.8, hold: 0.8 },
     demo: `from roborun.behaviors import behavior
-from math import cos, sin
 
-FOV = 1.323
 ORDER = ["red button", "green button", "blue button"]
 
 @behavior(hz=10)
 def player_policy(robot):
-    pose = robot.pose()
-    if not pose:
-        return robot.stop()
     st = robot.state
     i = st.setdefault("i", 0)
     if i >= len(ORDER):
         return robot.stop()
-
     hits = robot.see(ORDER[i])
-    if hits and hits[0].dist:
-        a = pose["heading"] + (0.5 - hits[0].cx) * FOV
-        st["target"] = (pose["x"] + cos(a) * hits[0].dist,
-                        pose["z"] - sin(a) * hits[0].dist)
-    t = st.get("target")
-    if not t:
-        return robot.move(turn=0.9)       # scan for it
-    if robot.goto(t[0], t[1], tol=0.35):
+    if not hits:
+        return robot.explore()            # search for the next button
+    if robot.approach(hits[0], tol=0.35):
         st["hold"] = st.get("hold", 0) + 1
-        if st["hold"] > 12:               # pressed — next button
-            st["i"], st["target"], st["hold"] = i + 1, None, 0
+        if st["hold"] > 12:               # pressed — next
+            st["i"], st["hold"] = i + 1, 0
 `,
   },
 
@@ -297,28 +194,16 @@ def player_policy(robot):
     ],
     win: { type: "carry", crates: 2, pickup: 0.7, zone: 1.2 },
     demo: `from roborun.behaviors import behavior
-from math import cos, sin
-
-FOV = 1.323
 
 @behavior(hz=10)
 def player_policy(robot):
-    pose = robot.pose()
-    if not pose:
-        return robot.stop()
     st = robot.state
     want = "drop zone" if st.get("carrying") else "crate"
     hits = robot.see(want)
-    if hits and hits[0].dist:
-        a = pose["heading"] + (0.5 - hits[0].cx) * FOV
-        st["target"] = (pose["x"] + cos(a) * hits[0].dist,
-                        pose["z"] - sin(a) * hits[0].dist)
-    t = st.get("target")
-    if not t:
-        return robot.move(turn=0.9)
-    if robot.goto(t[0], t[1], tol=0.4):
+    if not hits:
+        return robot.explore()            # search for it
+    if robot.approach(hits[0], tol=0.4):
         st["carrying"] = not st.get("carrying")   # auto pick/drop happened
-        st["target"] = None
 `,
   },
 
