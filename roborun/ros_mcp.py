@@ -1275,9 +1275,24 @@ def handle_tool_call(name: str, args: dict) -> dict:
     return {"ok": False, "error": f"Unknown tool: {name}"}
 
 
+# The curated default tool surface. LLM clients pick tools better from a
+# short list; the introspection long tail stays callable but unlisted
+# unless ROBORUN_MCP_FULL=1. (estop is always present, always last resort.)
+CORE_TOOLS = {
+    "scan_robots", "connect_to_robot", "get_robot_info", "get_capabilities",
+    "list_topics", "subscribe_once", "publish", "move", "estop", "navigate",
+    "call_service", "send_action_goal", "get_parameters", "set_parameter",
+    "camera_snapshot", "telemetry_stream",
+}
+
+
 def get_all_tools() -> list[dict]:
-    """All MCP tools: built-in + skills."""
-    tools = list(MCP_TOOLS)
+    """MCP tools: curated core + skills (full set with ROBORUN_MCP_FULL=1).
+
+    Gating affects tools/list only — every tool remains callable by name,
+    so a client that knows about an unlisted tool can still use it."""
+    full = os.environ.get("ROBORUN_MCP_FULL", "") == "1"
+    tools = [t for t in MCP_TOOLS if full or t["name"] in CORE_TOOLS]
     try:
         from roborun.skills import get_registry
         tools.extend(get_registry().get_mcp_tools())
@@ -1290,6 +1305,6 @@ def get_mcp_manifest() -> dict:
     return {
         "name": "ros-agent",
         "version": "0.11.0",
-        "description": "Direct ROS robot control — DDS + rosbridge, zero-config discovery, full topic/service/action/param access, extensible skills. No ROS install needed.",
+        "description": "Direct ROS robot control — DDS + rosbridge, zero-config discovery, topic/service/action/param access, extensible skills. No ROS install needed. Set ROBORUN_MCP_FULL=1 to list the full introspection toolset.",
         "tools": get_all_tools(),
     }
