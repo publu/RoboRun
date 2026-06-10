@@ -76,7 +76,13 @@ def _hash_lines(lines: list[str]) -> list[str]:
     return [hash_event(json.loads(ln)) for ln in lines]
 
 
-def _sign(root_hex: str, count: int, sealed_at: str) -> dict[str, str] | None:
+def sign_message(message: bytes) -> dict[str, str] | None:
+    """Sign arbitrary bytes with this robot's Ed25519 identity key.
+
+    The key is created on first use at ~/.roborun/ed25519.key and is the
+    same identity used for run seals and cross-robot beacons. Returns None
+    when `cryptography` is not installed.
+    """
     try:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import (
             Ed25519PrivateKey,
@@ -94,16 +100,14 @@ def _sign(root_hex: str, count: int, sealed_at: str) -> dict[str, str] | None:
             serialization.PrivateFormat.PKCS8,
             serialization.NoEncryption()))
         _KEY_PATH.chmod(0o600)
-    message = f"{root_hex}|{count}|{sealed_at}".encode()
     sig = key.sign(message)
     pub = key.public_key().public_bytes(
         serialization.Encoding.Raw, serialization.PublicFormat.Raw)
     return {"algo": "ed25519", "signature": sig.hex(), "public_key": pub.hex()}
 
 
-def _check_signature(seal: dict) -> bool | None:
+def verify_message(sig: dict | None, message: bytes) -> bool | None:
     """True/False if checkable, None if unsigned or cryptography missing."""
-    sig = seal.get("signature")
     if not sig:
         return None
     try:
@@ -112,7 +116,6 @@ def _check_signature(seal: dict) -> bool | None:
         )
     except ImportError:
         return None
-    message = f"{seal['merkle_root']}|{seal['event_count']}|{seal['sealed_at']}".encode()
     try:
         Ed25519PublicKey.from_public_bytes(
             bytes.fromhex(sig["public_key"])).verify(
@@ -120,6 +123,21 @@ def _check_signature(seal: dict) -> bool | None:
         return True
     except Exception:
         return False
+
+
+def public_key_hex() -> str | None:
+    """This robot's Ed25519 public key (creates the key on first call)."""
+    signed = sign_message(b"roborun-identity")
+    return signed["public_key"] if signed else None
+
+
+def _sign(root_hex: str, count: int, sealed_at: str) -> dict[str, str] | None:
+    return sign_message(f"{root_hex}|{count}|{sealed_at}".encode())
+
+
+def _check_signature(seal: dict) -> bool | None:
+    message = f"{seal['merkle_root']}|{seal['event_count']}|{seal['sealed_at']}".encode()
+    return verify_message(seal.get("signature"), message)
 
 
 def seal_run(run_dir: str | Path) -> dict[str, Any]:

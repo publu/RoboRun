@@ -47,6 +47,10 @@ class WebcamPipeline:
         self._timeline_interval: float = 3.0
         self._last_timeline_ts: float = 0.0
 
+        # MCAP recording: frames + detections land in the active run
+        self._record_interval: float = 0.2  # 5 fps keyframes by default
+        self._last_record_ts: float = 0.0
+
         self._prev_yolo_labels: set[str] = set()
         self._prev_clip_labels: set[str] = set()
 
@@ -222,6 +226,7 @@ class WebcamPipeline:
                 if ok:
                     FRAME_PATH.write_bytes(buf.tobytes())
 
+                self._maybe_record(frame, detections)
                 self._write_state()
                 self._maybe_timeline(frame, detections)
 
@@ -318,6 +323,28 @@ class WebcamPipeline:
         heatmap = (activation * 255).astype(np.uint8)
         return cv2.resize(heatmap, (w, h), interpolation=cv2.INTER_LINEAR)
 
+    def _maybe_record(self, frame: np.ndarray, detections: list[Detection]) -> None:
+        """Feed the active MCAP run: raw keyframes + detections (spec §2.1)."""
+        now = time.monotonic()
+        if now - self._last_record_ts < self._record_interval:
+            return
+        try:
+            from roborun.recorder import active_recorder
+            rec = active_recorder()
+        except Exception:
+            return
+        if rec is None:
+            return
+        self._last_record_ts = now
+        try:
+            ok, raw = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            if ok:
+                rec.write_camera(raw.tobytes(), name="webcam")
+            if detections:
+                rec.write_detections([d.to_dict() for d in detections], name="yolo")
+        except Exception:
+            pass
+
     def _maybe_timeline(self, frame: np.ndarray, detections: list[Detection]) -> None:
         if not self._timeline_enabled:
             return
@@ -347,18 +374,32 @@ class WebcamPipeline:
             pass
         Thread(target=self._store_timeline, args=(frame_copy, det_dicts), daemon=True).start()
 
-    @staticmethod
-    def _store_timeline(frame: np.ndarray, det_dicts: list[dict]) -> None:
+    def _store_timeline(self, frame: np.ndarray, det_dicts: list[dict]) -> None:
+        embedding = None
+        if self._clip is not None:
+            try:
+                embedding = self._clip.embed_image(frame)
+            except Exception:
+                pass
         try:
-            from roborun.server import _get_memory
-            mem = _get_memory()
-            mem.store(
+            from roborun.routes._singletons import get_memory
+            get_memory().store(
                 frame=frame,
+                embedding=embedding,
                 detections=det_dicts,
                 metadata={"source": "timeline"},
+                source="timeline",
             )
         except Exception:
             pass
+        if embedding is not None:
+            try:
+                from roborun.recorder import active_recorder
+                rec = active_recorder()
+                if rec is not None:
+                    rec.write_clip(embedding, frame_topic="/camera/webcam")
+            except Exception:
+                pass
 
     def _write_state(self) -> None:
         state = {
