@@ -91,6 +91,11 @@ class SimRobot:
     def say(self, *_a, **_k):
         pass
 
+    # the real handle's navigation primitive, verbatim (it only touches
+    # pose/move/stop, which this stub provides)
+    from roborun.behaviors import Robot as _R
+    goto = _R.goto
+
     def log(self, *_a, **_k):
         pass
 

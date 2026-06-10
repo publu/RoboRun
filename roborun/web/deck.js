@@ -526,6 +526,10 @@ if (preview === "verified") showStamp("VERIFIED", "412 chunks · anchored to an 
 if (preview === "failed") showStamp("BROKEN", "segment 0042 hash mismatch", "PREVIEW — not a real verification", true);
 if (preview === "sealed") showStamp("SEALED", "412 chunks · merkle root computed", "PREVIEW — not a real seal");
 
+if (new URLSearchParams(location.search).get("runs")) {
+  setTimeout(() => { toggleDrawer(); }, 400);
+}
+
 connectEvents();
 pollHud();
 pollBadge();

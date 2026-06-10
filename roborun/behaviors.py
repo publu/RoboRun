@@ -18,6 +18,7 @@ The `robot` handle:
     robot.see(label=None)    detections (normalized .cx .cy .w .h .label .conf)
     robot.pose()             {x, z, heading} odometry (arena / robots with odom)
     robot.seen(label=None)   the system's automatic sighting memory this run
+    robot.goto(x, z)         one tick of drive-toward; True when arrived
     robot.move(forward=0, strafe=0, turn=0)   sim or real robot, safety-clamped
     robot.stop()
     robot.say(text)          speaks into the event timeline
@@ -255,6 +256,28 @@ class Robot:
             return a.pose() if a.is_active() else None
         except Exception:
             return None
+
+    def goto(self, x: float, z: float, speed: float = 0.9,
+             tol: float = 0.45) -> bool:
+        """One tick of drive-toward-point. Call it every tick; it steers and
+        returns True once within tol. Needs pose (arena / odom robots).
+        Routing around walls is your policy's job — this is the last meter."""
+        import math
+        pose = self.pose()
+        if pose is None:
+            self.stop()
+            return False
+        dx, dz = x - pose["x"], z - pose["z"]
+        if math.hypot(dx, dz) < tol:
+            self.stop()
+            return True
+        bearing = (math.atan2(-dz, dx) - pose["heading"] + math.pi) \
+            % (2 * math.pi) - math.pi
+        if abs(bearing) > 0.5:
+            self.move(turn=1.2 if bearing > 0 else -1.2)
+        else:
+            self.move(forward=speed, turn=0.8 * bearing)
+        return False
 
     def lidar(self) -> list[float]:
         """360° range scan in meters, index 0 = straight ahead, CCW.

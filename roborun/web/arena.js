@@ -41,7 +41,7 @@ const LEVELS = [
       { id: "d6", x: 1, z: 4.7, color: "blue" },
     ],
     demo: `from roborun.behaviors import behavior
-from math import atan2, hypot, pi, cos, sin
+from math import hypot, pi, cos, sin
 
 # No map is given. Build one from lidar, chase the frontier between
 # known and unknown space, and the rooms find themselves.
@@ -115,16 +115,12 @@ def player_policy(robot):
     if not path:
         return
     tx, tz = path[min(4, len(path) - 1)]
-    dx, dz = tx * CELL - pose["x"], tz * CELL - pose["z"]
-    bearing = (atan2(-dz, dx) - pose["heading"] + pi) % (2 * pi) - pi
     ahead = min(scan[:2] + scan[-2:])
-    if abs(bearing) > 0.5:
-        robot.move(turn=1.2 if bearing > 0 else -1.2)
-    elif ahead < 0.6:
+    if ahead < 0.6:
         left, right = sum(scan[6:12]), sum(scan[-12:-6])
         robot.move(turn=1.0 if left > right else -1.0)   # rotate toward open space
     else:
-        robot.move(forward=0.9, turn=0.8 * bearing)
+        robot.goto(tx * CELL, tz * CELL)
 `,
   },
   {
@@ -608,8 +604,7 @@ function tickChamber(dt) {
     }
   }
   if ((LV.rooms || []).length && visited.size === LV.rooms.length) {
-    const seen = doorObjs.filter(d => d.seen);
-    winChamber(`all ${LV.rooms.length} rooms · doors sighted ${seen.length}/${doorObjs.length}`);
+    winChamber(`all ${LV.rooms.length} rooms explored`);
   }
   if (LV.goal) {
     const inGoal = Math.hypot(dog.pos.x - LV.goal.x, dog.pos.z - LV.goal.z) < LV.goal.r;
