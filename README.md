@@ -95,12 +95,12 @@ The UI at `http://localhost:8765` is the flight deck itself: live camera with YO
 ## Connect a real robot
 
 ```bash
-# on the robot
-ros2 launch rosbridge_server rosbridge_websocket_launch.xml   # ROS 2
-roslaunch rosbridge_server rosbridge_websocket.launch          # ROS 1
+roborun connect 192.168.1.42          # finds rosbridge, classifies the robot, remembers it
+roborun connect 192.168.1.42 --move   # proves it: clamped 0.5s nudge, then stop
+roborun connect --scan                # DDS discovery — nothing to install on the robot
 ```
 
-Point the UI at the robot's IP. **No ROS install on your machine.** The same `behaviors/*.py` files now drive real hardware: Unitree Go2/G1, TurtleBot, arms, drones, NVIDIA Isaac Sim, Gazebo. `robot.move()` goes to the sim if it's running, otherwise to the connected robot, always through the same safety clamps.
+If rosbridge isn't running on the robot yet, the command prints the exact two lines to run there — that's the whole setup. **No ROS install on your machine.** Once connected, plain `roborun` drives that robot and the same `behaviors/*.py` files now move real hardware: Unitree Go2/G1, TurtleBot, arms, drones, NVIDIA Isaac Sim, Gazebo. `robot.move()` goes to the sim if it's running, otherwise to the connected robot, always through the same safety clamps.
 
 Optional extras: `pip install ros-agent[vision]` (YOLO + CLIP), `[sim]` (MuJoCo), `[ros]` (direct DDS), `[crypto]` (Ed25519 signing), `[anchor]` (RFC 3161 timestamping), `[fleet]` (R2 + DuckDB cross-robot), `[all]`.
 

@@ -205,9 +205,21 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "skill":
         from roborun.skills.manager import cli
         raise SystemExit(cli(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "connect":
+        from roborun.connect import cli
+        raise SystemExit(cli(sys.argv[2:]))
     if not WEB_ROOT.exists():
         raise SystemExit(f"Missing web directory at {WEB_ROOT}")
     STATE_ROOT.mkdir(parents=True, exist_ok=True)
+
+    # A robot saved by `roborun connect` is the robot behaviors drive
+    from roborun.connect import saved_robot
+    robot = saved_robot()
+    if robot:
+        from roborun.rosbridge import get_client
+        client = get_client(robot["host"], robot.get("port", 9090))
+        state = "connected" if client and client.is_connected else "unreachable — will retry"
+        print(f"  Robot {robot['host']} ({robot.get('type', '?')}): {state}")
 
     # Load skills
     from roborun.skills import load_skills
