@@ -79,11 +79,9 @@ class Handler(SimpleHTTPRequestHandler):
         if dispatch_get(self.path, self):
             return
 
-        # Static files — the flight deck IS the UI; legacy dashboard at /classic
-        if self.path == "/" or path_only == "/demo":
-            self.path = "/demo.html"
-        elif path_only == "/classic":
-            self.path = "/index.html"
+        # Static files — the flight deck IS the UI
+        if self.path == "/" or path_only == "/deck":
+            self.path = "/deck.html"
         super().do_GET()
 
     def do_OPTIONS(self) -> None:
