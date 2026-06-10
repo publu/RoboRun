@@ -119,3 +119,35 @@ def test_local_add_symlinks_and_remove(home, tmp_path):
     assert rm["ok"]
     assert not dest.exists() and manager.read_lock() == {}
     assert src.exists()  # removing the symlink never touches the source
+
+
+def test_depends_declared_and_checked(tmp_path):
+    body = GOOD_SKILL.replace('REQUIRES = ">=0.11,<2"',
+                              'REQUIRES = ">=0.11,<2"\nDEPENDS = ["json", "not_a_real_pkg_xyz"]')
+    (tmp_path / "skill.py").write_text(body)
+    r = manager.validate_skill(tmp_path)
+    assert r["ok"]
+    assert r["depends"] == ["json", "not_a_real_pkg_xyz"]
+    assert r["missing_deps"] == ["not_a_real_pkg_xyz"]
+
+
+def test_depends_malformed_rejected(tmp_path):
+    body = GOOD_SKILL + "\nDEPENDS = [1, 2]\n"
+    (tmp_path / "skill.py").write_text(body)
+    r = manager.validate_skill(tmp_path)
+    assert not r["ok"]
+    assert any("DEPENDS" in i for i in r["issues"])
+
+
+def test_missing_deps_blocks_load_not_install(home, tmp_path):
+    body = GOOD_SKILL.replace('REQUIRES = ">=0.11,<2"',
+                              'REQUIRES = ">=0.11,<2"\nDEPENDS = ["not_a_real_pkg_xyz"]')
+    src = tmp_path / "dev-skill"
+    src.mkdir()
+    (src / "skill.py").write_text(body)
+    r = manager.add(str(src))
+    assert r["ok"]  # install succeeds — deps are a load gate, not an install gate
+    entry = manager.installed()[0]
+    assert entry["state"] == "missing-deps"
+    assert entry["missing_deps"] == ["not_a_real_pkg_xyz"]
+    assert manager.verified_skill_paths() == []  # never loaded, never crashed

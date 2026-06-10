@@ -124,9 +124,39 @@ def validate_skill(root: Path) -> dict[str, Any]:
     if isinstance(requires, str) and not _requires_ok(requires):
         issues.append(f"REQUIRES '{requires}' not satisfied by roborun {__version__}")
 
+    depends = _parse_depends(tree)
+    if depends is None:
+        issues.append("DEPENDS must be a list of import-name string literals")
+
     return {"ok": not issues, "skill_id": consts.get("SKILL_ID"),
             "name": consts.get("SKILL_NAME"), "version": consts.get("SKILL_VERSION"),
-            "requires": requires, "file": skill_file.name, "issues": issues}
+            "requires": requires, "depends": depends or [],
+            "missing_deps": missing_deps(depends or []),
+            "file": skill_file.name, "issues": issues}
+
+
+def _parse_depends(tree: ast.Module) -> list[str] | None:
+    """DEPENDS = ["ultralytics", ...] — import names. [] if absent, None if malformed."""
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 \
+                and isinstance(node.targets[0], ast.Name) \
+                and node.targets[0].id == "DEPENDS":
+            if not isinstance(node.value, (ast.List, ast.Tuple)):
+                return None
+            out = []
+            for el in node.value.elts:
+                if not (isinstance(el, ast.Constant) and isinstance(el.value, str)):
+                    return None
+                out.append(el.value)
+            return out
+    return []
+
+
+def missing_deps(depends: list[str]) -> list[str]:
+    """Which declared import names are not importable right now."""
+    import importlib.util
+    return [d for d in depends
+            if importlib.util.find_spec(d.split(".")[0]) is None]
 
 
 # ── git plumbing ─────────────────────────────────────────────────────────
@@ -185,6 +215,7 @@ def add(spec: str) -> dict[str, Any]:
             "repo": url, "ref": ref, "sha": sha,
             "version": report["version"], "name": report["name"],
             "file": report["file"], "requires": report.get("requires"),
+            "depends": report.get("depends", []),
             "added_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
         _write_lock(lock)
@@ -209,6 +240,7 @@ def _add_local(path: Path) -> dict[str, Any]:
     lock[skill_id] = {
         "repo": str(path.resolve()), "local": True, "sha": None,
         "version": report["version"], "name": report["name"], "file": report["file"],
+        "depends": report.get("depends", []),
         "added_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
     _write_lock(lock)
@@ -254,14 +286,19 @@ def installed() -> list[dict[str, Any]]:
             state = "sha-mismatch"
         else:
             state = "pinned"
-        out.append({"id": skill_id, **entry, "state": state})
+        missing = missing_deps(entry.get("depends", []))
+        if missing and state in ("pinned", "local"):
+            state = "missing-deps"
+        out.append({"id": skill_id, **entry, "state": state,
+                    "missing_deps": missing})
     return out
 
 
 def verified_skill_paths() -> list[tuple[str, Path]]:
     """(skill_id, skill_file) for every installed skill that passes the pin
-    check — the loader's entry point. Tampered or missing trees are skipped
-    with a lock state the CLI surfaces, never silently loaded."""
+    and dependency checks — the loader's entry point. Tampered trees and
+    skills with missing deps are skipped with a lock state the CLI
+    surfaces (`roborun skill list`), never crashed on or silently loaded."""
     out = []
     for entry in installed():
         if entry["state"] not in ("pinned", "local"):
@@ -299,6 +336,9 @@ def cli(argv: list[str] | None = None) -> int:
         for r in rows:
             pin = (r.get("sha") or "")[:12] or r["state"]
             print(f"{r['id']:<24} v{r.get('version', '?'):<8} [{r['state']}] {pin}")
+            if r["missing_deps"]:
+                print(f"{'':<24} not loaded — pip install "
+                      f"{' '.join(r['missing_deps'])}")
         return 0
     if args.cmd == "validate":
         result = validate_skill(Path(args.target).expanduser())
