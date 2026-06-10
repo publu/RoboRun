@@ -916,6 +916,68 @@ def _format_image_result(topic: str, msg: dict) -> dict:
 
 # ── MCP tool definitions ─────────────────────────────────────────────────────
 
+
+
+# ── Vibecode loop tools: eyes, chamber state, and the behavior folder ────
+
+def _tool_see(args: dict) -> dict:
+    """What the robot sees right now — arena ground truth or camera YOLO."""
+    from roborun.behaviors import Robot
+    from roborun.arena import get_arena
+    things = Robot("mcp").see(label=args.get("label"),
+                              min_conf=float(args.get("min_conf", 0.4)))
+    return {"ok": True,
+            "source": "arena" if get_arena().is_active() else "camera",
+            "detections": [{"label": t.label, "conf": round(t.conf, 2),
+                            "cx": round(t.cx, 3), "cy": round(t.cy, 3),
+                            "w": round(t.w, 3), "h": round(t.h, 3)}
+                           for t in things]}
+
+
+def _tool_arena_status(args: dict) -> dict:
+    from roborun.arena import get_arena
+    a = get_arena()
+    if not a.is_active():
+        return {"ok": True, "active": False,
+                "hint": "no arena page is open — open http://localhost:8765/arena"}
+    return {"ok": True, "active": True, "pose": a.pose(), "level": a.level(),
+            "detections": a.detections()}
+
+
+def _tool_write_behavior(args: dict) -> dict:
+    """Write/overwrite a behavior file. Hot reload runs it within ~1s."""
+    import re as _re
+    from pathlib import Path as _P
+    name = str(args.get("name", "")).strip().removesuffix(".py")
+    source = str(args.get("source", ""))
+    if not _re.match(r"^[a-z0-9_]+$", name):
+        return {"ok": False, "error": "name must be a snake_case slug"}
+    if "def " not in source or "@behavior" not in source:
+        return {"ok": False, "error": "source must define an @behavior-decorated function "
+                                      "(from roborun.behaviors import behavior)"}
+    try:
+        compile(source, f"{name}.py", "exec")
+    except SyntaxError as exc:
+        return {"ok": False, "error": f"syntax error: {exc}"}
+    path = _P("behaviors") / f"{name}.py"
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(source)
+    return {"ok": True, "path": str(path),
+            "note": "hot reload picks it up within ~1s; check `behaviors` "
+                    "with action=list, enable/disable it by name"}
+
+
+def _tool_behaviors(args: dict) -> dict:
+    from roborun.behaviors import BehaviorRunner
+    runner = BehaviorRunner.get()
+    action = args.get("action", "list")
+    if action == "list":
+        return {"ok": True, "behaviors": runner.statuses()}
+    name = str(args.get("name", "")).strip()
+    ok = runner.set_enabled(name, action == "enable")
+    return {"ok": ok} if ok else {"ok": False, "error": f"no behavior named {name!r}"}
+
+
 MCP_TOOLS = [
     # --- Discovery & connection ---
     {
@@ -1244,6 +1306,34 @@ MCP_TOOLS = [
             "required": ["name"],
         },
     },
+    # --- Vibecode loop ---
+    {
+        "name": "see",
+        "description": "What the robot sees right now: detections with normalized cx/cy/w/h (arena ground truth when the arena page is open, otherwise camera YOLO). Use before writing a behavior to learn the labels in play.",
+        "inputSchema": {"type": "object", "properties": {
+            "label": {"type": "string", "description": "Filter to one label, e.g. 'red door'"},
+            "min_conf": {"type": "number", "description": "Confidence floor (default 0.4)"}}},
+    },
+    {
+        "name": "arena_status",
+        "description": "Arena chamber state: pose, rooms visited, won, live detections. The game loop: write_behavior, enable it, poll this until won.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "write_behavior",
+        "description": "Write behaviors/<name>.py — a policy: an @behavior(hz=10)-decorated function taking `robot` (robot.see/move/stop/say/remember). Hot-reloads live. This is how you vibecode the robot.",
+        "inputSchema": {"type": "object", "properties": {
+            "name": {"type": "string", "description": "snake_case file name without .py"},
+            "source": {"type": "string", "description": "Full Python source of the behavior file"}},
+            "required": ["name", "source"]},
+    },
+    {
+        "name": "behaviors",
+        "description": "List behaviors and their status, or enable/disable one by name.",
+        "inputSchema": {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["list", "enable", "disable"]},
+            "name": {"type": "string"}}, "required": ["action"]},
+    },
 ]
 
 _TOOL_HANDLERS = {
@@ -1257,6 +1347,10 @@ _TOOL_HANDLERS = {
     "subscribe_for_duration": _tool_subscribe_duration,
     "publish": _tool_publish,
     "move": _tool_move,
+    "see": _tool_see,
+    "arena_status": _tool_arena_status,
+    "write_behavior": _tool_write_behavior,
+    "behaviors": _tool_behaviors,
     "estop": _tool_estop,
     "navigate": _tool_navigate,
     "get_services": _tool_get_services,
@@ -1307,6 +1401,7 @@ def handle_tool_call(name: str, args: dict) -> dict:
 CORE_TOOLS = {
     "scan_robots", "connect_to_robot", "get_robot_info", "get_capabilities",
     "list_topics", "subscribe_once", "publish", "move", "estop", "navigate",
+    "see", "arena_status", "write_behavior", "behaviors",
     "call_service", "send_action_goal", "get_parameters", "set_parameter",
     "camera_snapshot", "telemetry_stream",
 }

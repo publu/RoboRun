@@ -7,48 +7,69 @@
 <style>
   html, body { margin: 0; height: 100%; background: #0b0e11; overflow: hidden;
                font: 13px/1.4 ui-monospace, "SF Mono", Menlo, monospace; color: #d7e0e8; }
+  .panel { background: rgba(11,14,17,.85); border: 1px solid #1f2a33; border-radius: 8px; }
   #hud { position: fixed; top: 14px; left: 14px; z-index: 10; }
-  #hud .brief { background: rgba(11,14,17,.82); border: 1px solid #1f2a33;
-                border-radius: 8px; padding: 10px 14px; max-width: 380px; }
+  #hud .brief { padding: 10px 14px; max-width: 360px; }
   #hud .brief b { color: #00d47e; letter-spacing: .08em; }
   #rooms { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
-  .room-chip { border: 1px solid #2a3a46; border-radius: 4px; padding: 2px 8px;
-               color: #6b7b88; }
+  .room-chip { border: 1px solid #2a3a46; border-radius: 4px; padding: 2px 8px; color: #6b7b88; }
   .room-chip.seen { border-color: #00d47e; color: #00d47e; }
   #status { position: fixed; top: 14px; right: 14px; z-index: 10; text-align: right;
-            background: rgba(11,14,17,.82); border: 1px solid #1f2a33;
-            border-radius: 8px; padding: 8px 12px; }
+            padding: 8px 12px; }
   #status .link.on { color: #00d47e; }
   #status .link.off { color: #e0a030; }
+  #status .rec { color: #d84a4a; }
+  /* robot-built map */
+  #mapwrap { position: fixed; top: 110px; right: 14px; z-index: 10; padding: 8px; }
+  #mapwrap .lbl, .viewlbl { font-size: 10px; letter-spacing: .14em; color: #6b7b88; }
+  #map { display: block; margin-top: 4px; image-rendering: pixelated;
+         width: 192px; height: 192px; border-radius: 4px; }
+  /* inset 3D views (rendered via scissor) get labels positioned over them */
+  #povlbl  { position: fixed; z-index: 10; }
+  #toplbl  { position: fixed; z-index: 10; }
   #win { position: fixed; inset: 0; display: none; place-items: center; z-index: 20;
-         background: rgba(5,8,10,.72); }
+         background: rgba(5,8,10,.78); }
   #win.show { display: grid; }
-  #win .card { border: 2px solid #00d47e; border-radius: 10px; padding: 28px 40px;
-               background: #0b0e11; text-align: center; }
-  #win .card h1 { color: #00d47e; margin: 0 0 8px; letter-spacing: .1em; }
+  #win .card { border: 2px solid #00d47e; border-radius: 10px; padding: 30px 44px;
+               background: #0b0e11; text-align: center; max-width: 560px; }
+  #win .card h1 { color: #00d47e; margin: 0 0 6px; letter-spacing: .12em; }
+  #win .stats { color: #9fb0bd; margin-bottom: 16px; }
+  #win .hash { font-size: 15px; color: #00d47e; background: #0f1a15;
+               border: 1px solid #1f4434; border-radius: 6px; padding: 10px 14px;
+               letter-spacing: .04em; user-select: all; cursor: copy; }
+  #win .hash .k { color: #5a7a6a; margin-right: 10px; }
+  #win .after { margin-top: 12px; }
+  #win .after a { color: #00d47e; }
+  #win .sealing { color: #e0a030; }
   #keys { position: fixed; bottom: 14px; left: 14px; color: #4a5a66; z-index: 10; }
 </style>
 </head>
 <body>
 <div id="hud">
-  <div class="brief">
+  <div class="brief panel">
     <b>CHAMBER 01 — RECON</b><br>
-    Explore every room. Observe as you go — the timeline is taking notes,
-    and there will be questions.
+    Explore every room. Observe as you go — there will be questions.
     <div id="rooms"></div>
   </div>
 </div>
-<div id="status">
-  <div>⏱ <span id="clock">0.0s</span></div>
+<div id="status" class="panel">
+  <div>⏱ <span id="clock">0.0s</span> <span class="rec" id="rec"></span></div>
   <div class="link off" id="link">behaviors: searching…</div>
   <div id="cmdline">cmd —</div>
 </div>
+<div id="mapwrap" class="panel">
+  <span class="lbl">ROBOT MAP — built from lidar</span>
+  <canvas id="map" width="96" height="96"></canvas>
+</div>
+<span class="viewlbl" id="povlbl">ROBOT CAM — all it can see</span>
+<span class="viewlbl" id="toplbl">TOP</span>
 <div id="win"><div class="card">
   <h1>CHAMBER COMPLETE</h1>
-  <div id="winDetail"></div>
-  <div style="margin-top:10px;color:#6b7b88">the run is in the timeline — seal it from the deck (M)</div>
+  <div class="stats" id="winDetail"></div>
+  <div class="hash" id="winHash"><span class="sealing">sealing run…</span></div>
+  <div class="after">check your <a href="/" target="_blank">timeline →</a></div>
 </div></div>
-<div id="keys">WASD drive (or let a behavior do it) · deck at <a href="/" style="color:#3a8a6a">/</a></div>
+<div id="keys">WASD drive · C camera (chase/orbit/top) · deck at <a href="/" style="color:#3a8a6a">/</a></div>
 
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
