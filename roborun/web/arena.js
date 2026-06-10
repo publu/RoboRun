@@ -779,8 +779,10 @@ function eyePos() {
 }
 function fwdVec() { return new THREE.Vector3(Math.cos(bot.heading), 0, -Math.sin(bot.heading)); }
 
+let currentDets = [];   // [{p, dist}] — what the robot knows right now
 function senseDetections() {
   const out = [];
+  const dets = [];
   const eye = eyePos(), fwd = fwdVec();
   for (const p of propObjs) {
     if (p.carried || p.delivered || p.sorted) continue;
@@ -807,8 +809,10 @@ function senseDetections() {
     out.push({ label: p.label, confidence: 0.95,
                bbox: [cx - size / 4, 360 - size / 2, cx + size / 4, 360 + size / 2],
                distance: +dist.toFixed(2) });
+    dets.push({ p, dist, ppos });
     if (!p.seen) { p.seen = true; postEvent("detection", `sighted: ${p.label}`, {}); }
   }
+  currentDets = dets;
   if (bot.type === "dog" || bot.type === "biped") {
     raycaster.set(eyePos(), fwdVec());
     const ahead = raycaster.intersectObjects(wallMeshes, false)[0];
@@ -851,10 +855,11 @@ cloud.frustumCulled = false;
 let cloudOn = true;
 scene.add(cloud);
 const _tmpColor = new THREE.Color();
-function cloudAdd(x, y, z) {
+function cloudAdd(x, y, z, range) {
   const i = cloudHead * 3;
   cloudPos[i] = x; cloudPos[i + 1] = y; cloudPos[i + 2] = z;
-  _tmpColor.setHSL(0.66 - (y / 1.7) * 0.55, 0.9, 0.45 + (y / 1.7) * 0.2);
+  // range-colored like a real lidar viz: near = warm, far = cool
+  _tmpColor.setHSL(0.66 * Math.min(range / LIDAR_RANGE, 1), 0.9, 0.5);
   cloudCol[i] = _tmpColor.r; cloudCol[i + 1] = _tmpColor.g; cloudCol[i + 2] = _tmpColor.b;
   cloudHead = (cloudHead + 1) % CLOUD_MAX;
   cloudCount = Math.min(cloudCount + 1, CLOUD_MAX);
@@ -889,7 +894,7 @@ function integrateLidar(ranges) {
       if (cx >= 0 && cx < GRID && cz >= 0 && cz < GRID) occ[cz * GRID + cx] = 2;
       for (let k = 0; k < 5; k++)
         cloudAdd(hx + (Math.random() - 0.5) * 0.05, Math.random() * 1.55,
-                 hz + (Math.random() - 0.5) * 0.05);
+                 hz + (Math.random() - 0.5) * 0.05, ranges[i]);
     }
   }
 }
@@ -1402,8 +1407,37 @@ function renderViews() {
     renderer.setScissor(x, y, Math.round(vp.width), Math.round(vp.height));
     renderer.clear(true, true, false);
     renderer.render(scene, cam);
+    drawDetOverlay(panel, cam === povCam, vp);
   }
   renderer.setScissorTest(false);
+}
+
+const _proj = new THREE.Vector3();
+function drawDetOverlay(panel, isPov, vp) {
+  let cv = panel.querySelector(".det-overlay");
+  if (!cv) {
+    cv = document.createElement("canvas");
+    cv.className = "det-overlay";
+    panel.querySelector(".p-body").appendChild(cv);
+  }
+  const w = Math.round(vp.width), h = Math.round(vp.height);
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const g = cv.getContext("2d");
+  g.clearRect(0, 0, w, h);
+  if (!isPov) return;                      // perception overlay = robot cam only
+  g.font = "10px ui-monospace, Menlo, monospace";
+  g.lineWidth = 1.5;
+  for (const d of currentDets) {
+    _proj.copy(d.ppos).project(povCam);
+    if (_proj.z > 1 || Math.abs(_proj.x) > 1.1 || Math.abs(_proj.y) > 1.1) continue;
+    const px = (_proj.x + 1) / 2 * w, py = (1 - _proj.y) / 2 * h;
+    const sz = Math.max(14, Math.min(120, 160 / d.dist));
+    const color = "#" + new THREE.Color(COLORS[d.p.color] || 0x00d47e).getHexString();
+    g.strokeStyle = color;
+    g.strokeRect(px - sz / 2, py - sz / 2, sz, sz);
+    g.fillStyle = color;
+    g.fillText(d.p.label + " " + d.dist.toFixed(1) + "m", px - sz / 2, py - sz / 2 - 3);
+  }
 }
 
 /* ════════════════ main loop ════════════════ */
