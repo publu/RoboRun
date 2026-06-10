@@ -41,3 +41,11 @@ def arena_event(h, payload):
         bus.emit(str(payload.get("type", "arena")), "arena", title,
                  payload.get("detail") or {})
     send_json(h, 200, {"ok": True})
+
+
+@get("/api/sightings")
+def sightings_summary(h):
+    """The run's automatic object memory — labels, counts, deduped world
+    locations. The arena map plots these; any client can read them."""
+    from roborun.sightings import summary
+    send_json(h, 200, {"ok": True, "sightings": summary()})

@@ -785,6 +785,19 @@ function drawMap() {
     img.data[i * 4 + 3] = 255;
   }
   mapCtx.putImageData(img, 0, 0);
+  // what the robot has FOUND, where it believes it is (deduped sightings)
+  for (const sgt of serverSightings) {
+    const word = sgt.label.split(" ")[0];
+    const col = COLORS[word] !== undefined
+      ? "#" + new THREE.Color(COLORS[word]).getHexString() : "#e8eef2";
+    mapCtx.fillStyle = col;
+    for (const loc of sgt.locations || []) {
+      const [cx, cz] = cellOf(loc[0], loc[1]);
+      if (cx < 1 || cx >= GRID - 1 || cz < 1 || cz >= GRID - 1) continue;
+      mapCtx.fillRect(cx - 1, cz, 3, 1);     // small + mark
+      mapCtx.fillRect(cx, cz - 1, 1, 3);
+    }
+  }
   const [cx, cz] = cellOf(bot.pos.x, bot.pos.z);
   mapCtx.fillStyle = "#00d47e";
   mapCtx.fillRect(cx - 1, cz - 1, 3, 3);
@@ -1038,6 +1051,16 @@ async function api(path, body) {
 let serverCmd = { forward: 0, strafe: 0, turn: 0, climb: 0, grip: 0 };
 let serverAnswer = null;
 let linked = false, lastLidar = [];
+let serverSightings = [];
+async function pollSightings() {
+  if (linked) {
+    try {
+      const r = await (await fetch("/api/sightings")).json();
+      serverSightings = r.sightings || [];
+    } catch {}
+  }
+  setTimeout(pollSightings, 1000);
+}
 async function pollCmd() {
   try {
     const r = await (await fetch("/api/arena/cmd")).json();
@@ -1381,5 +1404,5 @@ function frame(now) {
 }
 
 loadLevel(0);
-pollCmd(); pushState();
+pollCmd(); pushState(); pollSightings();
 requestAnimationFrame(frame);
