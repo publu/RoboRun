@@ -240,6 +240,10 @@ function hideStamp() { $("stampLayer").classList.remove("show", "shake"); }
 async function doVerify() {
   const r = await api("/api/run/mcap/verify");
   if (!r.ok) { showStamp("NO RUN", r.error || "record a run first (M)", "", true); return; }
+  if (r.state === "recording") {
+    showStamp("STILL RECORDING", r.reason, "press M to stop & seal, then V");
+    return;
+  }
   if (r.state === "broken") {
     showStamp("BROKEN", r.reason || "integrity failure",
       r.byte_range ? `bytes ${r.byte_range[0]}–${r.byte_range[1]}` : "", true);

@@ -14,6 +14,8 @@
   #rooms { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
   .room-chip { border: 1px solid #2a3a46; border-radius: 4px; padding: 2px 8px; color: #6b7b88; }
   .room-chip.seen { border-color: #00d47e; color: #00d47e; }
+  #levelSel { background: #10161c; color: #d7e0e8; border: 1px solid #2a3a46;
+              border-radius: 4px; padding: 3px 6px; font: inherit; width: 100%; }
   #status { position: fixed; top: 14px; right: 14px; z-index: 10; text-align: right;
             padding: 8px 12px; }
   #status .link.on { color: #00d47e; }
@@ -47,8 +49,9 @@
 <body>
 <div id="hud">
   <div class="brief panel">
-    <b>CHAMBER 01 — RECON</b><br>
-    Explore every room. Observe as you go — there will be questions.
+    <select id="levelSel"></select>
+    <div style="margin-top:6px"><b id="briefTitle"></b></div>
+    <span id="briefText"></span>
     <div id="rooms"></div>
   </div>
 </div>
@@ -69,7 +72,7 @@
   <div class="hash" id="winHash"><span class="sealing">sealing run…</span></div>
   <div class="after">check your <a href="/" target="_blank">timeline →</a></div>
 </div></div>
-<div id="keys">WASD drive · C camera (chase/orbit/top) · deck at <a href="/" style="color:#3a8a6a">/</a></div>
+<div id="keys">WASD drive · C camera · N next level · deck at <a href="/" style="color:#3a8a6a">/</a></div>
 
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }

@@ -118,6 +118,13 @@ def mcap_verify(h, payload):
     if p is None:
         send_json(h, 200, {"ok": False, "error": "no mcap runs found"})
         return
+    live = rec_mod.active_recorder()
+    if live is not None and Path(live.mcap_path) == p:
+        # A live run always has un-chained trailing bytes — that's not
+        # tampering, it's a tape still rolling. Don't scare anyone.
+        send_json(h, 200, {"ok": True, "run": p.stem, "state": "recording",
+                           "reason": "still recording — press M to stop and seal, then verify"})
+        return
     result = rec_mod.verify_mcap_run(p)
     if result["state"] == "broken":
         bus.emit("system", "integrity",
