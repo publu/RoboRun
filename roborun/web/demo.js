@@ -285,6 +285,7 @@ document.addEventListener("keydown", (e) => {
     case "s": case "S": doSeal(); break;
     case "v": case "V": doVerify(); break;
     case "t": case "T": doTamper(); break;
+    case "m": case "M": toggleRecord(); break;
     case "r": case "R": toggleDrawer(); break;
     case "c": case "C": toggleDrawer(); break;
     case "Escape": hideStamp(); closeDrawer(); replaying = false; input.blur(); break;
@@ -292,11 +293,135 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+/* ---------- MCAP recording: badge, record toggle, verified clips ---------- */
+
+let mcapRecording = false;
+
+const BADGE_STATES = {
+  recording:  { text: "● REC MCAP",   cls: "rec" },
+  anchored:   { text: "⛓ ANCHORED",   cls: "good" },
+  unanchored: { text: "◇ UNANCHORED", cls: "warn" },
+  broken:     { text: "✕ BROKEN",     cls: "bad" },
+  none:       { text: "—",            cls: "" },
+};
+
+async function pollBadge() {
+  try {
+    const b = await (await fetch("/api/run/badge")).json();
+    mcapRecording = b.badge === "recording";
+    const s = BADGE_STATES[b.badge] || BADGE_STATES.none;
+    const el = $("verifyBadge");
+    el.textContent = s.text;
+    el.className = "verify-badge " + s.cls;
+    el.title = b.reason || (b.badge === "recording"
+      ? `recording ${b.run} · ${Object.values(b.messages || {}).reduce((a, n) => a + n, 0)} msgs`
+      : "latest recording: verify state");
+  } catch {}
+  setTimeout(pollBadge, 8000);
+}
+
+async function toggleRecord() {
+  if (mcapRecording) {
+    const r = await api("/api/run/record/stop");
+    if (!r.ok) { showStamp("NO RUN", r.error || "", "", true); return; }
+    mcapRecording = false;
+    const anchor = (r.seal.anchor || {}).status || "unanchored";
+    showStamp("SEALED",
+      `${r.seal.run} · ${r.seal.segment_count} chunks · merkle root · ${anchor === "pending" ? "anchoring via opentimestamps" : anchor}`,
+      `${r.seal.merkle_root.slice(0, 32)}… · ${r.indexed && r.indexed.ok ? r.indexed.observations + " observations indexed" : ""}`);
+    setTimeout(hideStamp, 3000);
+  } else {
+    const r = await api("/api/run/record/start");
+    if (!r.ok) { showStamp("ERROR", r.error || "", "", true); return; }
+    mcapRecording = true;
+    showStamp("RECORDING", `${r.run} · camera + detections + events → one sealed mcap`, "press M again to seal + anchor");
+    setTimeout(hideStamp, 2200);
+  }
+  pollBadgeSoon();
+  loadMcapRuns();
+}
+
+function pollBadgeSoon() { setTimeout(async () => {
+  try {
+    const b = await (await fetch("/api/run/badge")).json();
+    mcapRecording = b.badge === "recording";
+    const s = BADGE_STATES[b.badge] || BADGE_STATES.none;
+    $("verifyBadge").textContent = s.text;
+    $("verifyBadge").className = "verify-badge " + s.cls;
+  } catch {}
+}, 700); }
+
+async function loadMcapRuns() {
+  let data;
+  try { data = await (await fetch("/api/run/mcap")).json(); } catch { return; }
+  const list = $("mcapList");
+  if (!list) return;
+  list.innerHTML = "";
+  const runs = (data.runs || []).slice(0, 8);
+  if (!runs.length && !data.recording) {
+    list.innerHTML = `<div class="run-empty">no recordings — press M to start one</div>`;
+    return;
+  }
+  if (data.recording) {
+    const row = document.createElement("div");
+    row.className = "run-row";
+    row.innerHTML = `<span class="run-name">${data.recording.run.replace("run_", "")}</span>
+      <span class="run-badge rec">REC</span>
+      <span class="run-actions"><button class="src-btn" data-act="stop">seal</button></span>`;
+    row.querySelector('[data-act="stop"]').addEventListener("click", toggleRecord);
+    list.appendChild(row);
+  }
+  for (const r of runs) {
+    const row = document.createElement("div");
+    row.className = "run-row";
+    const mb = (r.size / 1048576).toFixed(1);
+    const badges = [
+      r.anchored ? `<span class="run-badge sealed">OTS</span>` : "",
+      r.sealed ? `<span class="run-badge sealed">SEALED</span>` : "",
+    ].join("");
+    row.innerHTML = `
+      <span class="run-name">${r.robot_id}/${r.run.replace("run_", "")}</span>
+      <span class="run-n">${mb} MB</span>${badges}
+      <span class="run-actions">
+        <button class="src-btn" data-act="mverify">verify</button>
+        ${r.sealed ? `<button class="src-btn" data-act="mclip" title="export last 30s with proof">clip</button>` : ""}
+      </span>`;
+    row.querySelector('[data-act="mverify"]').addEventListener("click", async () => {
+      const v = await api("/api/run/mcap/verify", { run: r.run, robot_id: r.robot_id });
+      closeDrawer();
+      if (v.state === "broken") {
+        showStamp("BROKEN", v.reason || "integrity failure", "", true);
+      } else if (v.state === "verified_anchored") {
+        showStamp("VERIFIED", `${r.run} · anchored to an external clock`,
+          `${v.reason} · merkle root ${ (v.merkle_root || "").slice(0, 24)}…`);
+      } else {
+        showStamp("CONSISTENT", `${r.run} · chain + seal intact · unanchored`,
+          v.reason || "");
+      }
+    });
+    row.querySelector('[data-act="mclip"]')?.addEventListener("click", async () => {
+      // verified clip: last 30 seconds of the run, exported with proof
+      const now = Date.now() / 1000;
+      const v = await api("/api/run/mcap/clip",
+        { run: r.run, robot_id: r.robot_id, start_ts: now - 86400, end_ts: now });
+      closeDrawer();
+      if (v.ok) {
+        showStamp("CLIP CUT", `${v.messages} messages · proof binds it to the sealed run`,
+          v.clip.split("/").pop());
+        setTimeout(hideStamp, 3000);
+      } else {
+        showStamp("FAILED", v.error || "clip export failed", "", true);
+      }
+    });
+    list.appendChild(row);
+  }
+}
+
 /* ---------- drawer: sources + runs ---------- */
 
 function toggleDrawer() {
   const open = $("drawer").classList.toggle("open");
-  if (open) { refreshSources(); loadRuns(); }
+  if (open) { refreshSources(); loadRuns(); loadMcapRuns(); }
 }
 function closeDrawer() { $("drawer").classList.remove("open"); }
 $("btnSources").addEventListener("click", toggleDrawer);
@@ -430,3 +555,4 @@ if (preview === "sealed") showStamp("SEALED", "1,284 events · merkle root compu
 
 connectEvents();
 pollHud();
+pollBadge();

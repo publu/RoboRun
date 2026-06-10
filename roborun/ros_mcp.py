@@ -1,11 +1,12 @@
 """Direct ROS MCP server — zero-config robot connectivity.
 
-Two transport layers, automatic fallback:
-  1. DDS direct (CycloneDDS via ros_tap) — no rosbridge, no ROS install
+Two transport layers, automatic fallback (both vendored in roborun.transport):
+  1. DDS direct (CycloneDDS) — no rosbridge, no ROS install; pub/sub on the
+     common message families, not just Twist
   2. Rosbridge WebSocket — full message introspection, service calls, actions
 
-The MCP auto-detects which transports are available and uses the best one.
-DDS for discovery + pub/sub, rosbridge for services/actions/params when available.
+The MCP auto-detects which transports are available and uses the best one;
+`get_capabilities` tells the agent exactly what this connection supports.
 """
 
 from __future__ import annotations
@@ -65,6 +66,21 @@ def _get_robot_host() -> str | None:
         return profile.get("robotIp") or None
     except Exception:
         return os.environ.get("ROBOT_IP")
+
+
+_dds_transport = None
+_dds_transport_lock = threading.Lock()
+
+
+def _get_dds_transport():
+    """Singleton DDS transport (roborun.transport) for general pub/sub."""
+    global _dds_transport
+    with _dds_transport_lock:
+        if _dds_transport is None:
+            from roborun.transport.dds import DDSTransport
+            _dds_transport = DDSTransport(
+                domain=int(os.environ.get("ROS_DOMAIN_ID", "0")))
+        return _dds_transport
 
 
 # ── Discovery (DDS + rosbridge merge) ────────────────────────────────────────
@@ -144,30 +160,12 @@ def _classify(topic_name: str) -> str:
 
 def _publish_twist_dds(topic: str, lx: float, ly: float, az: float,
                        domain_id: int = 0) -> dict:
+    """Twist over DDS via the vendored transport (correct rt/ topic mangling)."""
     try:
-        from cyclonedds.domain import DomainParticipant
-        from cyclonedds.pub import DataWriter
-        from cyclonedds.topic import Topic as DDSTopic
-        from cyclonedds.idl import IdlStruct
-        from cyclonedds.idl.types import float64
-        from dataclasses import dataclass
-
-        @dataclass
-        class Vector3(IdlStruct):
-            x: float64 = 0.0
-            y: float64 = 0.0
-            z: float64 = 0.0
-
-        @dataclass
-        class Twist(IdlStruct, typename="geometry_msgs.msg.dds_.Twist_"):
-            linear: Vector3 = Vector3()
-            angular: Vector3 = Vector3()
-
-        dp = DomainParticipant(domain_id)
-        t = DDSTopic(dp, topic, Twist)
-        w = DataWriter(dp, t)
-        w.write(Twist(linear=Vector3(x=lx, y=ly), angular=Vector3(z=az)))
-        return {"ok": True}
+        return _get_dds_transport().publish(topic, "geometry_msgs/Twist", {
+            "linear": {"x": lx, "y": ly, "z": 0.0},
+            "angular": {"x": 0.0, "y": 0.0, "z": az},
+        })
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
@@ -243,8 +241,15 @@ def _tool_get_message_details(args: dict) -> dict:
                 return {"ok": True, "type": msg_type, "details": result}
         except Exception:
             pass
+    from roborun.transport.schemas import message_fields, SUPPORTED_TYPES
+    fields = message_fields(msg_type)
+    if fields:
+        return {"ok": True, "type": msg_type, "details": fields,
+                "source": "bundled schema"}
     return {"ok": True, "type": msg_type,
-            "note": "Full message introspection requires rosbridge. Use connect_to_robot first."}
+            "note": "Not a bundled type; full introspection requires rosbridge. "
+                    "Use connect_to_robot first.",
+            "bundled_types": list(SUPPORTED_TYPES)}
 
 
 def _tool_subscribe_once(args: dict) -> dict:
@@ -306,11 +311,12 @@ def _tool_publish(args: dict) -> dict:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
-    if _check_dds() and "Twist" in msg_type and "cmd_vel" in topic:
-        lin = message.get("linear", {})
-        ang = message.get("angular", {})
-        return _publish_twist_dds(topic, lin.get("x", 0), lin.get("y", 0),
-                                  ang.get("z", 0))
+    if _check_dds():
+        # General DDS publish: any bundled message family, not just Twist.
+        try:
+            return _get_dds_transport().publish(topic, msg_type, message)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
     return {"ok": False, "error": "No transport available. Connect to robot first."}
 
 
@@ -650,18 +656,88 @@ def _tool_get_robot_info(args: dict) -> dict:
     }
 
 
+_active_tap = None
+_tap_lock = threading.Lock()
+
+
 def _tool_telemetry_stream(args: dict) -> dict:
+    """Tap mode: passively record topics into the sealed MCAP run (spec §1.2.4).
+
+    The tap runs at full topic rate with no LLM in the loop; agent events land
+    in the same run via the event bus. Stop seals + anchors the recording.
+    """
+    global _active_tap
+    from roborun import recorder as rec_mod
+
     action = args["action"]
     if action == "status":
-        return {"ok": True, "streaming": False, "note": "Use ros_tap CLI for persistent streaming"}
+        with _tap_lock:
+            rec = rec_mod.active_recorder()
+            return {"ok": True,
+                    "recording": rec.status() if rec else None,
+                    "tap": _active_tap.status() if _active_tap else None}
+
     if action == "start":
-        categories = args.get("categories", [])
-        output = args.get("output", "-")
-        return {"ok": True, "streaming": True, "categories": categories, "output": output,
-                "hint": f"Run: ros_tap record -c {','.join(categories)} -o {output}"}
+        topics = args.get("topics") or None
+        robot_id = args.get("robot_id", "local")
+        transport = None
+        rb = _get_rosbridge(_get_robot_host())
+        if rb:
+            from roborun.transport.bridge import RosbridgeTransport
+            transport = RosbridgeTransport(client=rb)
+        elif _check_dds():
+            transport = _get_dds_transport()
+        if transport is None:
+            return {"ok": False, "error": "no transport: connect to a robot "
+                                          "or install cyclonedds for DDS direct"}
+        from roborun.transport.tap import Tap
+        with _tap_lock:
+            rec = rec_mod.start_recording(robot_id=robot_id)
+            _active_tap = Tap(transport, rec, topics=topics)
+            status = _active_tap.start()
+        return {"ok": True, "run": rec.run_id, "mcap": str(rec.mcap_path),
+                **status}
+
     if action == "stop":
-        return {"ok": True, "stopped": True}
+        with _tap_lock:
+            if _active_tap is not None:
+                _active_tap.stop()
+                _active_tap = None
+            seal = rec_mod.stop_recording(do_anchor=not args.get("no_anchor", False))
+        if seal is None:
+            return {"ok": True, "stopped": True, "note": "nothing was recording"}
+        extracted = None
+        try:
+            from roborun.observations import extract_run
+            from roborun.routes._singletons import get_memory
+            mcap_path = rec_mod.runs_root() / seal["robot_id"] / f"{seal['run']}.mcap"
+            extracted = extract_run(mcap_path, get_memory(), robot_id=seal["robot_id"])
+        except Exception:
+            pass
+        return {"ok": True, "stopped": True, "seal": seal, "indexed": extracted}
+
     return {"ok": False, "error": f"Unknown action: {action}"}
+
+
+def _tool_get_capabilities(args: dict) -> dict:
+    """The capability matrix, so the agent adapts instead of failing silently."""
+    from roborun.transport import CAPABILITY_MATRIX
+    rb = _get_rosbridge(_get_robot_host())
+    available = {
+        "dds": _check_dds(),
+        "rosbridge": bool(rb and rb.is_connected),
+        "native": False,
+    }
+    try:
+        import rclpy  # noqa: F401
+        available["native"] = True
+    except ImportError:
+        pass
+    active = next((k for k in ("native", "rosbridge", "dds") if available[k]), None)
+    return {"ok": True, "available": available, "active": active,
+            "matrix": CAPABILITY_MATRIX,
+            "note": "services/actions/params need rosbridge or native; "
+                    "DDS direct covers discovery + pub/sub on common types"}
 
 
 # ── New introspection tools (Phase 4c — ros-mcp-server parity) ─────────────────
@@ -1053,17 +1129,23 @@ MCP_TOOLS = [
     # --- Telemetry ---
     {
         "name": "telemetry_stream",
-        "description": "Start/stop/status of telemetry streaming via ros_tap. Captures robot data to local files or S3.",
+        "description": "Tap mode: passively record robot topics into a tamper-evident MCAP run at full rate (no LLM in the loop). 'start' opens a run and taps topics; 'stop' seals it (Merkle root + OpenTimestamps anchor) and indexes it for search; 'status' reports counts.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "action": {"type": "string", "enum": ["start", "stop", "status"]},
-                "categories": {"type": "array", "items": {"type": "string"},
-                               "description": "Topic categories: power, actuators, imu, lidar, camera, odometry"},
-                "output": {"type": "string", "description": "Output path or s3://bucket/prefix"},
+                "topics": {"type": "array", "items": {"type": "string"},
+                           "description": "Topic names or patterns ('/camera/*'). Omit to tap everything visible."},
+                "robot_id": {"type": "string", "description": "Robot identity for the run directory (default: local)"},
+                "no_anchor": {"type": "boolean", "description": "Skip OpenTimestamps anchoring on stop"},
             },
             "required": ["action"],
         },
+    },
+    {
+        "name": "get_capabilities",
+        "description": "What the current transport supports right now (pub/sub/services/actions/params/types per backend: DDS direct, rosbridge, native rclpy). Call this before using services or actions so you degrade gracefully instead of erroring.",
+        "inputSchema": {"type": "object", "properties": {}},
     },
     # --- Detailed introspection (Phase 4c) ---
     {
@@ -1162,6 +1244,7 @@ _TOOL_HANDLERS = {
     "get_nodes": _tool_get_nodes,
     "camera_snapshot": _tool_camera_snapshot,
     "telemetry_stream": _tool_telemetry_stream,
+    "get_capabilities": _tool_get_capabilities,
     "get_topic_details": _tool_get_topic_details,
     "get_node_details": _tool_get_node_details,
     "get_service_details": _tool_get_service_details,
@@ -1206,7 +1289,7 @@ def get_all_tools() -> list[dict]:
 def get_mcp_manifest() -> dict:
     return {
         "name": "ros-agent",
-        "version": "0.9.0",
+        "version": "0.11.0",
         "description": "Direct ROS robot control — DDS + rosbridge, zero-config discovery, full topic/service/action/param access, extensible skills. No ROS install needed.",
         "tools": get_all_tools(),
     }

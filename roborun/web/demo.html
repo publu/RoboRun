@@ -22,6 +22,7 @@
       <span class="wordmark">roborun</span>
     </div>
     <div class="head-right">
+      <span class="verify-badge" id="verifyBadge" title="latest recording: verify state">—</span>
       <span class="root-label" id="rootLabel">CHAIN HEAD</span>
       <span class="root-hash" id="rootHash">—</span>
       <button class="head-btn" id="btnSources" title="sources (C)">SRC</button>
@@ -50,6 +51,10 @@
     <div class="drawer-section" id="drawerRuns">
       <div class="drawer-title">BLACK BOX RUNS</div>
       <div class="run-list" id="runList"></div>
+    </div>
+    <div class="drawer-section" id="drawerMcap">
+      <div class="drawer-title">SEALED RECORDINGS · MCAP</div>
+      <div class="run-list" id="mcapList"></div>
     </div>
   </aside>
 
@@ -119,6 +124,7 @@
     <span><kbd>S</kbd> seal run</span>
     <span><kbd>V</kbd> verify</span>
     <span><kbd>T</kbd> tamper one byte</span>
+    <span><kbd>M</kbd> record mcap</span>
     <span><kbd>R</kbd> runs</span>
     <span><kbd>C</kbd> sources</span>
     <span><kbd>Esc</kbd> clear stamp</span>

@@ -1,6 +1,16 @@
 # RoboRun Architecture Spec — Tap, Tracking, Storage
 
-Status: draft, initial version, subject to change. No code yet. This describes
+Status: **MVP implemented** (v0.11.0). The §4 MVP scope shipped: vendored
+transport (`roborun/transport/` — general message types, capability matrix,
+tap mode), MCAP recorder with chunk-granular hash chain, O(1) seal,
+OpenTimestamps anchoring and three-state verify (`roborun/recorder.py`,
+`roborun/anchor.py`), MCAP→Observation extraction into the upgraded indexed
+SQLite store (`roborun/observations.py`, `roborun/spatial_memory.py`),
+R2 sync + Parquet/DuckDB fleet queries (`roborun/r2sync.py`), signed beacons
+(`roborun/beacons.py`), and flight deck record / verify badge / clip export.
+The "Later" items in §4 remain open. The original problem statement follows.
+
+This describes
 how the app *should* look after we fix the three things that block the wedge:
 the transport (ros_tap), the recorder (tracking + tamper evidence), and the
 data layer (query at scale + cross robot sharing).

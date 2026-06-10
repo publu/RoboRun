@@ -83,9 +83,24 @@ One changed byte, caught instantly, and the exact event named. Hash chain + SHA-
 
 Sealed runs chain to each other: each new run's manifest records the previous run's merkle root, like blocks. When your robot does something weird at 3am, you **replay the run in the UI** and you can prove nobody edited it.
 
-What this proves: the recorded timeline hasn't been altered since sealing. What it doesn't prove: that the robot's sensors observed reality correctly. We're precise about this distinction on purpose.
+### MCAP recordings — the black box, now with the evidence inside
 
-The UI at `http://localhost:8765` is the flight deck itself: live camera with YOLO boxes, the black box streaming, a command bar, and director keys. `S` seal · `V` verify · `T` tamper · `R` runs/replay · `C` sources.
+Press `M` in the flight deck (or `POST /api/run/record/start`) and everything — camera keyframes, YOLO detections, CLIP embeddings, agent events, pose — records into **one MCAP file**, the same container Foxglove Studio replays natively. The hash chain moves to chunk granularity in a sidecar, the seal is O(1) (a Merkle root over chunk hashes, signed ed25519), and on seal the root is **anchored via OpenTimestamps** into Bitcoin, so the proof references an external clock, not our word:
+
+```bash
+python -m roborun.recorder verify ~/.roborun/runs/local/run_20260610_120000.mcap
+# VERIFIED + ANCHORED: unchanged since Bitcoin block 901442
+python -m roborun.recorder clip <run.mcap> <start_ts> <end_ts>
+# cuts a window + a signed proof binding those exact frames to the sealed run
+```
+
+Verify is three-state, not binary: `verified + anchored`, `internally consistent (unanchored)` — e.g. a robot that was offline; it anchors when connectivity returns — or `broken`, naming the exact chunk and byte range. Tap mode (the `telemetry_stream` MCP tool) records ROS topics into the run at full rate with no LLM in the loop, over DDS direct (common message families, vendored in `roborun.transport`) or rosbridge.
+
+On run close, the MCAP is extracted into a local SQLite index (indexed label search, CLIP cosine, spatial queries) and optionally exported as Parquet to R2, where **embedded DuckDB queries the whole fleet** — `search_clip("red mug")` across every robot — and robots share Ed25519-signed beacons through the same bucket. Local files and R2 only: no brokers, no database servers, nothing to operate.
+
+What this proves: the recorded run — images, detections, and decisions included — hasn't been altered since a moment an external clock witnessed. What it doesn't prove: that the robot's sensors observed reality correctly. We're precise about this distinction on purpose.
+
+The UI at `http://localhost:8765` is the flight deck itself: live camera with YOLO boxes, the black box streaming, the live anchor badge, a command bar, and director keys. `S` seal · `V` verify · `T` tamper · `M` record mcap · `R` runs/replay · `C` sources.
 
 ## Connect a real robot
 
@@ -97,7 +112,7 @@ roslaunch rosbridge_server rosbridge_websocket.launch          # ROS 1
 
 Point the UI at the robot's IP. **No ROS install on your machine.** The same `behaviors/*.py` files now drive real hardware: Unitree Go2/G1, TurtleBot, arms, drones, NVIDIA Isaac Sim, Gazebo. `robot.move()` goes to the sim if it's running, otherwise to the connected robot, always through the same safety clamps.
 
-Optional extras: `pip install ros-agent[vision]` (YOLO + CLIP), `[sim]` (MuJoCo), `[ros]` (direct DDS), `[crypto]` (Ed25519 signing), `[all]`.
+Optional extras: `pip install ros-agent[vision]` (YOLO + CLIP), `[sim]` (MuJoCo), `[ros]` (direct DDS), `[crypto]` (Ed25519 signing), `[anchor]` (OpenTimestamps), `[fleet]` (R2 + DuckDB cross-robot), `[all]`.
 
 ## Configuration
 

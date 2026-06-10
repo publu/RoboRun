@@ -88,6 +88,16 @@ body::before {
   text-transform: lowercase;
 }
 
+.verify-badge {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.14em;
+  padding: 3px 8px; border: 1px solid var(--line-bright); border-radius: 3px;
+  color: var(--faint); white-space: nowrap;
+}
+.verify-badge.good { color: var(--phos); border-color: rgba(0, 255, 157, 0.45); }
+.verify-badge.warn { color: #ffc24b; border-color: rgba(255, 194, 75, 0.4); }
+.verify-badge.bad  { color: var(--red); border-color: rgba(255, 59, 92, 0.5); }
+.verify-badge.rec  { color: var(--red); border-color: rgba(255, 59, 92, 0.4); animation: rec-pulse 1.4s ease-in-out infinite; }
+
 .root-label { font-size: 11px; letter-spacing: 0.18em; color: var(--faint); }
 .root-hash {
   font-size: 13px; color: var(--phos-deep); letter-spacing: 0.02em;
