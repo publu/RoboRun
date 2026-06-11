@@ -372,6 +372,11 @@ topCam.lookAt(0, 0, 0);
 const chaseCam = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 100);
 const orbitCam = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 100);
 const CAM_POOL = { pov: povCam, top: topCam, chase: chaseCam, orbit: orbitCam };
+/* the robot's body lives on layer 1: every camera sees it except its own
+   eye — a robot cam that renders the inside of your own head is not a
+   camera, it's a jumpscare */
+for (const c of [specCam, topCam, chaseCam, orbitCam]) c.layers.enable(1);
+sun.layers.enable(1);                      // body still casts shadows
 const mainCamSel = document.getElementById("mainCamSel");
 const CAM_MODES = ["pov", "chase", "orbit", "top"];
 function cycleMainCam() {
@@ -589,6 +594,7 @@ function buildBody(type) {
   bot.group = new THREE.Group();
   bot.legs = []; bot.rotors = [];
   bodySpec = BODIES[type](bot.group, bot);
+  bot.group.traverse((o) => o.layers.set(1));
   scene.add(bot.group);
 }
 
