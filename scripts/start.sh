@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Start RoboRun dashboard.
 #   ./scripts/start.sh                      # webcam-only mode
-#   ROBORUN_DIMOS=1 ./scripts/start.sh      # also start dimOS replay
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -35,21 +34,9 @@ fi
 
 echo "✓ RoboRun  pid=$RR_PID  http://127.0.0.1:$PORT"
 
-# Optionally start dimOS
-if [[ "${ROBORUN_DIMOS:-}" == "1" ]]; then
-  if command -v dimos &>/dev/null; then
-    echo "▷ starting dimOS replay"
-    dimos --replay run unitree-go2 -o rerunbridgemodule.rerun_open=none --daemon
-    echo "✓ dimOS replay started"
-  else
-    echo "⚠ dimOS not found — skipping"
-  fi
-fi
-
 cat <<EOF
 
   RoboRun:     http://127.0.0.1:$PORT
   Webcam:      Start from the UI (Vision tab or Control tab)
-  dimOS MCP:   http://127.0.0.1:9990/mcp (when dimOS is running)
 
 EOF
