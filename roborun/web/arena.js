@@ -3,8 +3,8 @@
    the browser, all driven by the same policy handle that drives real
    ROS robots. The robot's senses: forward camera cone + 360° lidar
    (+ pose). The spectator gets more. Briefs are policy specs; WASD is
-   debug only (practice). Attempts auto-record; wins seal and show the
-   run-hash. */
+   debug only (practice). Every run auto-records and seals — wins
+   show the run-hash on the card. */
 
 import * as THREE from "three";
 import { initPhysics, createWorld } from "./physics.js";
@@ -865,6 +865,10 @@ function markChip(id) {
 }
 
 function loadLevel(i) {
+  // every run is evidence: leaving a level seals the attempt (if the
+  // robot actually went anywhere), then a fresh recording starts
+  if (recording && odo - odoMark > 1.0)
+    finishAttempt().then((root) => { if (root) startAttemptRecording(); });
   levelIndex = ((i % LEVELS.length) + LEVELS.length) % LEVELS.length;
   buildLevel(LEVELS[levelIndex]);
   buildBody(LV.robot);
@@ -921,7 +925,7 @@ function winChamber(detail) {
   document.querySelector("#win .card").classList.toggle("practice", usedManual);
   postEvent("task", `${LV.title} ${usedManual ? "cleared MANUALLY (practice)" : "COMPLETE — autonomous"} · ${secs}s`,
             { time_s: +secs, level: LV.name, mode: usedManual ? "manual" : "autonomous" });
-  sealAttempt();
+  finishAttempt({ showCard: true });
 }
 
 function dist2d(a, bx, bz) { return Math.hypot(a.x - bx, a.z - bz); }
@@ -1065,7 +1069,9 @@ function videoBlobUrl() {
   if (!videoChunks.length) return null;
   return URL.createObjectURL(new Blob(videoChunks, { type: videoMime || "video/webm" }));
 }
+let odoMark = 0;                 // odometer when this recording began
 async function startAttemptRecording() {
+  odoMark = odo;
   try {
     if (MODE === "wasm") {
       if (!wasmRT) return;
@@ -1078,9 +1084,13 @@ async function startAttemptRecording() {
     startViewRecording();
   } catch {}
 }
-async function sealAttempt() {
-  const hashEl = document.getElementById("winHash");
-  const linksEl = document.getElementById("winLinks");
+let _sealing = false;
+async function finishAttempt({ showCard = false } = {}) {
+  if (_sealing || !recording) return null;
+  _sealing = true;
+  const hashEl = showCard ? document.getElementById("winHash") : null;
+  const linksEl = showCard ? document.getElementById("winLinks")
+                           : { innerHTML: "" };           // sink for non-card seals
   linksEl.innerHTML = "";
   stopViewRecording();
   await new Promise((res) => setTimeout(res, 450));   // let the last chunk flush
@@ -1092,12 +1102,15 @@ async function sealAttempt() {
       download="roborun_${LV.name}.${ext}">⬇ run video (.${ext} — main view + detections)</a>`;
   }
   const entry = { id: Date.now(), ts: new Date().toISOString(),
-                  level: LV.name, mode: MODE, video: vblob, ext };
+                  level: LV.name, mode: MODE, video: vblob, ext,
+                  won, manual: usedManual };
+  let root = null;
   try {
     if (MODE === "wasm" && wasmRT) {
       const r = wasmRT.recordStop();
       if (!r.ok) throw new Error(r.error);
-      hashEl.innerHTML = `<span class="k">run-hash</span>0x${r.seal.merkle_root}`;
+      root = r.seal.merkle_root;
+      if (hashEl) hashEl.innerHTML = `<span class="k">run-hash</span>0x${r.seal.merkle_root}`;
       entry.seal = r.seal;
       entry.mcap = r.files.mcap.buffer;
       entry.chain = r.files.chain;
@@ -1106,12 +1119,13 @@ async function sealAttempt() {
         download="${r.seal.run}.mcap">⬇ run data (.mcap — pose, detections, lidar, events; replays in Foxglove)</a>`;
     } else {
       const r = await api("/api/run/record/stop", {});
-      const root = r?.seal?.merkle_root;
+      root = r?.seal?.merkle_root;
       if (!root) {
-        hashEl.innerHTML = `<span class="k">run-hash</span>unrecorded — server wasn't running`;
-        return;
+        if (hashEl) hashEl.innerHTML = `<span class="k">run-hash</span>unrecorded — server wasn't running`;
+        _sealing = false;
+        return null;
       }
-      hashEl.innerHTML = `<span class="k">run-hash</span>0x${root}`;
+      if (hashEl) hashEl.innerHTML = `<span class="k">run-hash</span>0x${root}`;
       entry.seal = r.seal;
       entry.serverRun = r.seal.run;
       entry.robotId = r.seal.robot_id;
@@ -1122,9 +1136,14 @@ async function sealAttempt() {
     recording = false;
     await runsDB.put(entry);
     renderRuns();
+    if (!showCard && root)
+      showToast(`run sealed 0x${root.slice(0, 12)}… → RUNS`);
   } catch {
-    hashEl.innerHTML = `<span class="k">run-hash</span>unavailable`;
+    if (hashEl) hashEl.innerHTML = `<span class="k">run-hash</span>unavailable`;
   }
+  _sealing = false;
+  odoMark = odo;                 // this run's distance is spent
+  return root;
 }
 
 /* ════════════════ stored runs (IndexedDB) ════════════════ */
@@ -1178,7 +1197,8 @@ async function renderRuns() {
       download="${r.seal?.run || "run"}.seal">seal</a>`);
     row.innerHTML = `
       <div class="run-head">
-        <b>${r.level}</b> <span>${when}</span>
+        <b>${r.level}</b> <span style="color:${r.won ? "#00d47e" : "#e0a030"}">${
+          r.won ? (r.manual ? "PRACTICE WIN" : "WIN") : "RUN"}</span> <span>${when}</span>
         <span class="run-links">${links.join(" ")}
           ${r.mcap ? '<a href="#" class="verify">verify</a>' : ""}
           <a href="#" class="del">✕</a></span>
@@ -1694,6 +1714,11 @@ function initPanels() {
       }
     }).observe(el);
   }
+  document.getElementById("btnSeal")?.addEventListener("click", async () => {
+    const root = await finishAttempt();
+    startAttemptRecording();
+    if (!root) showToast("nothing recorded yet — drive a little first");
+  });
   for (const btn of document.querySelectorAll("#toolbar [data-panel]")) {
     btn.addEventListener("click", () => {
       const id = btn.dataset.panel;
@@ -1912,6 +1937,7 @@ window.__arena = {
   setCode, loadLevel,
   levels: () => LEVELS.map((l) => l.name),
   status: () => ({ won, level: LV.name, mode: MODE, wasmReady: !!wasmRT }),
+  sealRun: () => finishAttempt().then((root) => { startAttemptRecording(); return root; }),
   videoInfo: () => ({ chunks: videoChunks.length, mime: videoMime,
                       bytes: videoChunks.reduce((a, c) => a + c.size, 0) }),
   videoBase64: async () => {
