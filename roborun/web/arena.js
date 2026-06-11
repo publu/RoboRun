@@ -374,7 +374,9 @@ scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x223038, 0.85));
 const sun = new THREE.DirectionalLight(0xffffff, 1.4);
 sun.position.set(8, 14, 6);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(1024, 1024);
+renderer.shadowMap.autoUpdate = false;     // one shadow pass per FRAME,
+                                           // not one per render pass
 sun.shadow.camera.left = sun.shadow.camera.bottom = -18;
 sun.shadow.camera.right = sun.shadow.camera.top = 18;
 scene.add(sun);
@@ -1033,7 +1035,8 @@ const recCanvas = document.createElement("canvas");
 const recCtx = recCanvas.getContext("2d");
 function compositeRecordFrame() {
   if (!mediaRec || mediaRec.state !== "recording") return;
-  const w = innerWidth, h = innerHeight;
+  const scale = Math.min(1, 1280 / innerWidth);
+  const w = Math.round(innerWidth * scale), h = Math.round(innerHeight * scale);
   if (recCanvas.width !== w || recCanvas.height !== h) {
     recCanvas.width = w; recCanvas.height = h;
   }
@@ -1043,7 +1046,9 @@ function compositeRecordFrame() {
 function startViewRecording() {
   try {
     stopViewRecording();
-    recCanvas.width = innerWidth; recCanvas.height = innerHeight;
+    const scale = Math.min(1, 1280 / innerWidth);
+    recCanvas.width = Math.round(innerWidth * scale);
+    recCanvas.height = Math.round(innerHeight * scale);
     const stream = recCanvas.captureStream(30);
     videoMime = ["video/mp4", "video/webm;codecs=vp9", "video/webm"]
       .find((m) => MediaRecorder.isTypeSupported(m)) || "";
@@ -1582,6 +1587,14 @@ const PANEL_IDS = ["p-brief", "p-policy", "p-status", "p-map", "p-view1", "p-vie
                    "p-runs"];
 let zTop = 100;
 function defaultLayout() {
+  if (innerWidth < 760) {
+    // phone-ish: the stage is the product; panels are one toolbar tap away
+    const base = {};
+    for (const id of PANEL_IDS)
+      base[id] = { l: 8, t: 90, w: Math.min(innerWidth - 16, 420),
+                   h: Math.min(innerHeight - 140, 380), hidden: id !== "p-brief" };
+    return base;
+  }
   // Two docked rails, open stage in the middle. Left rail: what you read
   // and write (mission, policy). Right rail: what you watch (status, map,
   // robot cam). Top view starts hidden — the map already covers it; one
@@ -1737,7 +1750,7 @@ function renderViews() {
   renderer.clear();
   const mainMode = mainCamSel.value;
   let mainCam = mainMode === "top" ? topCam : mainMode === "pov" ? povCam : specCam;
-  if (mainCam.isPerspectiveCamera) {
+  if (mainCam.isPerspectiveCamera && mainCam.aspect !== w / h) {
     mainCam.aspect = w / h;
     mainCam.updateProjectionMatrix();
   }
@@ -1748,7 +1761,7 @@ function renderViews() {
     const vp = panel.querySelector(".viewport").getBoundingClientRect();
     if (vp.width < 40 || vp.height < 40) continue;
     const cam = CAM_POOL[panel.querySelector(".camSel").value] || povCam;
-    if (cam.isPerspectiveCamera) {
+    if (cam.isPerspectiveCamera && cam.aspect !== vp.width / vp.height) {
       cam.aspect = vp.width / vp.height;
       cam.updateProjectionMatrix();
     }
@@ -1812,11 +1825,33 @@ function drawMainDets(active) {
 /* ════════════════ main loop ════════════════ */
 const clockEl = document.getElementById("clock"), cmdEl = document.getElementById("cmdline");
 let last = performance.now(), senseTick = 0, orbitAngle = 0;
+
+/* adaptive quality: a machine that can't hold ~25 fps at retina res gets
+   1x pixels (4x fewer fragments) instead of slideshow physics; restored
+   when frames come back. Checked once a second with hysteresis. */
+let _ftAcc = 0, _ftN = 0, _loRes = false;
+function adaptQuality(dt) {
+  _ftAcc += dt; _ftN++;
+  if (_ftAcc < 1.0) return;
+  const avg = _ftAcc / _ftN;
+  _ftAcc = 0; _ftN = 0;
+  if (!_loRes && avg > 0.045) {
+    _loRes = true;
+    renderer.setPixelRatio(1);
+    renderer.setSize(innerWidth, innerHeight);
+  } else if (_loRes && avg < 0.028) {
+    _loRes = false;
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+  }
+}
 function frame(now) {
   // clamp at 10 fps, not 20: on slow renderers (headless, low-end GPUs)
   // physics keeps real time — the substep accumulator absorbs big frames
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
+  adaptQuality(dt);
+  renderer.shadowMap.needsUpdate = true;
   const cmd = keyboardCmd() || serverCmd;
   updateMovers(dt);
   updateBody(dt, cmd);
