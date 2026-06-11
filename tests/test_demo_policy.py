@@ -144,13 +144,14 @@ class SimRobot:
     def say(self, *_a, **_k):
         pass
 
-    # the real handle's navigation primitive, verbatim (it only touches
-    # pose/move/stop, which this stub provides)
+    # the real handle's navigation primitive, verbatim (it touches
+    # pose/move/stop and narrates via _intent — a no-op with no arena)
     from roborun.behaviors import Robot as _R
     goto = _R.goto
     explore = _R.explore
     locate = _R.locate
     approach = _R.approach
+    _intent = _R._intent
     FOV = _R.FOV
 
     def log(self, *_a, **_k):
