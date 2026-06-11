@@ -1,0 +1,37 @@
+name: release
+
+# Tag a version, get a PyPI release — no tokens on any laptop.
+#   git tag v0.12.0 && git push --tags
+# One-time setup on pypi.org (project ros-agent → Publishing →
+# add trusted publisher): owner publu, repo RoboRun,
+# workflow release.yml, environment pypi.
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build && python -m build
+      - name: sanity — the wheel must carry the web UI
+        run: |
+          python - <<'EOF'
+          import zipfile, glob
+          w = glob.glob("dist/*.whl")[0]
+          names = zipfile.ZipFile(w).namelist()
+          for need in ["roborun/web/arena.js", "roborun/web/physics.js",
+                       "roborun/web/deck.js", "roborun/web/py/shim.py"]:
+              assert any(x.endswith(need) for x in names), f"wheel missing {need}"
+          print("wheel complete:", len(names), "files")
+          EOF
+      - uses: pypa/gh-action-pypi-publish@release/v1
