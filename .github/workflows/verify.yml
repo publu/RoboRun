@@ -10,7 +10,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e . pytest cryptography
+      - run: pip install -e . pytest cryptography numpy
       - name: unit tests
         run: pytest tests/ -v
       - name: seal → verify → tamper → must fail
