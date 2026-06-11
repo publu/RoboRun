@@ -1985,11 +1985,19 @@ function frame(now) {
   }
 
   const focusY = bot.type === "drone" ? bot.alt : 0.5;
+  // a fixed-base robot gets a studio camera: chasing the effector parks
+  // the lens inside the column. Frame the table, track the hand gently.
+  const fixedBase = bot.type === "arm";
   if (camMode === 0) {
-    specCam.position.lerp(new THREE.Vector3(
-      bot.pos.x - Math.cos(bot.heading) * 3.4, focusY + 2,
-      bot.pos.z + Math.sin(bot.heading) * 3.4), 0.06);
-    specCam.lookAt(bot.pos.x, focusY, bot.pos.z);
+    if (fixedBase) {
+      specCam.position.lerp(new THREE.Vector3(6.0, 5.2, 6.0), 0.06);
+      specCam.lookAt(bot.pos.x * 0.45, 0.45, bot.pos.z * 0.45);
+    } else {
+      specCam.position.lerp(new THREE.Vector3(
+        bot.pos.x - Math.cos(bot.heading) * 3.4, focusY + 2,
+        bot.pos.z + Math.sin(bot.heading) * 3.4), 0.06);
+      specCam.lookAt(bot.pos.x, focusY, bot.pos.z);
+    }
   } else if (camMode === 1) {
     specCam.position.copy(orbitCam.position);
     specCam.quaternion.copy(orbitCam.quaternion);
@@ -1998,13 +2006,20 @@ function frame(now) {
   const eye = eyePos();
   povCam.position.set(eye.x + fwd.x * 0.35, eye.y, eye.z + fwd.z * 0.35);
   povCam.lookAt(eye.x + fwd.x * 5, bot.type === "arm" ? 0 : eye.y - 0.05, eye.z + fwd.z * 5);
-  chaseCam.position.lerp(new THREE.Vector3(
-    bot.pos.x - Math.cos(bot.heading) * 3.4, focusY + 2,
-    bot.pos.z + Math.sin(bot.heading) * 3.4), 0.08);
-  chaseCam.lookAt(bot.pos.x, focusY, bot.pos.z);
-  orbitCam.position.set(bot.pos.x + Math.cos(orbitAngle) * 6, focusY + 3.6,
-                        bot.pos.z + Math.sin(orbitAngle) * 6);
-  orbitCam.lookAt(bot.pos.x, focusY, bot.pos.z);
+  if (fixedBase) {
+    chaseCam.position.lerp(new THREE.Vector3(6.0, 5.2, 6.0), 0.08);
+    chaseCam.lookAt(bot.pos.x * 0.45, 0.45, bot.pos.z * 0.45);
+  } else {
+    chaseCam.position.lerp(new THREE.Vector3(
+      bot.pos.x - Math.cos(bot.heading) * 3.4, focusY + 2,
+      bot.pos.z + Math.sin(bot.heading) * 3.4), 0.08);
+    chaseCam.lookAt(bot.pos.x, focusY, bot.pos.z);
+  }
+  const ox = fixedBase ? 0 : bot.pos.x, oz = fixedBase ? 0 : bot.pos.z;
+  orbitCam.position.set(ox + Math.cos(orbitAngle) * (fixedBase ? 7 : 6),
+                        focusY + (fixedBase ? 4.4 : 3.6),
+                        oz + Math.sin(orbitAngle) * (fixedBase ? 7 : 6));
+  orbitCam.lookAt(ox, focusY, oz);
   orbitAngle += dt * 0.25;
 
   if (!won) clockEl.textContent = `${((now - t0) / 1000).toFixed(1)}s`;
