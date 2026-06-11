@@ -7,6 +7,7 @@
    run-hash. */
 
 import * as THREE from "three";
+import { initPhysics, createWorld } from "./physics.js";
 
 /* ════════════════ levels ════════════════ */
 const COLORS = { red: 0xd84a4a, blue: 0x4a7ad8, green: 0x44b86a,
@@ -279,8 +280,8 @@ addEventListener("resize", () => {
 
 /* ════════════════ level building ════════════════ */
 const W = 0.15;
-let LV = null, levelGroup = null;
-let wallMeshes = [], propObjs = [], movers = [];
+let LV = null, levelGroup = null, phys = null;
+let propObjs = [], movers = [];
 
 function makeProp(p) {
   const color = COLORS[p.color] || 0x9fb0bd;
@@ -302,6 +303,8 @@ function makeProp(p) {
     mesh = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), mat);
     mesh.position.set(p.x, s / 2, p.z);
     y = s / 2;
+    // crates are dynamic rigid bodies — shovable, stackable, droppable
+    phys.addCrate(p.id, p.x, p.z, s);
   } else if (p.kind === "ring") {
     mesh = new THREE.Mesh(new THREE.TorusGeometry(0.9, 0.08, 8, 28), mat);
     mesh.position.set(p.x, p.y, p.z);
@@ -319,8 +322,10 @@ function buildLevel(def) {
     levelGroup.traverse((o) => { o.geometry?.dispose(); o.material?.dispose?.(); });
   }
   LV = def;
+  phys?.free();
+  phys = createWorld(def, def.robot);    // the physics world IS the level
   levelGroup = new THREE.Group();
-  wallMeshes = []; propObjs = []; movers = [];
+  propObjs = []; movers = [];
 
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(def.bounds * 2, def.bounds * 2),
@@ -338,9 +343,7 @@ function buildLevel(def) {
       Math.abs(x2 - x1) || W * 2, 1.6, Math.abs(z2 - z1) || W * 2), wallMat);
     m.position.set((x1 + x2) / 2, 0.8, (z1 + z2) / 2);
     m.castShadow = m.receiveShadow = true;
-    m.userData.aabb = new THREE.Box3().setFromObject(m);
-    levelGroup.add(m);
-    wallMeshes.push(m);
+    levelGroup.add(m);                   // visual only — collision lives in phys
   }
 
   let props = def.props;
@@ -355,10 +358,9 @@ function buildLevel(def) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(mv.size, 0.8, mv.size),
       new THREE.MeshStandardMaterial({ color: 0xb86a3a, roughness: 0.6 }));
     m.castShadow = true;
-    m.userData.aabb = new THREE.Box3();
     levelGroup.add(m);
-    wallMeshes.push(m);              // lidar sees it, collision respects it
-    movers.push({ ...mv, mesh: m, phase: Math.random() * 6.28 });
+    movers.push({ ...mv, mesh: m, phase: Math.random() * 6.28,
+                  physId: phys.addMover(mv.size) });
   }
   scene.add(levelGroup);
 }
@@ -366,8 +368,21 @@ function buildLevel(def) {
 function updateMovers(dt) {
   for (const mv of movers) {
     mv.phase += dt * mv.speed;
-    mv.mesh.position.set(Math.cos(mv.phase) * mv.r, 0.4, Math.sin(mv.phase) * mv.r);
-    mv.mesh.userData.aabb.setFromObject(mv.mesh);
+    const x = Math.cos(mv.phase) * mv.r, z = Math.sin(mv.phase) * mv.r;
+    mv.mesh.position.set(x, 0.4, z);
+    phys.setMover(mv.physId, x, z);    // lidar sees it, collision respects it
+  }
+}
+
+/* dynamic props follow their rigid bodies — crates topple for real */
+const _q = new THREE.Quaternion();
+function syncProps() {
+  for (const p of propObjs) {
+    if (p.kind !== "crate") continue;
+    const t = phys.propPose(p.id);
+    if (!t) continue;
+    p.mesh.position.set(t.x, t.y, t.z);
+    p.mesh.quaternion.set(t.rot.x, t.rot.y, t.rot.z, t.rot.w);
   }
 }
 
@@ -416,7 +431,7 @@ const BODIES = {
       { x: 0.25, y: -0.06, z: -0.15, phase: 0 }, { x: 0.25, y: -0.06, z: 0.15, phase: 1 },
       { x: -0.25, y: -0.06, z: -0.15, phase: 1 }, { x: -0.25, y: -0.06, z: 0.15, phase: 0 },
     ], 0.26, 0.26);
-    return { standH: 0.42, stepTime: 0.28, eyeH: 0.45, speed: 1.0 };
+    return { standH: 0.42, stepTime: 0.28, eyeH: 0.45 };
   },
   biped(group, parts) {                                /* G1-ish: pelvis, visor, arms */
     _box(group, 0.28, 0.4, 0.24, bodyMat, 0, 0.32, 0);
@@ -436,7 +451,7 @@ const BODIES = {
     parts.legs = legSet(group, [
       { x: 0, y: -0.03, z: -0.11, phase: 0 }, { x: 0, y: -0.03, z: 0.11, phase: 1 },
     ], 0.42, 0.42);
-    return { standH: 0.85, stepTime: 0.42, eyeH: 1.45, speed: 0.6 };
+    return { standH: 0.85, stepTime: 0.42, eyeH: 1.45 };
   },
   drone(group, parts) {                                /* Mavic-ish: diagonal arms, pods, gimbal */
     _box(group, 0.38, 0.1, 0.24, bodyMat);
@@ -454,7 +469,7 @@ const BODIES = {
       group.add(rotor);
       parts.rotors.push(rotor);
     }
-    return { standH: 1.0, stepTime: 1, eyeH: 0, speed: 1.3 };
+    return { standH: 1.0, stepTime: 1, eyeH: 0 };
   },
 };
 
@@ -480,23 +495,6 @@ function worldToBodyX(wx, wz) {
   return (wx - bot.pos.x) * c - (wz - bot.pos.z) * s;
 }
 function homeFoot(leg, out) { return bodyToWorld(leg.hip.x, leg.hip.z, out); }
-
-function slideCollide(next, r) {
-  for (const m of wallMeshes) {
-    const b = m.userData.aabb;
-    if (next.x > b.min.x - r && next.x < b.max.x + r &&
-        next.z > b.min.z - r && next.z < b.max.z + r) {
-      const keepX = bot.pos.clone(); keepX.x = next.x;
-      const keepZ = bot.pos.clone(); keepZ.z = next.z;
-      const okX = !(keepX.x > b.min.x - r && keepX.x < b.max.x + r &&
-                    keepX.z > b.min.z - r && keepX.z < b.max.z + r);
-      const okZ = !(keepZ.x > b.min.x - r && keepZ.x < b.max.x + r &&
-                    keepZ.z > b.min.z - r && keepZ.z < b.max.z + r);
-      next.copy(okX ? keepX : okZ ? keepZ : bot.pos);
-    }
-  }
-  return next;
-}
 
 function gaitUpdate(dt, dx, dz, moving) {
   const stepT = bodySpec.stepTime;
@@ -538,32 +536,28 @@ function gaitUpdate(dt, dx, dz, moving) {
 }
 
 function updateBody(dt, cmd) {
-  const f = THREE.MathUtils.clamp(cmd.forward || 0, -1, 1) * bodySpec.speed;
-  const st = THREE.MathUtils.clamp(cmd.strafe || 0, -1, 1) * bodySpec.speed;
-  const yaw = THREE.MathUtils.clamp(cmd.turn || 0, -1.5, 1.5);
-
-  bot.heading += yaw * dt;
-  const c = Math.cos(bot.heading), s = Math.sin(bot.heading);
-  const dx = (f * c + st * s) * dt, dz = (-f * s + st * c) * dt;
-  const next = bot.pos.clone(); next.x += dx; next.z += dz;
-  slideCollide(next, 0.32);
-  bot.pos.copy(next);
-  const moving = (Math.hypot(dx, dz) / dt + Math.abs(yaw) * 0.4) > 0.02;
+  // motion is the physics world's verdict: the character body slides
+  // along walls, yields to nothing, and shoves dynamic crates with mass
+  phys.step(dt, cmd);
+  const p = phys.pose();
+  const dx = p.x - bot.pos.x, dz = p.z - bot.pos.z;
+  bot.heading = p.heading;
+  bot.pos.set(p.x, 0, p.z);
+  const moving = (Math.hypot(dx, dz) / dt +
+                  Math.abs(THREE.MathUtils.clamp(cmd.turn || 0, -1, 1)) * 0.4) > 0.02;
 
   if (bot.type === "drone") {
-    bot.alt = THREE.MathUtils.clamp(bot.alt + (cmd.climb || 0) * dt * 1.2, 0.4, 3.4);
+    bot.alt = p.y;
     bot.group.position.set(bot.pos.x, bot.alt, bot.pos.z);
-    bot.group.rotation.set(-f * 0.15, bot.heading, st * 0.15, "YXZ");
+    bot.group.rotation.set(-(cmd.forward || 0) * 0.15, bot.heading,
+                           (cmd.strafe || 0) * 0.15, "YXZ");
     for (const r of bot.rotors) r.rotation.y += dt * 40;
     return;
   }
   gaitUpdate(dt, dx || 1e-9, dz || 1e-9, moving);
-  if (bot.carrying)
-    bot.carrying.mesh.position.set(bot.pos.x, bodySpec.standH + 0.45, bot.pos.z);
 }
 
-/* ════════════════ senses ════════════════ */
-const raycaster = new THREE.Raycaster();
+/* ════════════════ senses — raycasts through the physics world ════════════════ */
 const LIDAR_RAYS = 36, LIDAR_RANGE = 8;
 function eyePos() {
   return new THREE.Vector3(bot.pos.x,
@@ -587,9 +581,9 @@ function senseDetections() {
     const phi = Math.atan2(-to.z, to.x);
     const bearing = ((phi - bot.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
     if (Math.abs(bearing) > 0.62) continue;
-    raycaster.set(eye, to.clone().normalize());
-    const hit = raycaster.intersectObjects(wallMeshes, false)[0];
-    if (hit && hit.distance < dist - 0.4) continue;
+    // anything with a collider occludes — walls, movers, other crates
+    const block = phys.occludedAt(eye, ppos, p.kind === "crate" ? p.id : null);
+    if (block !== null && block < dist - 0.4) continue;
     const cx = 640 - (bearing / 0.62) * 600;
     const size = Math.min(420, 2200 / Math.max(dist, 0.4));
     out.push({ label: p.label, confidence: 0.95,
@@ -600,31 +594,18 @@ function senseDetections() {
   }
   currentDets = dets;
   if (bot.type === "dog" || bot.type === "biped") {
-    raycaster.set(eyePos(), fwdVec());
-    const ahead = raycaster.intersectObjects(wallMeshes, false)[0];
-    if (ahead && ahead.distance < 1.6) {
-      const size = 700 / ahead.distance;
+    const ahead = phys.ahead(8);
+    if (ahead !== null && ahead < 1.6) {
+      const size = 700 / ahead;
       out.push({ label: "obstacle", confidence: 1.0,
                  bbox: [640 - size / 2, 360 - size / 2, 640 + size / 2, 360 + size / 2],
-                 distance: +ahead.distance.toFixed(2) });
+                 distance: +ahead.toFixed(2) });
     }
   }
   return out;
 }
 
-function senseLidar() {
-  const eye = new THREE.Vector3(bot.pos.x, 0.45, bot.pos.z);
-  const ranges = [];
-  for (let i = 0; i < LIDAR_RAYS; i++) {
-    const a = bot.heading + (i / LIDAR_RAYS) * Math.PI * 2;
-    raycaster.set(eye, new THREE.Vector3(Math.cos(a), 0, -Math.sin(a)));
-    raycaster.far = LIDAR_RANGE;
-    const hit = raycaster.intersectObjects(wallMeshes, false)[0];
-    ranges.push(hit ? +hit.distance.toFixed(2) : LIDAR_RANGE);
-  }
-  raycaster.far = Infinity;
-  return ranges;
-}
+function senseLidar() { return phys.lidar(LIDAR_RAYS, LIDAR_RANGE); }
 
 /* ════════════════ lidar cloud + robot map ════════════════ */
 const CLOUD_MAX = 80000;
@@ -759,6 +740,7 @@ function loadLevel(i) {
   bot.heading = sp.heading || 0;
   bot.alt = 1.0;
   bot.carrying = null;
+  phys.spawn(sp.x, sp.z, sp.heading || 0);
   for (const leg of bot.legs) homeFoot(leg, leg.foot);
   visited = new Set(); won = false; usedManual = false;
   winState = { idx: 0, lap: 0, hold: 0, delivered: 0 };
@@ -872,12 +854,16 @@ function tickChamber(dt, answer) {
     if (!bot.carrying) {
       const crate = propObjs.find((p) => p.kind === "crate" && !p.delivered &&
         dist2d(bot.pos, p.mesh.position.x, p.mesh.position.z) < w.pickup);
-      if (crate) { bot.carrying = crate; crate.carried = true;
-                   postEvent("arena", "crate picked up", {}); }
+      if (crate && phys.attachProp(crate.id)) {
+        bot.carrying = crate; crate.carried = true;
+        postEvent("arena", "crate picked up", {});
+      }
     } else if (zone && dist2d(bot.pos, zone.pos.x, zone.pos.z) < w.zone) {
       bot.carrying.delivered = true;
       bot.carrying.carried = false;
-      bot.carrying.mesh.position.set(zone.pos.x + (winState.delivered - 0.5), 0.25, zone.pos.z);
+      // set it down in the zone — it lands as a body, not a sticker
+      phys.releaseProp({ x: zone.pos.x + (winState.delivered - 0.5), y: 0.6,
+                         z: zone.pos.z });
       bot.carrying = null;
       markChip(`c${winState.delivered}`);
       winState.delivered += 1;
@@ -1629,6 +1615,7 @@ function frame(now) {
   const cmd = keyboardCmd() || serverCmd;
   updateMovers(dt);
   updateBody(dt, cmd);
+  syncProps();
   tickChamber(dt, serverAnswer);
 
   odo += prevPos.distanceTo(bot.pos);
@@ -1672,6 +1659,7 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+await initPhysics();                       // rapier WASM, once per page
 loadLevel(0);
 detectMode(); pollCmd(); pushState(); pollSightings(); renderRuns();
 requestAnimationFrame(frame);

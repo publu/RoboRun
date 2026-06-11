@@ -2,7 +2,23 @@
   "name": "ros-agent",
   "version": "0.9.1",
   "description": "Open-source AI agent framework for robotics — 49 MCP tools for Claude, Cursor, or any AI to control ROS 1/2 robots, with YOLO+CLIP vision, MuJoCo sim, and fleet management",
-  "keywords": ["robotics", "ros", "ros2", "mcp", "ai-agent", "robot-control", "claude", "yolo", "clip", "mujoco", "skills", "fleet", "teleop", "computer-vision", "autonomous"],
+  "keywords": [
+    "robotics",
+    "ros",
+    "ros2",
+    "mcp",
+    "ai-agent",
+    "robot-control",
+    "claude",
+    "yolo",
+    "clip",
+    "mujoco",
+    "skills",
+    "fleet",
+    "teleop",
+    "computer-vision",
+    "autonomous"
+  ],
   "license": "MIT",
   "author": "Manifest Intelligence, Inc <pablo@hashingsystems.com>",
   "homepage": "https://github.com/publu/RoboRun",
@@ -18,5 +34,11 @@
   ],
   "engines": {
     "node": ">=18"
+  },
+  "type": "module",
+  "devDependencies": {
+    "@dimforge/rapier3d-compat": "0.19.3",
+    "playwright-core": "^1.60.0",
+    "pyodide": "0.26.4"
   }
 }

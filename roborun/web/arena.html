@@ -294,7 +294,10 @@ player_policy and poll arena_status until won. No teleop.</pre>
 <div id="keys">drag headers · resize corners · ⌘⏎ run · L lidar cloud · C main camera · N level · <b style="color:#6b7b88">WASD takes over anytime</b> (practice run)<span class="server-only"> · <a href="/">deck</a></span></div>
 
 <script type="importmap">
-{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "@dimforge/rapier3d-compat": "https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.19.3/+esm"
+} }
 </script>
 <script type="module" src="./arena.js"></script>
 </body>
