@@ -16,15 +16,32 @@ jobs:
       - name: seal → verify → tamper → must fail
         run: |
           python - <<'EOF'
-          from roborun import integrity
-          events = [{"id": f"evt_{i}", "type": "ros", "source": "ci",
-                     "title": f"event {i}", "ts": 1749480000 + i} for i in range(200)]
-          integrity.snapshot_run(events, "ci-run")
-          integrity.seal_run("ci-run")
-          assert integrity.verify_run("ci-run")["verified"], "clean run must verify"
-          integrity.tamper_run("ci-run", 42)
-          r = integrity.verify_run("ci-run")
-          assert not r["verified"], "tampered run must fail"
-          assert r["failed_event"] == 42, "must pinpoint the exact event"
-          print("tamper test: one byte changed, caught at event 0042")
+          import tempfile, time
+          from pathlib import Path
+          from roborun.recorder import RunRecorder, verify_mcap_run
+
+          root = Path(tempfile.mkdtemp())
+          rec = RunRecorder(robot_id="ci", root=root, checkpoint_interval=0.01)
+          t0 = time.time()
+          for i in range(200):
+              rec.write_event({"id": f"evt_{i}", "type": "ros", "source": "ci",
+                               "title": f"event {i}", "detail": {},
+                               "ts": t0 + i * 0.05, "prev": ""})
+          seal = rec.close(do_anchor=False)
+
+          v = verify_mcap_run(rec.mcap_path)
+          assert v["state"] == "consistent_unanchored", f"clean run must verify: {v}"
+          assert v["merkle_root"] == seal["merkle_root"]
+
+          data = bytearray(rec.mcap_path.read_bytes())
+          flip = len(data) // 2
+          data[flip] ^= 1
+          rec.mcap_path.write_bytes(bytes(data))
+
+          r = verify_mcap_run(rec.mcap_path)
+          assert r["state"] == "broken", "tampered run must fail"
+          lo, hi = r["byte_range"]
+          assert lo <= flip < hi, "must localize the tampered segment"
+          print(f"tamper test: one byte flipped at {flip}, "
+                f"caught in segment bytes [{lo}, {hi})")
           EOF
