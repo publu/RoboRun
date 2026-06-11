@@ -372,8 +372,12 @@ topCam.lookAt(0, 0, 0);
 const chaseCam = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 100);
 const orbitCam = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 100);
 const CAM_POOL = { pov: povCam, top: topCam, chase: chaseCam, orbit: orbitCam };
-let camMode = 0;
-const CAM_MODES = ["chase", "orbit", "top"];
+const mainCamSel = document.getElementById("mainCamSel");
+const CAM_MODES = ["pov", "chase", "orbit", "top"];
+function cycleMainCam() {
+  const i = CAM_MODES.indexOf(mainCamSel.value);
+  mainCamSel.value = CAM_MODES[(i + 1) % CAM_MODES.length];
+}
 addEventListener("resize", () => {
   renderer.setSize(innerWidth, innerHeight);
   specCam.aspect = innerWidth / innerHeight;
@@ -1550,13 +1554,16 @@ function loadLayout() {
 let layout = loadLayout();
 function saveLayout() { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); }
 function applyLayout() {
+  const TOP = 46;
   for (const id of PANEL_IDS) {
     const el = document.getElementById(id), st = layout[id];
     if (!el || !st) continue;
-    el.style.left = `${Math.max(0, Math.min(st.l, innerWidth - 60))}px`;
-    el.style.top = `${Math.max(0, Math.min(st.t, innerHeight - 40))}px`;
-    el.style.width = `${st.w}px`;
-    el.style.height = `${st.h}px`;
+    const w = Math.min(st.w, innerWidth - 12);
+    const h = Math.min(st.h, innerHeight - TOP - 8);
+    el.style.left = `${Math.max(4, Math.min(st.l, innerWidth - w - 4))}px`;
+    el.style.top = `${Math.max(TOP, Math.min(st.t, innerHeight - h - 4))}px`;
+    el.style.width = `${w}px`;
+    el.style.height = `${h}px`;
     el.classList.toggle("hidden", !!st.hidden);
     document.querySelector(`#toolbar [data-panel="${id}"]`)
       ?.classList.toggle("on", !st.hidden);
@@ -1619,11 +1626,12 @@ function initPanels() {
   });
   // until the user rearranges something, the rails track the window size
   addEventListener("resize", () => {
-    if (layout._custom) return;
-    const hid = Object.fromEntries(PANEL_IDS.map((p) => [p, layout[p].hidden]));
-    layout = defaultLayout();
-    for (const p of PANEL_IDS) layout[p].hidden = hid[p];
-    applyLayout();
+    if (!layout._custom) {
+      const hid = Object.fromEntries(PANEL_IDS.map((p) => [p, layout[p].hidden]));
+      layout = defaultLayout();
+      for (const p of PANEL_IDS) layout[p].hidden = hid[p];
+    }
+    applyLayout();              // custom layouts re-clamp into the window
   });
   applyLayout();
 }
@@ -1635,7 +1643,7 @@ addEventListener("keydown", (e) => {
   if (e.target.closest?.("#p-policy") ||
       ["SELECT", "TEXTAREA", "INPUT"].includes(e.target.tagName)) return;
   keys[e.key.toLowerCase()] = true;
-  if (e.key.toLowerCase() === "c") camMode = (camMode + 1) % CAM_MODES.length;
+  if (e.key.toLowerCase() === "c") cycleMainCam();
   if (e.key.toLowerCase() === "n") loadLevel(levelIndex + 1);
   if (e.key.toLowerCase() === "l") { cloudOn = !cloudOn; cloud.visible = cloudOn; }
   if (e.key === "Escape") { connectEl.classList.remove("show"); startEl.classList.remove("show"); }
@@ -1660,7 +1668,13 @@ function renderViews() {
   renderer.setViewport(0, 0, w, h);
   renderer.setScissor(0, 0, w, h);
   renderer.clear();
-  renderer.render(scene, camMode === 2 ? topCam : specCam);
+  const mainMode = mainCamSel.value;
+  let mainCam = mainMode === "top" ? topCam : mainMode === "pov" ? povCam : specCam;
+  if (mainCam.isPerspectiveCamera) {
+    mainCam.aspect = w / h;
+    mainCam.updateProjectionMatrix();
+  }
+  renderer.render(scene, mainCam);
   for (const panel of document.querySelectorAll(".view-panel")) {
     if (panel.classList.contains("hidden")) continue;
     const vp = panel.querySelector(".viewport").getBoundingClientRect();
@@ -1712,7 +1726,9 @@ function drawDetOverlay(panel, isPov, vp) {
 const clockEl = document.getElementById("clock"), cmdEl = document.getElementById("cmdline");
 let last = performance.now(), senseTick = 0, orbitAngle = 0;
 function frame(now) {
-  const dt = Math.min((now - last) / 1000, 0.05);
+  // clamp at 10 fps, not 20: on slow renderers (headless, low-end GPUs)
+  // physics keeps real time — the substep accumulator absorbs big frames
+  const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
   const cmd = keyboardCmd() || serverCmd;
   updateMovers(dt);
@@ -1733,12 +1749,12 @@ function frame(now) {
   }
 
   const focusY = bot.type === "drone" ? bot.alt : 0.5;
-  if (camMode === 0) {
+  if (mainCamSel.value === "chase") {
     specCam.position.lerp(new THREE.Vector3(
       bot.pos.x - Math.cos(bot.heading) * 3.4, focusY + 2,
       bot.pos.z + Math.sin(bot.heading) * 3.4), 0.06);
     specCam.lookAt(bot.pos.x, focusY, bot.pos.z);
-  } else if (camMode === 1) {
+  } else if (mainCamSel.value === "orbit") {
     specCam.position.copy(orbitCam.position);
     specCam.quaternion.copy(orbitCam.quaternion);
   }
@@ -1756,7 +1772,7 @@ function frame(now) {
   orbitAngle += dt * 0.25;
 
   if (!won) clockEl.textContent = `${((now - t0) / 1000).toFixed(1)}s`;
-  cmdEl.textContent = `cmd f=${(cmd.forward || 0).toFixed(2)} t=${(cmd.turn || 0).toFixed(2)} · cam ${CAM_MODES[camMode]}`;
+  cmdEl.textContent = `cmd f=${(cmd.forward || 0).toFixed(2)} t=${(cmd.turn || 0).toFixed(2)} · cam ${mainCamSel.value}`;
   renderViews();
   requestAnimationFrame(frame);
 }

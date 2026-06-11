@@ -41,7 +41,12 @@
              z-index: 50; display: flex; gap: 6px; background: rgba(11,14,17,.78);
              backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
              border: 1px solid rgba(42,58,70,.55); border-radius: 10px;
-             padding: 5px 8px; }
+             padding: 5px 8px; flex-wrap: wrap; justify-content: center;
+             max-width: calc(100vw - 16px); box-sizing: border-box; }
+  @media (max-width: 900px) {
+    #toolbar button { font-size: 10px; padding: 2px 6px; }
+    #toolbar { gap: 4px; }
+  }
   #toolbar button { background: #10161c; color: #6b7b88; border: 1px solid #2a3a46;
                     border-radius: 4px; font: inherit; font-size: 11px;
                     padding: 2px 9px; cursor: pointer; }
@@ -191,6 +196,13 @@
   <button data-panel="p-view2">VIEW 2</button>
   <button data-panel="p-runs">RUNS</button>
   <div class="sep"></div>
+  <select id="mainCamSel" class="camSel" title="main view camera — C cycles">
+    <option value="pov" selected>MAIN: robot cam</option>
+    <option value="chase">MAIN: chase</option>
+    <option value="orbit">MAIN: orbit</option>
+    <option value="top">MAIN: top</option>
+  </select>
+  <div class="sep"></div>
   <button id="btnConnect" class="accent">⚡ CONNECT AGENT</button>
   <button id="btnReset" title="restore default layout">reset</button>
 </div>
@@ -236,8 +248,8 @@
 
 <div class="panel view-panel" id="p-view1">
   <div class="p-head"><b>VIEW</b>
-    <select class="camSel"><option value="pov" selected>robot cam</option>
-      <option value="top">top</option><option value="chase">chase</option>
+    <select class="camSel"><option value="pov">robot cam</option>
+      <option value="top" selected>top</option><option value="chase">chase</option>
       <option value="orbit">orbit</option></select>
     <span class="x">✕</span></div>
   <div class="p-body"><div class="viewport"></div></div>
@@ -246,7 +258,7 @@
 <div class="panel view-panel" id="p-view2">
   <div class="p-head"><b>VIEW</b>
     <select class="camSel"><option value="pov">robot cam</option>
-      <option value="top" selected>top</option><option value="chase">chase</option>
+      <option value="top">top</option><option value="chase" selected>chase</option>
       <option value="orbit">orbit</option></select>
     <span class="x">✕</span></div>
   <div class="p-body"><div class="viewport"></div></div>
