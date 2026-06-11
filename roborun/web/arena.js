@@ -74,9 +74,10 @@ def player_policy(robot):
 def player_policy(robot):
     crates = robot.see("crate")
     if crates:
-        robot.approach(crates[0], tol=0.5)   # push through it a little
-    else:
-        robot.explore()
+        return robot.approach(crates[0], tol=0.5)   # push through it a little
+    t = robot.frontier()                  # nothing in view — go look
+    if t:
+        robot.goto(*(robot.route(*t) or t))
 `,
   },
   {
@@ -150,17 +151,26 @@ const LEVELS = [
     win: { type: "answer", value: "6", question: "how many doors?" },
     demo: `from roborun.behaviors import behavior
 
-# Explore new places. The system logs every sighting automatically and
-# dedupes by location (robot.seen) — no bookkeeping in the policy.
-# When everywhere is mapped, read the count and answer.
+# The explore loop is YOURS — three questions, one decision per tick:
+#   frontier()  where is space I haven't seen?      (None = seen it all)
+#   route()     how do I reach it through space I KNOW is clear?
+#   goto()      steer the last meter
+# Sightings log themselves (robot.seen dedupes by location) — answer
+# once nothing reachable is unseen.
 
 @behavior(hz=10)
 def player_policy(robot):
-    if robot.explore() and not robot.state.get("answered"):
-        robot.state["answered"] = True        # state survives between ticks
-        doors = sum(s["distinct"] for s in robot.seen() if "door" in s["label"])
-        robot.answer(str(doors))
-        robot.say("counted " + str(doors) + " doors")
+    new_space = robot.frontier()           # nearest edge of the unknown
+    if new_space is None:                  # the whole building is mapped
+        if not robot.state.get("answered"):
+            robot.state["answered"] = True
+            doors = sum(s["distinct"] for s in robot.seen() if "door" in s["label"])
+            robot.answer(str(doors))
+            robot.say("counted " + str(doors) + " doors")
+        return robot.stop()
+
+    step = robot.route(*new_space)         # waypoint through mapped space
+    robot.goto(*(step or new_space))
 `,
   },
 
@@ -187,9 +197,10 @@ def player_policy(robot):
 def player_policy(robot):
     red = robot.see("red door")
     if red:
-        robot.approach(red[0], tol=1.0)   # the chamber checks the hold
-    else:
-        robot.explore()                   # search until red shows up
+        return robot.approach(red[0], tol=1.0)   # the chamber checks the hold
+    t = robot.frontier()                  # no red yet — open unseen space
+    if t:
+        robot.goto(*(robot.route(*t) or t))
 `,
   },
 
@@ -263,8 +274,9 @@ def player_policy(robot):
     if i >= len(ORDER):
         return robot.stop()
     hits = robot.see(ORDER[i])
-    if not hits:
-        return robot.explore()            # search for the next button
+    if not hits:                          # not in view — open unseen space
+        t = robot.frontier()
+        return t and robot.goto(*(robot.route(*t) or t))
     if robot.approach(hits[0], tol=0.35):
         st["hold"] = st.get("hold", 0) + 1
         if st["hold"] > 12:               # pressed — next
@@ -296,8 +308,9 @@ def player_policy(robot):
     st = robot.state
     want = "drop zone" if st.get("carrying") else "crate"
     hits = robot.see(want)
-    if not hits:
-        return robot.explore()            # search for it
+    if not hits:                          # not in view — open unseen space
+        t = robot.frontier()
+        return t and robot.goto(*(robot.route(*t) or t))
     if robot.approach(hits[0], tol=0.4):
         st["carrying"] = not st.get("carrying")   # auto pick/drop happened
 `,

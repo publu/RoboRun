@@ -148,7 +148,10 @@ class SimRobot:
     # pose/move/stop and narrates via _intent — a no-op with no arena)
     from roborun.behaviors import Robot as _R
     goto = _R.goto
-    explore = _R.explore
+    frontier = _R.frontier
+    route = _R.route
+    mapped = _R.mapped
+    _spatial = _R._spatial
     locate = _R.locate
     approach = _R.approach
     _intent = _R._intent

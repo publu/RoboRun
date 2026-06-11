@@ -19,7 +19,9 @@ The `robot` handle:
     robot.pose()             {x, z, heading} odometry (arena / robots with odom)
     robot.seen(label=None)   the system's automatic sighting memory this run
     robot.goto(x, z)         one tick of drive-toward; True when arrived
-    robot.explore()          one tick of frontier exploration; True when done
+    robot.frontier()         (x,z) edge of unseen space — None when fully seen
+    robot.route(x, z)        next waypoint through space known to be clear
+    robot.mapped()           cells of spatial memory so far
     robot.locate(thing)      project a sighting to world (x, z)
     robot.approach(thing)    locate + goto in one verb
     robot.move(climb=)       vertical for drones (Twist linear.z)
@@ -313,65 +315,91 @@ class Robot:
         except Exception:
             pass
 
-    def explore(self) -> bool:
-        """One tick of frontier exploration — build an occupancy map from
-        lidar + pose, chase the nearest known/unknown boundary, route via
-        BFS with obstacle inflation. Call every tick; returns True once
-        nothing reachable is unknown. All state lives in
-        robot.state["_explore"]. This is the 'wander with intent' verb:
-
-            if robot.explore():        # finished mapping everything
-                robot.answer(...)
-        """
-        import math
+    def _spatial(self):
+        """Fold the current scan into spatial memory (the occupancy grid
+        behind mapped/frontier/route). Returns (grid, pose) or (None, None)."""
         pose, scan = self.pose(), self.lidar()
         if not pose or not scan:
-            self.stop()
-            return False
-        ex = self.state.setdefault("_explore", {"grid": {}, "path": None, "tick": 0})
-        grid = ex["grid"]
-        _explore_integrate(grid, pose, scan)
+            return None, None
+        ex = self.state.setdefault("_spatial", {"grid": {}, "tick": 0})
         ex["tick"] += 1
-        if ex.get("done"):
-            if ex["tick"] % 50 != 0:       # re-check occasionally (movers)
-                return True
-            ex["done"] = False
-        if ex["tick"] % 10 == 1 or not ex["path"]:
-            ex["path"] = _explore_plan(grid, pose)
-        path = ex["path"]
+        _explore_integrate(ex["grid"], pose, scan)
+        return ex["grid"], pose
+
+    def mapped(self) -> int:
+        """How much world the robot has seen: cells of spatial memory."""
+        grid, _ = self._spatial()
+        return len(grid) if grid else 0
+
+    def frontier(self, prefer: str = "near") -> tuple[float, float] | None:
+        """WHERE IS NEW SPACE? The edge between what the robot has seen
+        and what it hasn't, as a world point — or None once nothing
+        reachable is unexplored (that's your "done").
+
+        prefer="near": closest unseen edge — systematic sweep.
+        prefer="far":  deepest unseen edge — push into the unknown first.
+
+        The explore loop is yours to write:
+
+            t = robot.frontier()
+            if t is None: ...done...
+            robot.goto(*(robot.route(*t) or t))
+        """
+        grid, pose = self._spatial()
+        if grid is None:
+            return None
+        # hysteresis: hold the chosen frontier until it's been seen (the
+        # map swallowed it) or it ages out — a target that flip-flops
+        # every tick as the map grows would thrash the robot
+        fr = self.state.setdefault("_frontier", {"cell": None, "age": 0,
+                                                 "prefer": prefer})
+        fr["age"] += 1
+        c = fr["cell"]
+        if (c is not None and fr["prefer"] == prefer and fr["age"] < 20
+                and grid.get(c) is None):
+            return (c[0] * _EXPLORE_CELL, c[1] * _EXPLORE_CELL)
+        fronts = _explore_frontiers(grid, pose)
+        if not fronts:
+            fr["cell"] = None
+            return None
+        c = fronts[0] if prefer == "near" else fronts[-1]
+        fr.update(cell=c, age=0, prefer=prefer)
+        return (c[0] * _EXPLORE_CELL, c[1] * _EXPLORE_CELL)
+
+    def route(self, x: float, z: float) -> tuple[float, float] | None:
+        """HOW DO I GET THERE THROUGH WHAT I KNOW? Next waypoint toward
+        (x, z) routed through cells the robot has seen to be clear,
+        walls inflated. None = no known-clear path (yet) — drive
+        somewhere new or fall back to goto. Replans as the map grows."""
+        import math
+        grid, pose = self._spatial()
+        if grid is None:
+            return None
+        cell = (round(x / _EXPLORE_CELL), round(z / _EXPLORE_CELL))
+        rt = self.state.setdefault("_route", {"target": None, "path": None, "age": 0})
+        rt["age"] += 1
+        if rt["target"] != cell or rt["age"] >= 10 or not rt["path"]:
+            rt["target"], rt["age"] = cell, 0
+            rt["path"] = _explore_route(grid, pose, cell)
+        path = rt["path"]
         if not path:
-            ex["done"] = True
-            self._intent("explore", f"fully mapped — {len(grid)} cells, "
-                                    "nothing unknown reachable")
-            self.stop()
-            return True
+            return None
         while path and math.hypot(path[0][0] * _EXPLORE_CELL - pose["x"],
                                   path[0][1] * _EXPLORE_CELL - pose["z"]) < 0.45:
             path.pop(0)
         if not path:
-            return False
-        tx, tz = path[min(4, len(path) - 1)]
-        wx, wz = tx * _EXPLORE_CELL, tz * _EXPLORE_CELL
-        self._intent("explore",
-                     f"mapped {len(grid)} cells · chasing unseen space",
-                     (path[-1][0] * _EXPLORE_CELL, path[-1][1] * _EXPLORE_CELL))
-        ahead = min(scan[:2] + scan[-2:])
-        self._in_verb = True
-        try:
-            if ahead < 0.6:
-                left, right = sum(scan[6:12]), sum(scan[-12:-6])
-                self.move(turn=1.0 if left > right else -1.0)
-            else:
-                self.goto(wx, wz)
-        finally:
-            self._in_verb = False
-        return False
+            return (x, z)                       # already on top of it
+        c = path[min(2, len(path) - 1)]      # near waypoint: stay in the
+        return (c[0] * _EXPLORE_CELL, c[1] * _EXPLORE_CELL)  # planned channel
 
     def goto(self, x: float, z: float, speed: float = 0.9,
              tol: float = 0.45) -> bool:
-        """One tick of drive-toward-point. Call it every tick; it steers and
-        returns True once within tol. Needs pose (arena / odom robots).
-        Routing around walls is your policy's job — this is the last meter."""
+        """One tick of drive-toward-point. Call it every tick; it steers
+        and returns True once within tol. Needs pose (arena / odom
+        robots). Steering owns the last meter — including not parking
+        its nose on a wall: when lidar shows < 0.55 m dead ahead it
+        commits to one relief turn until clear (commitment, not
+        flip-flop). Choosing WHERE to go stays your policy's job."""
         if not getattr(self, "_in_verb", False):
             self._intent("goto", f"→ ({x:.1f}, {z:.1f})", (x, z))
         import math
@@ -383,6 +411,23 @@ class Robot:
         if math.hypot(dx, dz) < tol:
             self.stop()
             return True
+        scan = self.lidar()
+        if scan:
+            ahead = min(scan[:2] + scan[-2:])
+            relief = self.state.get("_goto_relief")
+            if relief is not None:
+                # committed: keep turning the same way until actually
+                # clear — half-measures here are how robots livelock
+                if ahead > 0.9:
+                    self.state["_goto_relief"] = None
+                else:
+                    self.move(forward=0.15, turn=relief * 1.2)
+                    return False
+            elif ahead < 0.55:
+                left, right = sum(scan[6:12]), sum(scan[-12:-6])
+                self.state["_goto_relief"] = 1.0 if left > right else -1.0
+                self.move(forward=0.15, turn=self.state["_goto_relief"] * 1.2)
+                return False
         bearing = (math.atan2(-dz, dx) - pose["heading"] + math.pi) \
             % (2 * math.pi) - math.pi
         if abs(bearing) > 0.5:
@@ -857,9 +902,32 @@ def _explore_clear(grid: dict, c: tuple) -> bool:
     return True
 
 
-def _explore_plan(grid: dict, pose: dict) -> list | None:
-    """BFS through clear cells to the nearest known/unknown frontier."""
+def _explore_frontiers(grid: dict, pose: dict) -> list:
+    """All frontier cells (unknown space adjacent to known-clear space),
+    in BFS order from the robot: [0] is nearest, [-1] is deepest."""
     start = (round(pose["x"] / _EXPLORE_CELL), round(pose["z"] / _EXPLORE_CELL))
+    queue, seen, found = [start], {start}, []
+    while queue:
+        c = queue.pop(0)
+        for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            n = (c[0] + dx, c[1] + dz)
+            if n in seen:
+                continue
+            seen.add(n)
+            if grid.get(n) is None:
+                found.append(n)
+            elif _explore_clear(grid, n):
+                queue.append(n)
+    return found
+
+
+def _explore_route(grid: dict, pose: dict, target: tuple) -> list | None:
+    """BFS path from the robot to `target` through known-clear cells
+    (the target itself may be unknown — a frontier). None = unreachable
+    through mapped space."""
+    start = (round(pose["x"] / _EXPLORE_CELL), round(pose["z"] / _EXPLORE_CELL))
+    if start == target:
+        return [target]
     prev, queue, seen = {}, [start], {start}
     while queue:
         c = queue.pop(0)
@@ -867,13 +935,15 @@ def _explore_plan(grid: dict, pose: dict) -> list | None:
             n = (c[0] + dx, c[1] + dz)
             if n in seen:
                 continue
-            if grid.get(n) is None:
-                path = [c]
+            if n == target:
+                path = [n, c]
                 while path[-1] != start:
                     path.append(prev[path[-1]])
                 return path[::-1]
+            seen.add(n)
             if _explore_clear(grid, n):
-                seen.add(n); prev[n] = c; queue.append(n)
+                prev[n] = c
+                queue.append(n)
     return None
 
 

@@ -30,8 +30,17 @@ called 10x/second. It must never block. The handle:
       for "how many X did I see" questions; never hand-roll a ledger
   robot.move(forward=0, strafe=0, turn=0, climb=0)   (clamped; climb = drones)
   robot.goto(x, z, tol=0.45) -> True when arrived (steers one tick)
-  robot.explore() -> one tick of frontier exploration; True once fully mapped
-      (use this for "move around / search / wander" — it is systematic)
+  robot.frontier(prefer="near") -> (x, z) | None
+      WHERE IS NEW SPACE? The edge of what the robot hasn't seen; None
+      once everything reachable is seen (that is your "done").
+      prefer="near" sweeps systematically, prefer="far" pushes deep.
+  robot.route(x, z) -> (wx, wz) | None   next waypoint toward (x,z) through
+      space already seen to be clear (walls inflated); None = no known path
+  robot.mapped() -> int   cells of spatial memory so far
+      the explore loop is yours:
+        t = robot.frontier()
+        if t: robot.goto(*(robot.route(*t) or t))
+        else: ...everything seen — act on it...
   robot.locate(thing) -> (x, z) world position of a sighting, or None
   robot.approach(thing, tol=0.45) -> locate + goto; True when arrived
   robot.stop() / robot.say(text) / robot.log(msg)
