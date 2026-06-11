@@ -1,5 +1,5 @@
 /* RoboRun Arena.
-   Seven chambers, four robot types (dog, humanoid, arm, drone) — all in
+   Six chambers, three robot types (dog, humanoid, drone) — all in
    the browser, all driven by the same policy handle that drives real
    ROS robots. The robot's senses: forward camera cone + 360° lidar
    (+ pose). The spectator gets more. Briefs are policy specs; WASD is
@@ -200,123 +200,6 @@ def player_policy(robot):
 `,
   },
 
-  /* ── ARM · SORT — blocks into matching bins ── */
-  {
-    name: "arm-sort", robot: "arm",
-    title: "ARM 01 — SORT THE BLOCKS",
-    brief: "A fixed arm, camera ON the hand (eye-in-hand, looks radially "
-         + "outward — orbit to scan; pose()['heading'] is the view). Blocks "
-         + "are PHYSICAL: grasping only works if the fingers actually "
-         + "straddle one — center over it, descend with move(climb=-…) "
-         + "until the fingers reach block height (~0.8), then grasp(True); "
-         + "pose()['holding'] tells you if you got it. Open the hand and "
-         + "it falls. Bumping a block shoves it. move() drives the hand in "
-         + "world axes (forward=+x, strafe=+z), pose()['y'] is wrist "
-         + "height. RED bin (-3, 0), BLUE bin (3, 0). Sort all four.",
-    bounds: 8, spawn: { x: 1.6, z: 0, heading: 0 },   // effector home: out front, not over the base
-    rooms: [], walls: [],
-    props: [
-      { kind: "block", color: "red", x: -1.5, z: -2, id: 0 },
-      { kind: "block", color: "blue", x: 1.8, z: -1.4, id: 1 },
-      { kind: "block", color: "red", x: 0.6, z: 2.1, id: 2 },
-      { kind: "block", color: "blue", x: -2.2, z: 1.6, id: 3 },
-      { kind: "bin", color: "red", x: -3, z: 0, r: 0.8, label: "red bin" },
-      { kind: "bin", color: "blue", x: 3, z: 0, r: 0.8, label: "blue bin" },
-    ],
-    win: { type: "sort", blocks: 4, grabDist: 0.4 },
-    demo: `from roborun.behaviors import behavior
-from math import atan2, cos, sin, hypot
-
-FOV = 1.323
-BINS = {"red": (-3, 0), "blue": (3, 0)}   # given in the brief
-
-def toward(robot, pose, tx, tz, tol=0.25):
-    dx, dz = tx - pose["x"], tz - pose["z"]
-    if abs(dx) < tol and abs(dz) < tol:
-        return True
-    robot.move(forward=max(-0.8, min(0.8, 2 * dx)),
-               strafe=max(-0.8, min(0.8, 2 * dz)))
-    return False
-
-def go(robot, pose, tx, tz, tol=0.25):
-    # the base sits at (0,0) inside the workspace: if the straight line
-    # to the target crosses its keep-out, arc around it first
-    x, z = pose["x"], pose["z"]
-    dx, dz = tx - x, tz - z
-    L2 = dx * dx + dz * dz or 1e-9
-    t = max(0.0, min(1.0, -(x * dx + z * dz) / L2))
-    if hypot(x + t * dx, z + t * dz) < 0.95:
-        ca, ta = atan2(z, x), atan2(tz, tx)
-        s = 1.0 if sin(ta - ca) > 0 else -1.0
-        wa = ca + s * 0.5                  # waypoint half a radian around
-        toward(robot, pose, cos(wa) * 1.3, sin(wa) * 1.3, tol=0.3)
-        return False
-    return toward(robot, pose, tx, tz, tol)
-
-def planar(dist, y):
-    # the wrist camera rides the hand (0.42 below the wrist); dist is 3D,
-    # so take the camera height over the block tops back out
-    dy = max(0.0, y - 0.57)
-    return max(0.05, max(dist * dist - dy * dy, 0.0) ** 0.5)
-
-@behavior(hz=10)
-def player_policy(robot):
-    pose = robot.pose()
-    if not pose:
-        return robot.stop()
-    st = robot.state
-
-    if pose.get("holding"):                # gripper feedback: we have it
-        st["closing"] = False
-        if pose["y"] < 1.2:                # carry height clears table blocks
-            return robot.move(climb=0.9)
-        bx, bz = BINS[pose["holding"].split()[0]]
-        if go(robot, pose, bx, bz):
-            robot.grasp(False)             # open — gravity places it in the bin
-        return
-
-    if st.get("closing"):                  # closed on air: reset and rescan
-        st["closing"] = False
-        robot.grasp(False)
-        return robot.move(climb=0.9)
-
-    t = st.get("target")
-    if t:                                  # centered: descend onto the block
-        if not toward(robot, pose, t[0], t[1], tol=0.1):
-            return
-        if pose["y"] > 0.92:               # fingers at block height, palm clear
-            return robot.move(climb=-0.3)  # slow final descent
-        robot.grasp(True)                  # fingers straddle it — close
-        st["target"] = None
-        st["closing"] = True
-        return
-
-    blocks = robot.see("red block") + robot.see("blue block")
-    if blocks:                             # in view: project via the hand camera
-        st["idle"] = 0
-        b = min(blocks, key=lambda d: d.dist or 9)
-        a = pose["heading"] + (0.5 - b.cx) * FOV
-        r = planar(b.dist or 0, pose["y"])
-        tx, tz = pose["x"] + cos(a) * r, pose["z"] - sin(a) * r
-        if toward(robot, pose, tx, tz, tol=0.12):
-            st["target"] = (tx, tz)        # lock the spot, then descend on it
-        return
-
-    # nothing in view: orbit inside the blocks' radius at cruise height —
-    # the wrist camera sweeps the whole table once per lap
-    st["idle"] = st.get("idle", 0) + 1
-    if st["idle"] > 220:
-        return robot.stop()                # a full sweep saw nothing — done
-    if pose["y"] < 1.0:
-        return robot.move(climb=0.9)
-    x, z = pose["x"], pose["z"]
-    d = max(0.3, hypot(x, z))
-    pull = 0.8 * (1.2 - d)                 # hold a 1.2 m scan orbit
-    robot.move(forward=pull * x / d - 0.7 * z / d,
-               strafe=pull * z / d + 0.7 * x / d)
-`,
-  },
-
   /* ── DRONE · RINGS — fly the course ── */
   {
     name: "drone-rings", robot: "drone",
@@ -407,15 +290,15 @@ function makeProp(p) {
   if (p.kind === "door") {
     mesh = new THREE.Mesh(new THREE.TorusGeometry(0.75, 0.09, 8, 24, Math.PI), mat);
     mesh.position.set(p.x, 0.05, p.z);
-  } else if (["checkpoint", "zone", "bin", "button"].includes(p.kind)) {
+  } else if (["checkpoint", "zone", "button"].includes(p.kind)) {
     const r = p.r || (p.kind === "button" ? 0.6 : 0.9);
     mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.05, 28),
       new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.45,
                                        transparent: true, opacity: 0.55 }));
     mesh.position.set(p.x, 0.03, p.z);
     y = 0.4;
-  } else if (p.kind === "crate" || p.kind === "block") {
-    const s = p.kind === "crate" ? 0.5 : 0.3;
+  } else if (p.kind === "crate") {
+    const s = 0.5;
     mesh = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), mat);
     mesh.position.set(p.x, s / 2, p.z);
     y = s / 2;
@@ -427,8 +310,7 @@ function makeProp(p) {
   mesh.castShadow = true;
   levelGroup.add(mesh);
   return { ...p, label, mesh, pos: new THREE.Vector3(p.x, y, p.z), seen: false,
-           pressed: false, carried: false, delivered: false, passed: false,
-           sorted: false };
+           pressed: false, carried: false, delivered: false, passed: false };
 }
 
 function buildLevel(def) {
@@ -491,8 +373,8 @@ function updateMovers(dt) {
 
 /* ════════════════ robot bodies ════════════════ */
 const bot = { type: "dog", pos: new THREE.Vector3(), heading: 0, alt: 1,
-              group: null, legs: [], phase: 0, grip: false, carrying: null,
-              rotors: [], armParts: null };
+              group: null, legs: [], phase: 0, carrying: null,
+              rotors: [] };
 
 const bodyMat = new THREE.MeshStandardMaterial({ color: 0xc8cdd4, roughness: 0.5, metalness: 0.35 });
 const darkMat = new THREE.MeshStandardMaterial({ color: 0x23282e, roughness: 0.6 });
@@ -556,49 +438,6 @@ const BODIES = {
     ], 0.42, 0.42);
     return { standH: 0.85, stepTime: 0.42, eyeH: 1.45, speed: 0.6 };
   },
-  arm(group, parts) {                                  /* vertical xArm: yaw base, pitch shoulder/elbow, level wrist */
-    const L1 = 2.0, L2 = 2.0;
-    const jointX = (parent, r, len) => {        // joint housing, pitch axis = local x
-      const k = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 20), darkMat);
-      k.rotation.z = Math.PI / 2; k.castShadow = true; parent.add(k); return k;
-    };
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.56, 0.34, 24), darkMat);
-    base.position.y = 0.17; base.castShadow = true; group.add(base);
-    const column = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.3, 0.86, 24), bodyMat);
-    column.position.y = 0.77; column.castShadow = true; group.add(column);
-
-    const j1 = new THREE.Group(); j1.position.y = 1.2; group.add(j1);   // base yaw
-    const turret = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.23, 0.3, 24), bodyMat);
-    turret.position.y = 0.15; turret.castShadow = true; j1.add(turret);
-
-    const j2 = new THREE.Group(); j2.position.y = 0.3; j1.add(j2);      // shoulder pitch (world y 1.5)
-    jointX(j2, 0.24, 0.46);
-    const link1 = _box(j2, 0.2, 0.2, L1, bodyMat);
-    link1.geometry.translate(0, 0, L1 / 2);
-
-    const j3 = new THREE.Group(); j3.position.set(0, 0, L1); j2.add(j3); // elbow pitch
-    jointX(j3, 0.18, 0.38);
-    const link2 = _box(j3, 0.16, 0.16, L2, bodyMat);
-    link2.geometry.translate(0, 0, L2 / 2);
-
-    const wrist = new THREE.Group(); wrist.position.set(0, 0, L2); j3.add(wrist);
-    jointX(wrist, 0.12, 0.26);
-    const drop = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.04, 0.5, 14), darkMat);
-    drop.position.y = -0.27; drop.castShadow = true; wrist.add(drop);
-    _box(wrist, 0.16, 0.06, 0.12, bodyMat, 0, -0.54, 0);          // palm
-    _box(wrist, 0.09, 0.06, 0.07, darkMat, 0, -0.42, 0.07);       // wrist camera (eye-in-hand)
-    _box(wrist, 0.03, 0.03, 0.012, accentMat, 0, -0.42, 0.108);   // lens, looking outward
-    const fingers = [];
-    for (const s of [-1, 1]) {
-      // open span ±0.19 clears the 0.3 m blocks; closed ±0.14 squeezes them
-      const f = _box(wrist, 0.028, 0.17, 0.07, darkMat, s * 0.19, -0.65, 0);
-      _box(f, 0.026, 0.05, 0.066, bodyMat, -s * 0.012, -0.06, 0); // inward fingertip pad
-      fingers.push({ f, s });
-    }
-    parts.armParts = { j1, j2, j3, wrist, fingers, reach: 4.0,
-                     L1, L2, shoulderH: 1.5 };
-    return { standH: 0, stepTime: 1, eyeH: 3.0, speed: 1.2 };
-  },
   drone(group, parts) {                                /* Mavic-ish: diagonal arms, pods, gimbal */
     _box(group, 0.38, 0.1, 0.24, bodyMat);
     _box(group, 0.1, 0.06, 0.08, darkMat, 0.18, -0.04, 0);
@@ -627,7 +466,7 @@ function buildBody(type) {
   }
   bot.type = type;
   bot.group = new THREE.Group();
-  bot.legs = []; bot.rotors = []; bot.armParts = null;
+  bot.legs = []; bot.rotors = [];
   bodySpec = BODIES[type](bot.group, bot);
   scene.add(bot.group);
 }
@@ -702,67 +541,6 @@ function updateBody(dt, cmd) {
   const f = THREE.MathUtils.clamp(cmd.forward || 0, -1, 1) * bodySpec.speed;
   const st = THREE.MathUtils.clamp(cmd.strafe || 0, -1, 1) * bodySpec.speed;
   const yaw = THREE.MathUtils.clamp(cmd.turn || 0, -1.5, 1.5);
-  bot.grip = (cmd.grip || 0) > 0.5;
-
-  if (bot.type === "arm") {
-    const p = bot.armParts;
-    const nx = bot.pos.x + f * dt, nz = bot.pos.z + st * dt;
-    // workspace is an annulus: outer = reach, inner keep-out stops the IK
-    // from folding onto its own base; paths through the middle slide
-    // around the rim like a wall instead of sticking
-    const dNow = Math.hypot(bot.pos.x, bot.pos.z), dNew = Math.hypot(nx, nz);
-    if (dNew < p.reach * 0.95) {
-      if (dNew > 0.7 || dNew > dNow) { bot.pos.x = nx; bot.pos.z = nz; }
-      else {
-        let a = Math.atan2(nz, nx);
-        const cur = Math.atan2(bot.pos.z, bot.pos.x);
-        // a purely radial push has no tangential component — nudge CCW so
-        // the hand walks around the rim instead of deadlocking at the
-        // antipode of its target
-        if (Math.abs(Math.atan2(Math.sin(a - cur), Math.cos(a - cur))) < 0.02)
-          a = cur + 0.05;
-        bot.pos.x = Math.cos(a) * 0.72; bot.pos.z = Math.sin(a) * 0.72;
-      }
-    }
-    // eye-in-hand: the wrist camera looks radially outward from the base,
-    // so sweeping the hand around the base scans the table
-    bot.heading = Math.atan2(-bot.pos.z, bot.pos.x);
-    // the vertical axis is real: climb raises/lowers the wrist — you
-    // descend onto a block to grasp it and lift to carry
-    bot.alt = THREE.MathUtils.clamp(bot.alt + (cmd.climb || 0) * dt * 0.9, 0.55, 1.6);
-    // vertical 2-link IK in the yaw plane: shoulder pitch + elbow pitch
-    // put the wrist at (d, alt); the wrist counter-pitches to stay level
-    const d = Math.max(0.7, Math.hypot(bot.pos.x, bot.pos.z));
-    const dy = bot.alt - p.shoulderH;
-    const D = Math.min(Math.hypot(d, dy), p.L1 + p.L2 - 1e-3);
-    const phi = Math.atan2(dy, d);
-    const a2 = Math.acos(THREE.MathUtils.clamp(
-      (p.L1 * p.L1 + D * D - p.L2 * p.L2) / (2 * p.L1 * D), -1, 1));
-    const interior = Math.acos(THREE.MathUtils.clamp(
-      (p.L1 * p.L1 + p.L2 * p.L2 - D * D) / (2 * p.L1 * p.L2), -1, 1));
-    const t1 = phi + a2, t2 = -(Math.PI - interior);
-    // slew-limit the joints: near the base atan2 flips fast and the IK
-    // folds — a real arm swings through, it doesn't whip (the shake fix)
-    const goal = { yaw: Math.atan2(bot.pos.x, bot.pos.z), sh: -t1, el: -t2, wr: t1 + t2 };
-    p.cur = p.cur || { ...goal };
-    const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
-    const maxStep = dt * 2.8;
-    p.cur.yaw += THREE.MathUtils.clamp(wrap(goal.yaw - p.cur.yaw), -maxStep, maxStep);
-    for (const k of ["sh", "el", "wr"])
-      p.cur[k] += THREE.MathUtils.clamp(goal[k] - p.cur[k], -maxStep, maxStep);
-    p.j1.rotation.y = p.cur.yaw;
-    p.j2.rotation.x = p.cur.sh;
-    p.j3.rotation.x = p.cur.el;
-    p.wrist.rotation.x = p.cur.wr;
-    for (const { f: fin, s } of p.fingers)
-      fin.position.x += ((bot.grip ? 0.14 : 0.19) * s - fin.position.x) * Math.min(1, dt * 12);
-    if (bot.carrying) {
-      // the block rides between the fingers — the visual wrist, not the IK target
-      const w = p.wrist.getWorldPosition(new THREE.Vector3());
-      bot.carrying.mesh.position.set(w.x, Math.max(0.15, w.y - 0.65), w.z);
-    }
-    return;
-  }
 
   bot.heading += yaw * dt;
   const c = Math.cos(bot.heading), s = Math.sin(bot.heading);
@@ -788,8 +566,6 @@ function updateBody(dt, cmd) {
 const raycaster = new THREE.Raycaster();
 const LIDAR_RAYS = 36, LIDAR_RANGE = 8;
 function eyePos() {
-  if (bot.type === "arm")   // the camera pod rides the wrist
-    return new THREE.Vector3(bot.pos.x, Math.max(0.3, bot.alt - 0.42), bot.pos.z);
   return new THREE.Vector3(bot.pos.x,
     bot.type === "drone" ? bot.alt : bodySpec.eyeH, bot.pos.z);
 }
@@ -801,25 +577,19 @@ function senseDetections() {
   const dets = [];
   const eye = eyePos(), fwd = fwdVec();
   for (const p of propObjs) {
-    if (p.carried || p.delivered || p.sorted) continue;
-    const ppos = p.kind === "crate" || p.kind === "block" ? p.mesh.position : p.pos;
+    if (p.carried || p.delivered) continue;
+    const ppos = p.kind === "crate" ? p.mesh.position : p.pos;
     const to = ppos.clone().sub(eye);
     const dist = to.length();
-    if (dist > (bot.type === "arm" ? 6 : 8)) continue;
-    let bearing;
-    if (bot.type === "arm") {
-      bearing = Math.atan2(-(ppos.z - eye.z), ppos.x - eye.x);  // camera looks along +x
-      if (Math.abs(bearing) > Math.PI) continue;
-    } else {
-      // natural convention: world angle of the target minus heading, so a
-      // policy recovers the world direction with heading + bearing
-      const phi = Math.atan2(-to.z, to.x);
-      bearing = ((phi - bot.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-      if (Math.abs(bearing) > 0.62) continue;
-      raycaster.set(eye, to.clone().normalize());
-      const hit = raycaster.intersectObjects(wallMeshes, false)[0];
-      if (hit && hit.distance < dist - 0.4) continue;
-    }
+    if (dist > 8) continue;
+    // natural convention: world angle of the target minus heading, so a
+    // policy recovers the world direction with heading + bearing
+    const phi = Math.atan2(-to.z, to.x);
+    const bearing = ((phi - bot.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+    if (Math.abs(bearing) > 0.62) continue;
+    raycaster.set(eye, to.clone().normalize());
+    const hit = raycaster.intersectObjects(wallMeshes, false)[0];
+    if (hit && hit.distance < dist - 0.4) continue;
     const cx = 640 - (bearing / 0.62) * 600;
     const size = Math.min(420, 2200 / Math.max(dist, 0.4));
     out.push({ label: p.label, confidence: 0.95,
@@ -843,7 +613,6 @@ function senseDetections() {
 }
 
 function senseLidar() {
-  if (bot.type === "arm") return [];
   const eye = new THREE.Vector3(bot.pos.x, 0.45, bot.pos.z);
   const ranges = [];
   for (let i = 0; i < LIDAR_RAYS; i++) {
@@ -988,11 +757,11 @@ function loadLevel(i) {
     : LV.spawn;
   bot.pos.set(sp.x, 0, sp.z);
   bot.heading = sp.heading || 0;
-  bot.alt = bot.type === "arm" ? 1.1 : 1.0;   // arm: wrist cruise height
+  bot.alt = 1.0;
   bot.carrying = null;
   for (const leg of bot.legs) homeFoot(leg, leg.foot);
   visited = new Set(); won = false; usedManual = false;
-  winState = { idx: 0, lap: 0, hold: 0, delivered: 0, sorted: 0 };
+  winState = { idx: 0, lap: 0, hold: 0, delivered: 0 };
   t0 = performance.now();
   occ = new Uint8Array(GRID * GRID);
   CELL = (LV.bounds * 2) / GRID;
@@ -1015,8 +784,6 @@ function loadLevel(i) {
     w.order.map((id) => ({ id: `b${id}`, label: propObjs.find((p) => p.id === id)?.label || id, done: false })));
   else if (w.type === "carry") setChips(
     Array.from({ length: w.crates }, (_, i) => ({ id: `c${i}`, label: `crate ${i + 1}`, done: false })));
-  else if (w.type === "sort") setChips(
-    Array.from({ length: w.blocks }, (_, i) => ({ id: `s${i}`, label: `block ${i + 1}`, done: false })));
   else if (w.type === "rings") setChips(
     w.order.map((id) => ({ id: `r${id}`, label: `ring ${id + 1}`, done: false })));
   postEvent("arena", `level loaded: ${LV.name}`, { robot: LV.robot });
@@ -1119,44 +886,6 @@ function tickChamber(dt, answer) {
     }
   }
 
-  if (w.type === "sort") {
-    // grasping is physical, not magnetic: only the CLOSING edge of the
-    // gripper acquires, and only if the fingers actually straddle a block
-    // — right height (fingers at alt-0.65) and centered between the pads
-    if (bot.grip && !bot._gripWasClosed && !bot.carrying) {
-      const fy = bot.alt - 0.65;
-      const block = propObjs.find((p) => p.kind === "block" && !p.carried &&
-        Math.abs(p.mesh.position.y - fy) < 0.14 &&
-        dist2d(bot.pos, p.mesh.position.x, p.mesh.position.z) < 0.16);
-      if (block) {
-        bot.carrying = block; block.carried = true;
-        block.vx = block.vy = block.vz = 0;
-        postEvent("arena", `grasped ${block.label}`, {});
-      }
-    }
-    if (!bot.grip && bot.carrying) {
-      const block = bot.carrying;             // open: gravity takes it from here
-      bot.carrying = null; block.carried = false;
-      block.vx = 0; block.vy = 0; block.vz = 0;
-      postEvent("arena", `released ${block.label}`, {});
-    }
-    bot._gripWasClosed = bot.grip;
-    // a block counts as sorted when it comes to REST inside its bin
-    for (const p of propObjs) {
-      if (p.kind !== "block" || p.sorted || p.carried) continue;
-      if ((p.vy || 0) !== 0 || Math.hypot(p.vx || 0, p.vz || 0) > 0.01) continue;
-      const bin = propObjs.find((q) => q.kind === "bin" &&
-        dist2d({ x: p.mesh.position.x, z: p.mesh.position.z }, q.pos.x, q.pos.z) < q.r);
-      if (bin && bin.color === p.color) {
-        p.sorted = true;
-        markChip(`s${winState.sorted}`);
-        winState.sorted += 1;
-        postEvent("arena", `sorted ${p.label} (${winState.sorted}/${w.blocks})`, {});
-        if (winState.sorted >= w.blocks) winChamber("table sorted");
-      }
-    }
-  }
-
   if (w.type === "rings") {
     const want = propObjs.find((p) => p.id === w.order[winState.idx]);
     if (want && dist2d(bot.pos, want.pos.x, want.pos.z) < w.dist &&
@@ -1167,58 +896,6 @@ function tickChamber(dt, answer) {
       postEvent("arena", `ring ${want.id + 1}`, {});
       winState.idx += 1;
       if (winState.idx >= w.order.length) winChamber("course complete");
-    }
-  }
-}
-
-/* ════════════════ block physics (sort levels) ════════════════
-   Blocks are rigid bodies, not pickup icons: gravity, ground contact,
-   sliding friction, stacking on each other, and the open hand shoves
-   them — the only way to move one cleanly is to actually grasp it. */
-function updateBlockPhysics(dt) {
-  for (const b of propObjs) {
-    if (b.kind !== "block" || b.carried) continue;
-    const m = b.mesh.position;
-    // gravity, with other blocks as stackable floor
-    b.vy = (b.vy || 0) - 9.8 * dt;
-    m.y += b.vy * dt;
-    let floor = 0.15;
-    for (const o of propObjs) {
-      if (o === b || o.kind !== "block" || o.carried) continue;
-      const om = o.mesh.position;
-      if (Math.abs(m.x - om.x) < 0.28 && Math.abs(m.z - om.z) < 0.28 &&
-          om.y + 0.225 <= m.y)
-        floor = Math.max(floor, om.y + 0.3);
-    }
-    if (m.y <= floor) { m.y = floor; b.vy = 0; }
-    // sliding with friction (μg ≈ 0.6)
-    m.x += (b.vx || 0) * dt; m.z += (b.vz || 0) * dt;
-    const sp = Math.hypot(b.vx || 0, b.vz || 0);
-    if (sp > 1e-4) {
-      const dec = Math.min(sp, 6 * dt);
-      b.vx -= (b.vx / sp) * dec; b.vz -= (b.vz / sp) * dec;
-    } else { b.vx = 0; b.vz = 0; }
-    // the hand is a kinematic collider with honest geometry: OPEN fingers
-    // straddle a centered block (no contact inside the span) but clip
-    // blocks swept through the finger ring; a CLOSED hand is solid; the
-    // palm pressing down pops a block aside instead of tunneling through
-    if (bot.type === "arm") {
-      const dx = m.x - bot.pos.x, dz = m.z - bot.pos.z;
-      const dd = Math.hypot(dx, dz);
-      const nx = dd > 1e-3 ? dx / dd : Math.cos(bot.heading);
-      const nz = dd > 1e-3 ? dz / dd : -Math.sin(bot.heading);
-      const fy = bot.alt - 0.65;
-      const inner = bot.grip ? 0.0 : 0.12;
-      if (Math.abs(fy - m.y) < 0.28 && dd > inner && dd < 0.3) {
-        const out = 0.3 - dd;
-        m.x += nx * out; m.z += nz * out;
-        b.vx = nx * 0.5; b.vz = nz * 0.5;
-      }
-      const palmBottom = bot.alt - 0.57;
-      if (dd <= 0.13 && palmBottom < m.y + 0.13 && palmBottom > m.y - 0.25) {
-        m.x += nx * (0.2 - dd); m.z += nz * (0.2 - dd);
-        b.vx = nx * 0.5; b.vz = nz * 0.5;
-      }
     }
   }
 }
@@ -1555,7 +1232,6 @@ codeEl.addEventListener("keydown", (e) => {
 const ROBOTS = [
   { type: "dog",   label: "QUADRUPED", tag: "trot, explore, count — lidar + camera" },
   { type: "biped", label: "HUMANOID",  tag: "walk, press buttons, carry things" },
-  { type: "arm",   label: "ARM",       tag: "pick and place from a fixed base" },
   { type: "drone", label: "DRONE",     tag: "fly the rings — altitude is yours" },
 ];
 function previewModel(type) {
@@ -1563,7 +1239,7 @@ function previewModel(type) {
   // hover is mesh-for-mesh the robot you drive. Only the idle/hover
   // animation is preview-specific (in the sim, physics animates it).
   const g = new THREE.Group();
-  const parts = { legs: [], rotors: [], armParts: null };
+  const parts = { legs: [], rotors: [] };
   BODIES[type](g, parts);
 
   if (type === "dog" || type === "biped") {
@@ -1578,22 +1254,6 @@ function previewModel(type) {
         }
         g.position.y = Math.abs(Math.sin(ph)) * .01 * (1 + h * 2);
       } };
-  }
-
-  if (type === "arm") {
-    const A = parts.armParts;
-    // the same reach-out-front stance the sim IK takes at d ≈ 2.6 m
-    const T1 = .61, T2 = -1.68;
-    return { group: g, freqIdle: .7, freqHover: 1.9, anim(ph, h) {
-      A.j1.rotation.y = Math.sin(ph * .5) * (.3 + h * .5);
-      const b1 = T1 + Math.sin(ph * .8) * (.05 + h * .15);
-      const b2 = T2 + Math.cos(ph * .8) * (.07 + h * .2);
-      A.j2.rotation.x = -b1;
-      A.j3.rotation.x = -b2;
-      A.wrist.rotation.x = b1 + b2;                  // gripper stays level
-      const grip = .085 - (Math.sin(ph * 1.6) * .5 + .5) * h * .04;
-      for (const { f, s } of A.fingers) f.position.x = s * grip;
-    } };
   }
 
   /* drone: rotors always spin; hover climbs and descends with a bank */
@@ -1969,7 +1629,6 @@ function frame(now) {
   const cmd = keyboardCmd() || serverCmd;
   updateMovers(dt);
   updateBody(dt, cmd);
-  if ((LV.win || {}).type === "sort") updateBlockPhysics(dt);
   tickChamber(dt, serverAnswer);
 
   odo += prevPos.distanceTo(bot.pos);
@@ -1985,19 +1644,11 @@ function frame(now) {
   }
 
   const focusY = bot.type === "drone" ? bot.alt : 0.5;
-  // a fixed-base robot gets a studio camera: chasing the effector parks
-  // the lens inside the column. Frame the table, track the hand gently.
-  const fixedBase = bot.type === "arm";
   if (camMode === 0) {
-    if (fixedBase) {
-      specCam.position.lerp(new THREE.Vector3(6.0, 5.2, 6.0), 0.06);
-      specCam.lookAt(bot.pos.x * 0.45, 0.45, bot.pos.z * 0.45);
-    } else {
-      specCam.position.lerp(new THREE.Vector3(
-        bot.pos.x - Math.cos(bot.heading) * 3.4, focusY + 2,
-        bot.pos.z + Math.sin(bot.heading) * 3.4), 0.06);
-      specCam.lookAt(bot.pos.x, focusY, bot.pos.z);
-    }
+    specCam.position.lerp(new THREE.Vector3(
+      bot.pos.x - Math.cos(bot.heading) * 3.4, focusY + 2,
+      bot.pos.z + Math.sin(bot.heading) * 3.4), 0.06);
+    specCam.lookAt(bot.pos.x, focusY, bot.pos.z);
   } else if (camMode === 1) {
     specCam.position.copy(orbitCam.position);
     specCam.quaternion.copy(orbitCam.quaternion);
@@ -2005,21 +1656,14 @@ function frame(now) {
   const fwd = fwdVec();
   const eye = eyePos();
   povCam.position.set(eye.x + fwd.x * 0.35, eye.y, eye.z + fwd.z * 0.35);
-  povCam.lookAt(eye.x + fwd.x * 5, bot.type === "arm" ? 0 : eye.y - 0.05, eye.z + fwd.z * 5);
-  if (fixedBase) {
-    chaseCam.position.lerp(new THREE.Vector3(6.0, 5.2, 6.0), 0.08);
-    chaseCam.lookAt(bot.pos.x * 0.45, 0.45, bot.pos.z * 0.45);
-  } else {
-    chaseCam.position.lerp(new THREE.Vector3(
-      bot.pos.x - Math.cos(bot.heading) * 3.4, focusY + 2,
-      bot.pos.z + Math.sin(bot.heading) * 3.4), 0.08);
-    chaseCam.lookAt(bot.pos.x, focusY, bot.pos.z);
-  }
-  const ox = fixedBase ? 0 : bot.pos.x, oz = fixedBase ? 0 : bot.pos.z;
-  orbitCam.position.set(ox + Math.cos(orbitAngle) * (fixedBase ? 7 : 6),
-                        focusY + (fixedBase ? 4.4 : 3.6),
-                        oz + Math.sin(orbitAngle) * (fixedBase ? 7 : 6));
-  orbitCam.lookAt(ox, focusY, oz);
+  povCam.lookAt(eye.x + fwd.x * 5, eye.y - 0.05, eye.z + fwd.z * 5);
+  chaseCam.position.lerp(new THREE.Vector3(
+    bot.pos.x - Math.cos(bot.heading) * 3.4, focusY + 2,
+    bot.pos.z + Math.sin(bot.heading) * 3.4), 0.08);
+  chaseCam.lookAt(bot.pos.x, focusY, bot.pos.z);
+  orbitCam.position.set(bot.pos.x + Math.cos(orbitAngle) * 6, focusY + 3.6,
+                        bot.pos.z + Math.sin(orbitAngle) * 6);
+  orbitCam.lookAt(bot.pos.x, focusY, bot.pos.z);
   orbitAngle += dt * 0.25;
 
   if (!won) clockEl.textContent = `${((now - t0) / 1000).toFixed(1)}s`;

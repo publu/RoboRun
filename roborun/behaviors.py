@@ -23,7 +23,7 @@ The `robot` handle:
     robot.locate(thing)      project a sighting to world (x, z)
     robot.approach(thing)    locate + goto in one verb
     robot.move(climb=)       vertical for drones (Twist linear.z)
-    robot.grasp(closed)      gripper for arm levels
+    robot.grasp(closed)      gripper, when the connected robot has one
     robot.answer("6")        submit the chamber's answer (recon levels)
     robot.move(forward=0, strafe=0, turn=0)   sim or real robot, safety-clamped
     robot.stop()
@@ -440,7 +440,7 @@ class Robot:
         self.move(0.0, 0.0, 0.0)
 
     def grasp(self, closed: bool = True) -> None:
-        """Arm levels / grippers: close or open the end-effector."""
+        """Close or open the end-effector, when the robot has a gripper."""
         try:
             from roborun.arena import get_arena
             arena = get_arena()

@@ -39,3 +39,7 @@ private/
 MUJOCO_LOG.TXT
 /behaviors/
 site/
+
+# Node
+node_modules/
+package-lock.json
