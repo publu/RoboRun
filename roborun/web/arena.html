@@ -118,9 +118,10 @@
   /* start screen: pick a robot, pick a task */
   #start { position: fixed; inset: 0; display: none; place-items: center; z-index: 70;
            background: rgba(5,8,10,.8); backdrop-filter: blur(6px);
-           -webkit-backdrop-filter: blur(6px); }
+           -webkit-backdrop-filter: blur(6px); overflow: auto; }
   #start.show { display: grid; }
-  .start-card { text-align: center; max-width: 1000px; padding: 18px; position: relative; }
+  .start-card { text-align: center; max-width: 1000px; padding: 18px;
+                position: relative; margin: 24px auto; }
   .start-card h1 { color: #00d47e; letter-spacing: .22em; font-size: 22px; margin: 0 0 8px; }
   .start-card .sub { color: #9fb0bd; margin: 0 auto 20px; max-width: 660px; line-height: 1.6; }
   .start-card .sub b { color: #d7e0e8; }

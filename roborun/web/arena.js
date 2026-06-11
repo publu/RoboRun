@@ -1355,46 +1355,121 @@ function previewModel(type) {
   const g = new THREE.Group();
   const body = new THREE.MeshStandardMaterial({ color: 0xc8cdd4, roughness: .5, metalness: .35 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x2a323a, roughness: .6 });
-  const parts = { legs: [], rotors: [], joints: [] };
-  const box = (w, h, d, m, x = 0, y = 0, z = 0, parent = g) => {
-    const k = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
-    k.position.set(x, y, z); parent.add(k); return k;
+  const accent = new THREE.MeshStandardMaterial({ color: 0x00d47e, emissive: 0x00d47e,
+                                                  emissiveIntensity: .35 });
+  const mesh = (geo, m, x = 0, y = 0, z = 0, parent = g) => {
+    const k = new THREE.Mesh(geo, m); k.position.set(x, y, z); parent.add(k); return k;
   };
-  const limb = (w, len, d, m, x, hipY, z) => {   // pivots at the hip, not the center
-    const k = new THREE.Mesh(new THREE.BoxGeometry(w, len, d), m);
-    k.geometry.translate(0, -len / 2, 0);
-    k.position.set(x, hipY, z); g.add(k); return k;
+  const box = (w, h, d, m, x, y, z, parent) =>
+    mesh(new THREE.BoxGeometry(w, h, d), m, x, y, z, parent);
+  const jointCyl = (r, len, m, x, y, z, parent) => {   // horizontal axis = a joint
+    const k = mesh(new THREE.CylinderGeometry(r, r, len, 18), m, x, y, z, parent);
+    k.rotation.x = Math.PI / 2; return k;
   };
-  if (type === "dog") {
-    box(.62, .18, .3, body, 0, .42, 0);
-    box(.16, .14, .18, dark, .41, .48, 0);
-    for (const [x, z] of [[.25, -.15], [.25, .15], [-.25, -.15], [-.25, .15]])
-      parts.legs.push(limb(.06, .38, .05, dark, x, .38, z));
-  } else if (type === "biped") {
-    box(.3, .55, .38, body, 0, 1.05, 0);
-    box(.18, .2, .18, dark, 0, 1.48, 0);
-    for (const z of [-.11, .11]) parts.legs.push(limb(.08, .76, .08, dark, 0, .78, z));
-  } else if (type === "arm") {
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(.3, .4, .35, 20), dark);
-    base.position.y = .18; g.add(base);
-    const j1 = new THREE.Group(); j1.position.y = .4; g.add(j1);
-    box(.13, .13, .9, body, 0, 0, .45, j1);
-    const j2 = new THREE.Group(); j2.position.z = .9; j1.add(j2);
-    box(.09, .09, .7, dark, 0, 0, .35, j2);
-    const eff = new THREE.Mesh(new THREE.SphereGeometry(.08, 12, 12),
-      new THREE.MeshStandardMaterial({ color: 0x00d47e, emissive: 0x00d47e, emissiveIntensity: .5 }));
-    eff.position.z = .7; j2.add(eff);
-    j1.rotation.x = -.5; j2.rotation.x = .7;
-    parts.joints = [j1, j2];
-  } else {
-    box(.4, .12, .4, body, 0, .9, 0);
-    for (const [x, z] of [[.26, .26], [.26, -.26], [-.26, .26], [-.26, -.26]]) {
-      const r = new THREE.Mesh(new THREE.CylinderGeometry(.15, .15, .02, 16),
-        new THREE.MeshStandardMaterial({ color: 0x4a7ad8, transparent: true, opacity: .55 }));
-      r.position.set(x, .98, z); g.add(r); parts.rotors.push(r);
+
+  if (type === "dog") {                              /* Go2-ish: knees, sensor head */
+    box(.58, .16, .25, body, 0, .43, 0);
+    box(.18, .11, .19, dark, .32, .47, 0);
+    box(.02, .05, .12, accent, .415, .47, 0);        // sensor face
+    const legs = [];
+    for (const [x, z, phase] of [[.21, -.13, 0], [.21, .13, 1],
+                                 [-.21, -.13, 1], [-.21, .13, 0]]) {
+      const hip = new THREE.Group(); hip.position.set(x, .4, z); g.add(hip);
+      box(.06, .22, .05, dark, 0, -.11, 0, hip);
+      const knee = new THREE.Group(); knee.position.set(0, -.22, 0); hip.add(knee);
+      box(.045, .2, .04, body, 0, -.1, 0, knee);
+      legs.push({ hip, knee, phase });
     }
+    return { group: g, freqIdle: 1.1, freqHover: 4.2, anim(ph, h) {
+      for (const l of legs) {                        // trot: knees fold on the back-swing
+        const a = ph + l.phase * Math.PI;
+        l.hip.rotation.z = Math.sin(a) * (.1 + h * .3);
+        l.knee.rotation.z = .22 + Math.max(0, -Math.sin(a - .7)) * (.18 + h * .55);
+      }
+      g.position.y = Math.abs(Math.sin(ph)) * .01 * (1 + h * 2);
+    } };
   }
-  return { group: g, parts };
+
+  if (type === "biped") {                            /* G1-ish: arms, visor */
+    box(.26, .38, .2, body, 0, 1.06, 0);
+    box(.22, .16, .18, dark, 0, .78, 0);
+    box(.16, .16, .16, dark, 0, 1.37, 0);
+    box(.12, .045, .02, accent, 0, 1.39, .082);      // visor
+    const arms = [], legs = [];
+    for (const s of [-1, 1]) {
+      const sh = new THREE.Group(); sh.position.set(0, 1.21, s * .18); g.add(sh);
+      box(.06, .26, .06, dark, 0, -.13, 0, sh);
+      const el = new THREE.Group(); el.position.set(0, -.26, 0); sh.add(el);
+      box(.05, .22, .05, body, 0, -.11, 0, el);
+      el.rotation.z = .25;
+      arms.push({ sh, phase: s > 0 ? 0 : 1 });
+      const hip = new THREE.Group(); hip.position.set(0, .7, s * .07); g.add(hip);
+      box(.075, .36, .075, dark, 0, -.18, 0, hip);
+      const knee = new THREE.Group(); knee.position.set(0, -.36, 0); hip.add(knee);
+      box(.065, .32, .065, body, 0, -.16, 0, knee);
+      legs.push({ hip, knee, phase: s > 0 ? 0 : 1 });
+    }
+    return { group: g, freqIdle: .9, freqHover: 3.4, anim(ph, h) {
+      for (const l of legs) {
+        const a = ph + l.phase * Math.PI;
+        l.hip.rotation.z = Math.sin(a) * (.06 + h * .3);
+        l.knee.rotation.z = -Math.max(0, -Math.sin(a - .7)) * (.12 + h * .5);
+      }
+      for (const a of arms)                          // arms counter-swing the legs
+        a.sh.rotation.z = Math.sin(ph + a.phase * Math.PI + Math.PI) * (.05 + h * .25);
+      g.position.y = Math.abs(Math.sin(ph)) * .008 * (1 + h * 2);
+    } };
+  }
+
+  if (type === "arm") {                              /* xArm-ish: base yaw + 3 pitch axes + gripper */
+    mesh(new THREE.CylinderGeometry(.17, .2, .1, 24), dark, 0, .05, 0);
+    const j1 = new THREE.Group(); j1.position.y = .1; g.add(j1);
+    mesh(new THREE.CylinderGeometry(.12, .13, .14, 24), body, 0, .07, 0, j1);
+    const j2 = new THREE.Group(); j2.position.y = .17; j1.add(j2);
+    jointCyl(.09, .2, dark, 0, 0, 0, j2);
+    box(.1, .4, .1, body, 0, .2, 0, j2);
+    const j3 = new THREE.Group(); j3.position.y = .4; j2.add(j3);
+    jointCyl(.075, .17, dark, 0, 0, 0, j3);
+    box(.085, .34, .085, body, 0, .17, 0, j3);
+    const j4 = new THREE.Group(); j4.position.y = .34; j3.add(j4);
+    jointCyl(.06, .14, dark, 0, 0, 0, j4);
+    box(.06, .1, .06, body, 0, .07, 0, j4);
+    const fingers = [];
+    for (const s of [-1, 1]) {
+      const f = box(.016, .085, .04, accent, s * .035, .16, 0, j4);
+      fingers.push({ f, s });
+    }
+    j2.rotation.z = -.55; j3.rotation.z = 1.0; j4.rotation.z = -.45;
+    return { group: g, freqIdle: .7, freqHover: 1.9, anim(ph, h) {
+      j1.rotation.y = Math.sin(ph * .5) * (.25 + h * .55);
+      j2.rotation.z = -.55 + Math.sin(ph * .8) * (.07 + h * .22);
+      j3.rotation.z = 1.0 + Math.cos(ph * .8) * (.09 + h * .28);
+      // wrist counter-rotates to keep the gripper roughly level
+      j4.rotation.z = -(j2.rotation.z + j3.rotation.z) * .9;
+      const grip = .035 - (Math.sin(ph * 1.6) * .5 + .5) * h * .02;
+      for (const { f, s } of fingers) f.position.x = s * grip;
+    } };
+  }
+
+  /* drone (Mavic-ish): diagonal arms, motor pods, gimbal — climbs on hover */
+  box(.32, .085, .2, body, 0, .9, 0);
+  box(.09, .05, .07, dark, .15, .865, 0);            // gimbal camera
+  box(.01, .025, .05, accent, .196, .865, 0);
+  const rotors = [];
+  for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+    const arm = box(.2, .022, .035, dark, sx * .17, .91, sz * .12);
+    arm.rotation.y = -sx * sz * Math.PI / 4;
+    mesh(new THREE.CylinderGeometry(.022, .026, .045, 12), dark, sx * .235, .92, sz * .185);
+    const r = mesh(new THREE.CylinderGeometry(.1, .1, .01, 18),
+      new THREE.MeshStandardMaterial({ color: 0x4a7ad8, transparent: true, opacity: .45 }),
+      sx * .235, .948, sz * .185);
+    rotors.push(r);
+  }
+  return { group: g, freqIdle: 1.0, freqHover: 1.6, anim(ph, h) {
+    for (const r of rotors) r.rotation.y = ph * 9 * (1 + h);
+    g.position.y = Math.sin(ph * .7) * .04 + h * Math.sin(ph * 1.1) * .16;   // up + down
+    g.rotation.x = Math.sin(ph * .9) * .05 * h;                              // slight bank
+  } };
 }
 const startEl = document.getElementById("start");
 const previews = [];
@@ -1419,39 +1494,39 @@ function buildStartScreen() {
     const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
     renderer.setSize(330, 280, false);
     const pscene = new THREE.Scene();
-    const pcam = new THREE.PerspectiveCamera(34, 330 / 280, .1, 10);
-    pcam.position.set(1.7, 1.35, 1.7);
-    pcam.lookAt(0, .6, 0);
+    const pcam = new THREE.PerspectiveCamera(32, 330 / 280, .1, 10);
     pscene.add(new THREE.AmbientLight(0xffffff, .55));
     const key = new THREE.DirectionalLight(0xffffff, 1.7);
     key.position.set(2, 3, 1.5);
     pscene.add(key);
     const pv = previewModel(r.type);
     pscene.add(pv.group);
+    // frame the model from its bounding box — every robot lands centered
+    const bb = new THREE.Box3().setFromObject(pv.group);
+    const c = bb.getCenter(new THREE.Vector3());
+    const size = bb.getSize(new THREE.Vector3());
+    const rad = Math.max(size.x, size.y, size.z);
+    pcam.position.set(c.x + rad * 1.35, c.y + rad * .7, c.z + rad * 1.35);
+    pcam.lookAt(c.x, c.y, c.z);
     const p = { renderer, scene: pscene, cam: pcam, ...pv,
-                hover: 0, hoverTarget: 0, spin: Math.random() * 6 };
+                ph: Math.random() * 6, hover: 0, hoverTarget: 0, spin: Math.random() * 6 };
     card.addEventListener("pointerenter", () => { p.hoverTarget = 1; });
     card.addEventListener("pointerleave", () => { p.hoverTarget = 0; });
     previews.push(p);
   }
 }
-let startRaf = 0;
+let startRaf = 0, startLastT = 0;
 function animateStart(t) {
-  const s = t / 1000;
+  // gait phase accumulates with dt — easing the speed never scrambles the
+  // motion (sin(t*changing_freq) is what made the old previews twitch)
+  const dt = Math.min(.05, (t - startLastT) / 1000 || .016);
+  startLastT = t;
   for (const p of previews) {
-    p.hover += (p.hoverTarget - p.hover) * .06;     // ease in and out of life
-    p.spin += .0025 + p.hover * .012;
+    p.hover += (p.hoverTarget - p.hover) * .07;
+    p.spin += dt * (.3 + p.hover * .45);
     p.group.rotation.y = p.spin;
-    const amp = .1 + p.hover * .45;
-    p.parts.legs.forEach((leg, i) => {
-      leg.rotation.z = Math.sin(s * (1.5 + p.hover * 4) + i * Math.PI) * amp * .8;
-    });
-    for (const r of p.parts.rotors) r.rotation.y += .04 + p.hover * .9;
-    if (p.parts.rotors.length) p.group.position.y = Math.sin(s * (1 + p.hover * 2)) * .05;
-    if (p.parts.joints.length) {
-      p.parts.joints[0].rotation.x = -.5 + Math.sin(s * (.7 + p.hover * 2)) * amp;
-      p.parts.joints[1].rotation.x = .7 + Math.cos(s * (.9 + p.hover * 2)) * amp * 1.3;
-    }
+    p.ph += dt * (p.freqIdle + p.hover * (p.freqHover - p.freqIdle));
+    p.anim(p.ph, p.hover);
     p.renderer.render(p.scene, p.cam);
   }
   if (startEl.classList.contains("show")) startRaf = requestAnimationFrame(animateStart);
