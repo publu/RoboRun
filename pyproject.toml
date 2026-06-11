@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ros-agent"
-version = "0.11.0"
+version = "0.12.0"
 description = "Quickly run and manage ROS 1/2 robots. Built-in MCP for Claude, Cursor, or any AI client, plus vision, sim, and hot-reload behaviors. Merkle proofs make every run tamper-evident and replayable."
 readme = "README.md"
 license = {text = "MIT"}
