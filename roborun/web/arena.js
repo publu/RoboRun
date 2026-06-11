@@ -730,6 +730,7 @@ cloudGeo.setAttribute("color", new THREE.BufferAttribute(cloudCol, 3).setUsage(T
 const cloud = new THREE.Points(cloudGeo,
   new THREE.PointsMaterial({ size: 0.035, vertexColors: true, sizeAttenuation: true }));
 cloud.frustumCulled = false;
+cloud.layers.set(1);                 // spectator views only — not the eye
 let cloudOn = true;
 scene.add(cloud);
 const _tmpColor = new THREE.Color();
@@ -1681,6 +1682,7 @@ function renderViews() {
     mainCam.updateProjectionMatrix();
   }
   renderer.render(scene, mainCam);
+  drawMainDets(mainMode === "pov");
   for (const panel of document.querySelectorAll(".view-panel")) {
     if (panel.classList.contains("hidden")) continue;
     const vp = panel.querySelector(".viewport").getBoundingClientRect();
@@ -1701,6 +1703,23 @@ function renderViews() {
 }
 
 const _proj = new THREE.Vector3();
+function paintDets(g, w, h, fontPx) {
+  g.clearRect(0, 0, w, h);
+  g.font = `${fontPx}px ui-monospace, Menlo, monospace`;
+  g.lineWidth = 1.5;
+  for (const d of currentDets) {
+    _proj.copy(d.ppos).project(povCam);
+    if (_proj.z > 1 || Math.abs(_proj.x) > 1.1 || Math.abs(_proj.y) > 1.1) continue;
+    const px = (_proj.x + 1) / 2 * w, py = (1 - _proj.y) / 2 * h;
+    const sz = Math.max(14, Math.min(h * 0.45, (h * 0.7) / Math.max(d.dist, 0.4)));
+    const color = "#" + new THREE.Color(COLORS[d.p.color] || 0x00d47e).getHexString();
+    g.strokeStyle = color;
+    g.strokeRect(px - sz / 2, py - sz / 2, sz, sz);
+    g.fillStyle = color;
+    g.fillText(d.p.label + " " + d.dist.toFixed(1) + "m", px - sz / 2, py - sz / 2 - 4);
+  }
+}
+
 function drawDetOverlay(panel, isPov, vp) {
   let cv = panel.querySelector(".det-overlay");
   if (!cv) {
@@ -1711,21 +1730,23 @@ function drawDetOverlay(panel, isPov, vp) {
   const w = Math.round(vp.width), h = Math.round(vp.height);
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
   const g = cv.getContext("2d");
-  g.clearRect(0, 0, w, h);
-  if (!isPov) return;                      // perception overlay = robot cam only
-  g.font = "10px ui-monospace, Menlo, monospace";
-  g.lineWidth = 1.5;
-  for (const d of currentDets) {
-    _proj.copy(d.ppos).project(povCam);
-    if (_proj.z > 1 || Math.abs(_proj.x) > 1.1 || Math.abs(_proj.y) > 1.1) continue;
-    const px = (_proj.x + 1) / 2 * w, py = (1 - _proj.y) / 2 * h;
-    const sz = Math.max(14, Math.min(120, 160 / d.dist));
-    const color = "#" + new THREE.Color(COLORS[d.p.color] || 0x00d47e).getHexString();
-    g.strokeStyle = color;
-    g.strokeRect(px - sz / 2, py - sz / 2, sz, sz);
-    g.fillStyle = color;
-    g.fillText(d.p.label + " " + d.dist.toFixed(1) + "m", px - sz / 2, py - sz / 2 - 3);
-  }
+  if (!isPov) { g.clearRect(0, 0, w, h); return; }   // perception = robot cam only
+  paintDets(g, w, h, 10);
+}
+
+/* main-view perception overlay: when MAIN is the robot cam, what see()
+   detects is boxed right on the big view — the same boxes YOLO draws on
+   a real robot's camera */
+const mainDet = document.createElement("canvas");
+mainDet.style.cssText =
+  "position:fixed;inset:0;z-index:4;pointer-events:none;width:100vw;height:100vh";
+document.body.appendChild(mainDet);
+function drawMainDets(active) {
+  const w = innerWidth, h = innerHeight;
+  if (mainDet.width !== w || mainDet.height !== h) { mainDet.width = w; mainDet.height = h; }
+  const g = mainDet.getContext("2d");
+  if (!active) { g.clearRect(0, 0, w, h); return; }
+  paintDets(g, w, h, 13);
 }
 
 /* ════════════════ main loop ════════════════ */
@@ -1749,6 +1770,8 @@ function frame(now) {
     senseTick = 0;
     lastLidar = senseLidar();
     integrateLidar(lastLidar);
+    senseDetections();           // perception runs with the sim, not the
+                                 // policy runtime — boxes from frame one
     cloudCommit();
     drawMap();
     updateTelemetry();
