@@ -1663,3 +1663,9 @@ await initPhysics();                       // rapier WASM, once per page
 loadLevel(0);
 detectMode(); pollCmd(); pushState(); pollSightings(); renderRuns();
 requestAnimationFrame(frame);
+
+/* harness hook — scripts/e2e_arena.mjs drives the page without the UI */
+window.__arena = {
+  setCode, loadLevel,
+  status: () => ({ won, level: LV.name, mode: MODE, wasmReady: !!wasmRT }),
+};
