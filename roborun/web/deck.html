@@ -36,16 +36,19 @@
     <div class="drawer-section" id="drawerSources">
       <div class="drawer-title">SOURCES</div>
       <div class="src-row">
-        <span class="src-dot" id="dotWebcam"></span><span class="src-name">webcam · yolo</span>
+        <span class="src-dot" id="dotWebcam"></span><span class="src-name"
+          title="no robot needed — your camera becomes the robot's eye, YOLO finds objects, behaviors react">webcam · yolo</span>
         <button class="src-btn" id="srcWebcam">start</button>
       </div>
       <div class="src-row">
-        <span class="src-dot" id="dotSim"></span><span class="src-name">mujoco sim</span>
+        <span class="src-dot" id="dotSim"></span><span class="src-name"
+          title="optional high-fidelity physics sim (pip install 'ros-agent[sim]') — the browser arena needs nothing">mujoco sim</span>
         <button class="src-btn" id="srcSim">start</button>
       </div>
       <div class="src-row src-robot">
         <span class="src-dot" id="dotRobot"></span>
-        <input class="src-input" id="robotIp" placeholder="robot ip — rosbridge :9090" spellcheck="false">
+        <input class="src-input" id="robotIp" placeholder="robot ip — rosbridge :9090" spellcheck="false"
+          title="a real robot: Go2, drone (MAVLink), TurtleBot, anything with rosbridge — camera, telemetry, SPATIAL cloud, and your behaviors drive it">
         <button class="src-btn" id="srcRobot">connect</button>
       </div>
     </div>
