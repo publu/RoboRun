@@ -68,6 +68,24 @@ SCHEMAS: dict[str, dict] = {
             "pose": {"type": "object"},
         },
     },
+    "foxglove.LaserScan": {
+        "type": "object",
+        "properties": {
+            "timestamp": {"type": "object"},
+            "frame_id": {"type": "string"},
+            "pose": {"type": "object"},
+            "start_angle": {"type": "number"},
+            "end_angle": {"type": "number"},
+            "ranges": {"type": "array"},
+        },
+    },
+    "foxglove.SceneUpdate": {
+        "type": "object",
+        "properties": {
+            "deletions": {"type": "array"},
+            "entities": {"type": "array"},
+        },
+    },
     "roborun.Detections": {
         "type": "object",
         "properties": {
@@ -248,14 +266,78 @@ class RunRecorder:
         }, ts)
 
     def write_pose(self, x: float, y: float, z: float = 0.0,
-                   orientation: dict | None = None, frame_id: str = "map",
-                   ts: float | None = None) -> None:
+                   orientation: dict | None = None, frame_id: str = "world",
+                   ts: float | None = None, heading: float | None = None) -> None:
+        import math
         ts = ts if ts is not None else time.time()
+        if orientation is None and heading is not None:
+            orientation = {"x": 0.0, "y": 0.0,
+                           "z": math.sin(heading / 2), "w": math.cos(heading / 2)}
         self.write_json("/pose", "foxglove.PoseInFrame", {
             "timestamp": _ts_obj(ts), "frame_id": frame_id,
             "pose": {"position": {"x": x, "y": y, "z": z},
                      "orientation": orientation or {"x": 0, "y": 0, "z": 0, "w": 1}},
         }, ts)
+
+    def write_scan(self, ranges: list, x: float, y: float, heading: float,
+                   frame_id: str = "world", ts: float | None = None) -> None:
+        """Lidar as foxglove.LaserScan — the 3D panel draws the sweep
+        natively, carried at the robot's world pose (no TF tree needed)."""
+        import math
+        ts = ts if ts is not None else time.time()
+        n = max(len(ranges), 1)
+        self.write_json("/scan", "foxglove.LaserScan", {
+            "timestamp": _ts_obj(ts), "frame_id": frame_id,
+            "pose": {"position": {"x": x, "y": y, "z": 0.3},
+                     "orientation": {"x": 0.0, "y": 0.0,
+                                     "z": math.sin(heading / 2),
+                                     "w": math.cos(heading / 2)}},
+            "start_angle": 0.0,
+            "end_angle": 2 * math.pi * (n - 1) / n,
+            "ranges": ranges,
+        }, ts)
+
+    _SCENE_COLORS = {"red": (0.85, 0.29, 0.29), "blue": (0.29, 0.48, 0.85),
+                     "green": (0.27, 0.72, 0.42), "yellow": (0.85, 0.71, 0.29),
+                     "purple": (0.60, 0.35, 0.85)}
+
+    def write_detection_scene(self, dets: list[dict], x: float, y: float,
+                              heading: float, fov: float = 1.323,
+                              frame_w: float = 1280.0,
+                              ts: float | None = None) -> None:
+        """Detections as foxglove.SceneUpdate spheres + labels at their
+        world positions — replay shows what the robot saw, where."""
+        import math
+        ts = ts if ts is not None else time.time()
+        entities = []
+        for i, d in enumerate(dets):
+            dist = d.get("distance")
+            bbox = d.get("bbox")
+            if dist is None or not bbox:
+                continue
+            cx = (bbox[0] + bbox[2]) / 2 / frame_w
+            a = heading + (0.5 - cx) * fov
+            px, py = x + math.cos(a) * dist, y + math.sin(a) * dist
+            label = d.get("label", "object")
+            r, g, b = self._SCENE_COLORS.get(label.split()[0], (0.0, 0.83, 0.49))
+            entities.append({
+                "id": f"{label}-{i}", "frame_id": "world",
+                "timestamp": _ts_obj(ts), "lifetime": {"sec": 1, "nsec": 0},
+                "frame_locked": False,
+                "spheres": [{"pose": {"position": {"x": px, "y": py, "z": 0.4},
+                                      "orientation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+                             "size": {"x": 0.35, "y": 0.35, "z": 0.35},
+                             "color": {"r": r, "g": g, "b": b, "a": 0.85}}],
+                "texts": [{"pose": {"position": {"x": px, "y": py, "z": 0.85},
+                                    "orientation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+                           "font_size": 0.18, "billboard": True,
+                           "scale_invariant": False,
+                           "color": {"r": 1, "g": 1, "b": 1, "a": 0.9},
+                           "text": f"{label} {dist:.1f}m"}],
+            })
+        if entities:
+            self.write_json("/scene", "foxglove.SceneUpdate",
+                            {"deletions": [], "entities": entities}, ts)
 
     def write_event(self, event: dict) -> None:
         self.write_json("/agent/events", "roborun.AgentEvent", event,

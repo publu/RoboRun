@@ -38,16 +38,18 @@ def arena_state(h, payload):
         rec = rec_mod.active_recorder()
         if rec is not None:
             pose = payload.get("pose") or {}
-            rec.write_pose(pose.get("x", 0.0), pose.get("z", 0.0),
-                           pose.get("y", 0.0))
+            fx, fy = pose.get("x", 0.0), -pose.get("z", 0.0)
+            h = pose.get("heading", 0.0)
+            alt = (pose.get("y", 0.0)
+                   if (payload.get("level") or {}).get("robot") == "drone" else 0.0)
+            rec.write_pose(fx, fy, alt, heading=h)
             dets = payload.get("detections") or []
             if dets:
                 rec.write_detections(dets, name="arena")
+                rec.write_detection_scene(dets, fx, fy, h)
             lidar = payload.get("lidar") or []
             if lidar:
-                rec.write_json("/lidar", "roborun.LaserScan",
-                               {"ranges": lidar, "angle_increment": 0.1745,
-                                "frame_id": "base_link"})
+                rec.write_scan(lidar, fx, fy, h)
     except Exception:
         pass
     send_json(h, 200, {"ok": True})
