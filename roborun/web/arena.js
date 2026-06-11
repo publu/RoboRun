@@ -1025,10 +1025,26 @@ function tickChamber(dt, answer) {
 /* ════════════════ recording ════════════════ */
 let recording = false;
 let mediaRec = null, videoChunks = [], videoMime = "";
+/* the video is a composite: the 3D view PLUS the perception overlay —
+   what you saw is what you download, detection boxes included. Drawn at
+   the end of each frame (same-frame copy; a timer would catch a cleared
+   WebGL buffer and record black). */
+const recCanvas = document.createElement("canvas");
+const recCtx = recCanvas.getContext("2d");
+function compositeRecordFrame() {
+  if (!mediaRec || mediaRec.state !== "recording") return;
+  const w = innerWidth, h = innerHeight;
+  if (recCanvas.width !== w || recCanvas.height !== h) {
+    recCanvas.width = w; recCanvas.height = h;
+  }
+  recCtx.drawImage(renderer.domElement, 0, 0, w, h);
+  recCtx.drawImage(mainDet, 0, 0, w, h);
+}
 function startViewRecording() {
   try {
     stopViewRecording();
-    const stream = renderer.domElement.captureStream(30);
+    recCanvas.width = innerWidth; recCanvas.height = innerHeight;
+    const stream = recCanvas.captureStream(30);
     videoMime = ["video/mp4", "video/webm;codecs=vp9", "video/webm"]
       .find((m) => MediaRecorder.isTypeSupported(m)) || "";
     mediaRec = new MediaRecorder(stream, videoMime ? { mimeType: videoMime } : {});
@@ -1068,7 +1084,7 @@ async function sealAttempt() {
   const ext = videoMime.includes("mp4") ? "mp4" : "webm";
   if (vblob) {
     linksEl.innerHTML += `<a href="${URL.createObjectURL(vblob)}"
-      download="roborun_${LV.name}.${ext}">⬇ robot view video (.${ext})</a>`;
+      download="roborun_${LV.name}.${ext}">⬇ run video (.${ext} — main view + detections)</a>`;
   }
   const entry = { id: Date.now(), ts: new Date().toISOString(),
                   level: LV.name, mode: MODE, video: vblob, ext };
@@ -1847,6 +1863,7 @@ function frame(now) {
   if (!won) clockEl.textContent = `${((now - t0) / 1000).toFixed(1)}s`;
   cmdEl.textContent = `cmd f=${(cmd.forward || 0).toFixed(2)} t=${(cmd.turn || 0).toFixed(2)} · cam ${mainCamSel.value}`;
   renderViews();
+  compositeRecordFrame();
   requestAnimationFrame(frame);
 }
 
@@ -1860,4 +1877,13 @@ window.__arena = {
   setCode, loadLevel,
   levels: () => LEVELS.map((l) => l.name),
   status: () => ({ won, level: LV.name, mode: MODE, wasmReady: !!wasmRT }),
+  videoInfo: () => ({ chunks: videoChunks.length, mime: videoMime,
+                      bytes: videoChunks.reduce((a, c) => a + c.size, 0) }),
+  videoBase64: async () => {
+    const buf = await new Blob(videoChunks, { type: videoMime || "video/webm" }).arrayBuffer();
+    let out = "", bytes = new Uint8Array(buf);
+    for (let i = 0; i < bytes.length; i += 0x8000)
+      out += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(out);
+  },
 };
