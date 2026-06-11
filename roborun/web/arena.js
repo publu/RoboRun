@@ -204,13 +204,15 @@ def player_policy(robot):
   {
     name: "arm-sort", robot: "arm",
     title: "ARM 01 — SORT THE BLOCKS",
-    brief: "A fixed arm over a table, camera ON the hand (eye-in-hand): it "
-         + "looks radially outward from the base, so orbit the hand to scan "
-         + "the table — pose()['heading'] is where it's looking. Four blocks "
-         + "(red/blue), two bins: RED at (-3, 0), BLUE at (3, 0). move() "
-         + "drives the hand in world axes (forward=+x, strafe=+z); "
-         + "grasp(True) near a block picks it up, grasp(False) releases. "
-         + "Sort all four.",
+    brief: "A fixed arm, camera ON the hand (eye-in-hand, looks radially "
+         + "outward — orbit to scan; pose()['heading'] is the view). Blocks "
+         + "are PHYSICAL: grasping only works if the fingers actually "
+         + "straddle one — center over it, descend with move(climb=-…) "
+         + "until the fingers reach block height (~0.8), then grasp(True); "
+         + "pose()['holding'] tells you if you got it. Open the hand and "
+         + "it falls. Bumping a block shoves it. move() drives the hand in "
+         + "world axes (forward=+x, strafe=+z), pose()['y'] is wrist "
+         + "height. RED bin (-3, 0), BLUE bin (3, 0). Sort all four.",
     bounds: 8, spawn: { x: 1.6, z: 0, heading: 0 },   // effector home: out front, not over the base
     rooms: [], walls: [],
     props: [
@@ -251,10 +253,11 @@ def go(robot, pose, tx, tz, tol=0.25):
         return False
     return toward(robot, pose, tx, tz, tol)
 
-def planar(dist):
-    # the wrist camera is ~0.7 m above the block tops; dist is 3D,
-    # so take out the height before projecting onto the table
-    return max(0.05, max(dist * dist - 0.49, 0.0) ** 0.5)
+def planar(dist, y):
+    # the wrist camera rides the hand (0.42 below the wrist); dist is 3D,
+    # so take the camera height over the block tops back out
+    dy = max(0.0, y - 0.57)
+    return max(0.05, max(dist * dist - dy * dy, 0.0) ** 0.5)
 
 @behavior(hz=10)
 def player_policy(robot):
@@ -263,11 +266,29 @@ def player_policy(robot):
         return robot.stop()
     st = robot.state
 
-    if st.get("carrying"):                 # take it to the matching bin
-        bx, bz = BINS[st["carrying"]]
+    if pose.get("holding"):                # gripper feedback: we have it
+        st["closing"] = False
+        if pose["y"] < 1.2:                # carry height clears table blocks
+            return robot.move(climb=0.9)
+        bx, bz = BINS[pose["holding"].split()[0]]
         if go(robot, pose, bx, bz):
-            robot.grasp(False)
-            st["carrying"] = None
+            robot.grasp(False)             # open — gravity places it in the bin
+        return
+
+    if st.get("closing"):                  # closed on air: reset and rescan
+        st["closing"] = False
+        robot.grasp(False)
+        return robot.move(climb=0.9)
+
+    t = st.get("target")
+    if t:                                  # centered: descend onto the block
+        if not toward(robot, pose, t[0], t[1], tol=0.1):
+            return
+        if pose["y"] > 0.92:               # fingers at block height, palm clear
+            return robot.move(climb=-0.3)  # slow final descent
+        robot.grasp(True)                  # fingers straddle it — close
+        st["target"] = None
+        st["closing"] = True
         return
 
     blocks = robot.see("red block") + robot.see("blue block")
@@ -275,18 +296,19 @@ def player_policy(robot):
         st["idle"] = 0
         b = min(blocks, key=lambda d: d.dist or 9)
         a = pose["heading"] + (0.5 - b.cx) * FOV
-        tx = pose["x"] + cos(a) * planar(b.dist or 0)
-        tz = pose["z"] - sin(a) * planar(b.dist or 0)
-        if toward(robot, pose, tx, tz):
-            robot.grasp(True)
-            st["carrying"] = b.label.split()[0]
+        r = planar(b.dist or 0, pose["y"])
+        tx, tz = pose["x"] + cos(a) * r, pose["z"] - sin(a) * r
+        if toward(robot, pose, tx, tz, tol=0.12):
+            st["target"] = (tx, tz)        # lock the spot, then descend on it
         return
 
-    # nothing in view: orbit inside the blocks' radius — the wrist camera
-    # sweeps the whole table once per lap
+    # nothing in view: orbit inside the blocks' radius at cruise height —
+    # the wrist camera sweeps the whole table once per lap
     st["idle"] = st.get("idle", 0) + 1
-    if st["idle"] > 160:
+    if st["idle"] > 220:
         return robot.stop()                # a full sweep saw nothing — done
+    if pose["y"] < 1.0:
+        return robot.move(climb=0.9)
     x, z = pose["x"], pose["z"]
     d = max(0.3, hypot(x, z))
     pull = 0.8 * (1.2 - d)                 # hold a 1.2 m scan orbit
@@ -568,12 +590,13 @@ const BODIES = {
     _box(wrist, 0.03, 0.03, 0.012, accentMat, 0, -0.42, 0.108);   // lens, looking outward
     const fingers = [];
     for (const s of [-1, 1]) {
-      const f = _box(wrist, 0.028, 0.17, 0.07, darkMat, s * 0.085, -0.65, 0);
+      // open span ±0.19 clears the 0.3 m blocks; closed ±0.14 squeezes them
+      const f = _box(wrist, 0.028, 0.17, 0.07, darkMat, s * 0.19, -0.65, 0);
       _box(f, 0.026, 0.05, 0.066, bodyMat, -s * 0.012, -0.06, 0); // inward fingertip pad
       fingers.push({ f, s });
     }
     parts.armParts = { j1, j2, j3, wrist, fingers, reach: 4.0,
-                     L1, L2, shoulderH: 1.5, wristH: 0.9 };
+                     L1, L2, shoulderH: 1.5 };
     return { standH: 0, stepTime: 1, eyeH: 3.0, speed: 1.2 };
   },
   drone(group, parts) {                                /* Mavic-ish: diagonal arms, pods, gimbal */
@@ -704,10 +727,13 @@ function updateBody(dt, cmd) {
     // eye-in-hand: the wrist camera looks radially outward from the base,
     // so sweeping the hand around the base scans the table
     bot.heading = Math.atan2(-bot.pos.z, bot.pos.x);
+    // the vertical axis is real: climb raises/lowers the wrist — you
+    // descend onto a block to grasp it and lift to carry
+    bot.alt = THREE.MathUtils.clamp(bot.alt + (cmd.climb || 0) * dt * 0.9, 0.55, 1.6);
     // vertical 2-link IK in the yaw plane: shoulder pitch + elbow pitch
-    // put the wrist at (d, wristH); the wrist counter-pitches to stay level
+    // put the wrist at (d, alt); the wrist counter-pitches to stay level
     const d = Math.max(0.7, Math.hypot(bot.pos.x, bot.pos.z));
-    const dy = p.wristH - p.shoulderH;
+    const dy = bot.alt - p.shoulderH;
     const D = Math.min(Math.hypot(d, dy), p.L1 + p.L2 - 1e-3);
     const phi = Math.atan2(dy, d);
     const a2 = Math.acos(THREE.MathUtils.clamp(
@@ -729,11 +755,11 @@ function updateBody(dt, cmd) {
     p.j3.rotation.x = p.cur.el;
     p.wrist.rotation.x = p.cur.wr;
     for (const { f: fin, s } of p.fingers)
-      fin.position.x += ((bot.grip ? 0.045 : 0.085) * s - fin.position.x) * Math.min(1, dt * 12);
+      fin.position.x += ((bot.grip ? 0.14 : 0.19) * s - fin.position.x) * Math.min(1, dt * 12);
     if (bot.carrying) {
-      // the block hangs from the fingers — the visual wrist, not the IK target
+      // the block rides between the fingers — the visual wrist, not the IK target
       const w = p.wrist.getWorldPosition(new THREE.Vector3());
-      bot.carrying.mesh.position.set(w.x, 0.3, w.z);
+      bot.carrying.mesh.position.set(w.x, Math.max(0.15, w.y - 0.65), w.z);
     }
     return;
   }
@@ -762,7 +788,8 @@ function updateBody(dt, cmd) {
 const raycaster = new THREE.Raycaster();
 const LIDAR_RAYS = 36, LIDAR_RANGE = 8;
 function eyePos() {
-  if (bot.type === "arm") return new THREE.Vector3(bot.pos.x, 0.85, bot.pos.z);
+  if (bot.type === "arm")   // the camera pod rides the wrist
+    return new THREE.Vector3(bot.pos.x, Math.max(0.3, bot.alt - 0.42), bot.pos.z);
   return new THREE.Vector3(bot.pos.x,
     bot.type === "drone" ? bot.alt : bodySpec.eyeH, bot.pos.z);
 }
@@ -961,7 +988,7 @@ function loadLevel(i) {
     : LV.spawn;
   bot.pos.set(sp.x, 0, sp.z);
   bot.heading = sp.heading || 0;
-  bot.alt = 1.0;
+  bot.alt = bot.type === "arm" ? 1.1 : 1.0;   // arm: wrist cruise height
   bot.carrying = null;
   for (const leg of bot.legs) homeFoot(leg, leg.foot);
   visited = new Set(); won = false; usedManual = false;
@@ -1093,22 +1120,38 @@ function tickChamber(dt, answer) {
   }
 
   if (w.type === "sort") {
-    if (bot.grip && !bot.carrying) {
-      const block = propObjs.find((p) => p.kind === "block" && !p.sorted &&
-        dist2d(bot.pos, p.mesh.position.x, p.mesh.position.z) < w.grabDist);
-      if (block) { bot.carrying = block; block.carried = true; }
+    // grasping is physical, not magnetic: only the CLOSING edge of the
+    // gripper acquires, and only if the fingers actually straddle a block
+    // — right height (fingers at alt-0.65) and centered between the pads
+    if (bot.grip && !bot._gripWasClosed && !bot.carrying) {
+      const fy = bot.alt - 0.65;
+      const block = propObjs.find((p) => p.kind === "block" && !p.carried &&
+        Math.abs(p.mesh.position.y - fy) < 0.14 &&
+        dist2d(bot.pos, p.mesh.position.x, p.mesh.position.z) < 0.16);
+      if (block) {
+        bot.carrying = block; block.carried = true;
+        block.vx = block.vy = block.vz = 0;
+        postEvent("arena", `grasped ${block.label}`, {});
+      }
     }
     if (!bot.grip && bot.carrying) {
-      const block = bot.carrying;
+      const block = bot.carrying;             // open: gravity takes it from here
       bot.carrying = null; block.carried = false;
-      const bin = propObjs.find((p) => p.kind === "bin" &&
-        dist2d({ x: block.mesh.position.x, z: block.mesh.position.z }, p.pos.x, p.pos.z) < p.r);
-      if (bin && bin.color === block.color) {
-        block.sorted = true;
-        block.mesh.position.set(bin.pos.x, 0.18 + winState.sorted * 0.12, bin.pos.z);
+      block.vx = 0; block.vy = 0; block.vz = 0;
+      postEvent("arena", `released ${block.label}`, {});
+    }
+    bot._gripWasClosed = bot.grip;
+    // a block counts as sorted when it comes to REST inside its bin
+    for (const p of propObjs) {
+      if (p.kind !== "block" || p.sorted || p.carried) continue;
+      if ((p.vy || 0) !== 0 || Math.hypot(p.vx || 0, p.vz || 0) > 0.01) continue;
+      const bin = propObjs.find((q) => q.kind === "bin" &&
+        dist2d({ x: p.mesh.position.x, z: p.mesh.position.z }, q.pos.x, q.pos.z) < q.r);
+      if (bin && bin.color === p.color) {
+        p.sorted = true;
         markChip(`s${winState.sorted}`);
         winState.sorted += 1;
-        postEvent("arena", `sorted ${block.label} (${winState.sorted}/${w.blocks})`, {});
+        postEvent("arena", `sorted ${p.label} (${winState.sorted}/${w.blocks})`, {});
         if (winState.sorted >= w.blocks) winChamber("table sorted");
       }
     }
@@ -1124,6 +1167,58 @@ function tickChamber(dt, answer) {
       postEvent("arena", `ring ${want.id + 1}`, {});
       winState.idx += 1;
       if (winState.idx >= w.order.length) winChamber("course complete");
+    }
+  }
+}
+
+/* ════════════════ block physics (sort levels) ════════════════
+   Blocks are rigid bodies, not pickup icons: gravity, ground contact,
+   sliding friction, stacking on each other, and the open hand shoves
+   them — the only way to move one cleanly is to actually grasp it. */
+function updateBlockPhysics(dt) {
+  for (const b of propObjs) {
+    if (b.kind !== "block" || b.carried) continue;
+    const m = b.mesh.position;
+    // gravity, with other blocks as stackable floor
+    b.vy = (b.vy || 0) - 9.8 * dt;
+    m.y += b.vy * dt;
+    let floor = 0.15;
+    for (const o of propObjs) {
+      if (o === b || o.kind !== "block" || o.carried) continue;
+      const om = o.mesh.position;
+      if (Math.abs(m.x - om.x) < 0.28 && Math.abs(m.z - om.z) < 0.28 &&
+          om.y + 0.225 <= m.y)
+        floor = Math.max(floor, om.y + 0.3);
+    }
+    if (m.y <= floor) { m.y = floor; b.vy = 0; }
+    // sliding with friction (μg ≈ 0.6)
+    m.x += (b.vx || 0) * dt; m.z += (b.vz || 0) * dt;
+    const sp = Math.hypot(b.vx || 0, b.vz || 0);
+    if (sp > 1e-4) {
+      const dec = Math.min(sp, 6 * dt);
+      b.vx -= (b.vx / sp) * dec; b.vz -= (b.vz / sp) * dec;
+    } else { b.vx = 0; b.vz = 0; }
+    // the hand is a kinematic collider with honest geometry: OPEN fingers
+    // straddle a centered block (no contact inside the span) but clip
+    // blocks swept through the finger ring; a CLOSED hand is solid; the
+    // palm pressing down pops a block aside instead of tunneling through
+    if (bot.type === "arm") {
+      const dx = m.x - bot.pos.x, dz = m.z - bot.pos.z;
+      const dd = Math.hypot(dx, dz);
+      const nx = dd > 1e-3 ? dx / dd : Math.cos(bot.heading);
+      const nz = dd > 1e-3 ? dz / dd : -Math.sin(bot.heading);
+      const fy = bot.alt - 0.65;
+      const inner = bot.grip ? 0.0 : 0.12;
+      if (Math.abs(fy - m.y) < 0.28 && dd > inner && dd < 0.3) {
+        const out = 0.3 - dd;
+        m.x += nx * out; m.z += nz * out;
+        b.vx = nx * 0.5; b.vz = nz * 0.5;
+      }
+      const palmBottom = bot.alt - 0.57;
+      if (dd <= 0.13 && palmBottom < m.y + 0.13 && palmBottom > m.y - 0.25) {
+        m.x += nx * (0.2 - dd); m.z += nz * (0.2 - dd);
+        b.vx = nx * 0.5; b.vz = nz * 0.5;
+      }
     }
   }
 }
@@ -1381,7 +1476,8 @@ function currentState() {
     detections: senseDetections(),
     lidar: lastLidar,
     pose: { x: +bot.pos.x.toFixed(2), z: +bot.pos.z.toFixed(2),
-            y: +bot.alt.toFixed(2), heading: +bot.heading.toFixed(3) },
+            y: +bot.alt.toFixed(2), heading: +bot.heading.toFixed(3),
+            holding: bot.carrying ? bot.carrying.label : null },
     level: { name: LV.name, robot: LV.robot, room: currentRoom(),
              rooms_visited: [...visited], odometer_m: +odo.toFixed(1), won },
   };
@@ -1873,6 +1969,7 @@ function frame(now) {
   const cmd = keyboardCmd() || serverCmd;
   updateMovers(dt);
   updateBody(dt, cmd);
+  if ((LV.win || {}).type === "sort") updateBlockPhysics(dt);
   tickChamber(dt, serverAnswer);
 
   odo += prevPos.distanceTo(bot.pos);

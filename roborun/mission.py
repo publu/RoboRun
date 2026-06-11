@@ -28,14 +28,18 @@ called 10x/second. It must never block. The handle:
   robot.seen(label=None) -> automatic sighting memory: [{"label", "count",
       "distinct" (deduped object count), "locations" [(x,z)...]}] — use this
       for "how many X did I see" questions; never hand-roll a ledger
-  robot.move(forward=0, strafe=0, turn=0, climb=0)   (clamped; climb = drones)
+  robot.move(forward=0, strafe=0, turn=0, climb=0)   (clamped; climb = drones
+      and the arm's wrist height — arm pose() includes "y")
   robot.goto(x, z, tol=0.45) -> True when arrived (steers one tick)
   robot.explore() -> one tick of frontier exploration; True once fully mapped
       (use this for "move around / search / wander" — it is systematic)
   robot.locate(thing) -> (x, z) world position of a sighting, or None
   robot.approach(thing, tol=0.45) -> locate + goto; True when arrived
   robot.stop() / robot.say(text) / robot.log(msg)
-  robot.grasp(True|False)        (arm levels: magnet effector)
+  robot.grasp(True|False)        (arm: a REAL gripper, not a magnet — center
+      over the block, descend with move(climb=-…) until pose()["y"] ~ 0.9,
+      then grasp(True); pose()["holding"] confirms; grasp(False) drops it
+      under gravity)
   robot.answer(text)             (submit the chamber's answer)
   robot.remember(k, v) / robot.recall(k)   (persistent)
   robot.state                    (dict, survives ticks — put ALL loop state here)
