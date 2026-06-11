@@ -462,64 +462,91 @@ function legSet(group, hips, L1, L2) {
   return legs;
 }
 
+const accentMat = new THREE.MeshStandardMaterial({ color: 0x00d47e, emissive: 0x00d47e,
+                                                   emissiveIntensity: 0.4 });
+function _box(group, w, h, d, m, x = 0, y = 0, z = 0) {
+  const k = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+  k.position.set(x, y, z); k.castShadow = true; group.add(k); return k;
+}
+
 const BODIES = {
-  dog(group) {
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.18, 0.3), bodyMat);
-    body.castShadow = true;
-    group.add(body);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.18), darkMat);
-    head.position.set(0.41, 0.06, 0);
-    group.add(head);
+  dog(group) {                                  /* Go2-ish */
+    _box(group, 0.6, 0.17, 0.28, bodyMat);
+    _box(group, 0.2, 0.12, 0.2, darkMat, 0.34, 0.05, 0);
+    _box(group, 0.02, 0.055, 0.13, accentMat, 0.445, 0.05, 0);   // sensor face
     bot.legs = legSet(group, [
       { x: 0.25, y: -0.06, z: -0.15, phase: 0 }, { x: 0.25, y: -0.06, z: 0.15, phase: 1 },
       { x: -0.25, y: -0.06, z: -0.15, phase: 1 }, { x: -0.25, y: -0.06, z: 0.15, phase: 0 },
     ], 0.26, 0.26);
     return { standH: 0.42, stepTime: 0.28, eyeH: 0.45, speed: 1.0 };
   },
-  biped(group) {
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.55, 0.38), bodyMat);
-    torso.position.y = 0.25;
-    torso.castShadow = true;
-    group.add(torso);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.2, 0.18), darkMat);
-    head.position.y = 0.68;
-    head.castShadow = true;
-    group.add(head);
+  biped(group) {                                /* G1-ish: pelvis, visor, arms */
+    _box(group, 0.28, 0.4, 0.24, bodyMat, 0, 0.32, 0);
+    _box(group, 0.24, 0.16, 0.2, darkMat, 0, 0.04, 0);
+    _box(group, 0.17, 0.17, 0.17, darkMat, 0, 0.62, 0);
+    _box(group, 0.02, 0.05, 0.12, accentMat, 0.088, 0.64, 0);    // visor faces +x = forward
+    for (const s of [-1, 1]) {
+      const sh = new THREE.Group();
+      sh.position.set(0, 0.47, s * 0.21);
+      sh.rotation.z = -0.18;                    // relaxed, slightly forward
+      group.add(sh);
+      _box(sh, 0.07, 0.26, 0.07, darkMat, 0, -0.13, 0);
+      const el = new THREE.Group(); el.position.set(0, -0.26, 0); el.rotation.z = -0.35;
+      sh.add(el);
+      _box(el, 0.06, 0.22, 0.06, bodyMat, 0, -0.11, 0);
+    }
     bot.legs = legSet(group, [
       { x: 0, y: -0.03, z: -0.11, phase: 0 }, { x: 0, y: -0.03, z: 0.11, phase: 1 },
     ], 0.42, 0.42);
     return { standH: 0.85, stepTime: 0.42, eyeH: 1.45, speed: 0.6 };
   },
-  arm(group) {
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 0.4, 20), darkMat);
-    base.position.set(0, 0.2, 0);
-    base.castShadow = true;
-    group.add(base);
-    const seg1 = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 1), bodyMat);
-    seg1.geometry.translate(0, 0, 0.5);
-    const seg2 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 1), darkMat);
-    seg2.geometry.translate(0, 0, 0.5);
-    seg1.castShadow = seg2.castShadow = true;
-    const j1 = new THREE.Group(); j1.position.set(0, 0.45, 0);
-    const j2 = new THREE.Group(); j2.position.set(0, 0, 1);
-    j1.add(seg1); j1.add(j2); j2.add(seg2);
-    group.add(j1);
-    const eff = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12),
-      new THREE.MeshStandardMaterial({ color: 0x00d47e, emissive: 0x00d47e, emissiveIntensity: 0.5 }));
-    eff.castShadow = true;
-    group.add(eff);
-    bot.armParts = { j1, j2, eff, reach: 4.0 };
+  arm(group) {                                  /* xArm-ish SCARA: links match the IK (L = reach/2) */
+    const L = 2.0, TOP = 1.05;
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.42, 0.3, 24), darkMat);
+    base.position.y = 0.15; base.castShadow = true; group.add(base);
+    const column = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, TOP - 0.3, 24), bodyMat);
+    column.position.y = 0.3 + (TOP - 0.3) / 2; column.castShadow = true; group.add(column);
+
+    const j1 = new THREE.Group(); j1.position.y = TOP; group.add(j1);   // shoulder yaw
+    const shoulder = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.16, 24), darkMat);
+    shoulder.castShadow = true; j1.add(shoulder);
+    const link1 = _box(j1, 0.18, 0.12, L, bodyMat);
+    link1.geometry.translate(0, 0, L / 2);
+
+    const j2 = new THREE.Group(); j2.position.set(0, 0, L); j1.add(j2); // elbow yaw
+    const elbow = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.14, 20), darkMat);
+    elbow.castShadow = true; j2.add(elbow);
+    const link2 = _box(j2, 0.13, 0.1, L, bodyMat);
+    link2.geometry.translate(0, -0.02, L / 2);
+
+    // wrist at the end of the chain: the IK puts it where the effector is,
+    // a drop link reaches down to table height, fingers do the grasping
+    const eff = new THREE.Group(); eff.position.set(0, 0, L); j2.add(eff);
+    const drop = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.04, 0.5, 14), darkMat);
+    drop.position.y = -0.27; drop.castShadow = true; eff.add(drop);
+    _box(eff, 0.14, 0.05, 0.1, bodyMat, 0, -0.54, 0);
+    _box(eff, 0.012, 0.03, 0.06, accentMat, 0, -0.51, 0);
+    const fingers = [];
+    for (const s of [-1, 1]) {
+      const f = _box(eff, 0.025, 0.16, 0.06, darkMat, s * 0.085, -0.62, 0);
+      fingers.push({ f, s });
+    }
+    bot.armParts = { j1, j2, eff, fingers, reach: 4.0 };
     return { standH: 0, stepTime: 1, eyeH: 3.0, speed: 1.2 };
   },
-  drone(group) {
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.4), bodyMat);
-    body.castShadow = true;
-    group.add(body);
+  drone(group) {                                /* Mavic-ish: diagonal arms, pods, gimbal */
+    _box(group, 0.38, 0.1, 0.24, bodyMat);
+    _box(group, 0.1, 0.06, 0.08, darkMat, 0.18, -0.04, 0);
+    _box(group, 0.012, 0.03, 0.05, accentMat, 0.232, -0.04, 0);  // gimbal lens
     bot.rotors = [];
-    for (const [dx, dz] of [[0.26, 0.26], [0.26, -0.26], [-0.26, 0.26], [-0.26, -0.26]]) {
-      const rotor = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.02, 16),
-        new THREE.MeshStandardMaterial({ color: 0x4a7ad8, transparent: true, opacity: 0.5 }));
-      rotor.position.set(dx, 0.1, dz);
+    for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const arm = _box(group, 0.24, 0.025, 0.04, darkMat, sx * 0.19, 0.01, sz * 0.15);
+      arm.rotation.y = -sx * sz * Math.PI / 4;
+      const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.03, 0.05, 12), darkMat);
+      pod.position.set(sx * 0.27, 0.02, sz * 0.23); pod.castShadow = true; group.add(pod);
+      const rotor = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.012, 18),
+        new THREE.MeshStandardMaterial({ color: 0x4a7ad8, transparent: true, opacity: 0.45 }));
+      rotor.position.set(sx * 0.27, 0.052, sz * 0.23);
       group.add(rotor);
       bot.rotors.push(rotor);
     }
@@ -622,7 +649,10 @@ function updateBody(dt, cmd) {
     const aa = Math.acos(THREE.MathUtils.clamp(r / (2 * L), -1, 1));
     p.j1.rotation.y = az + aa;
     p.j2.rotation.y = -2 * aa;
-    p.eff.position.set(bot.pos.x, 0.45, bot.pos.z);
+    // links now match the IK lengths, so the wrist rides the chain; the
+    // fingers close on grasp
+    for (const { f, s } of p.fingers)
+      f.position.x += ((bot.grip ? 0.045 : 0.085) * s - f.position.x) * Math.min(1, dt * 12);
     if (bot.carrying) bot.carrying.mesh.position.set(bot.pos.x, 0.3, bot.pos.z);
     return;
   }
