@@ -500,38 +500,44 @@ const BODIES = {
     ], 0.42, 0.42);
     return { standH: 0.85, stepTime: 0.42, eyeH: 1.45, speed: 0.6 };
   },
-  arm(group) {                                  /* xArm-ish SCARA: links match the IK (L = reach/2) */
-    const L = 2.0, TOP = 1.05;
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.42, 0.3, 24), darkMat);
+  arm(group) {                                  /* vertical xArm: yaw base, pitch shoulder/elbow, level wrist */
+    const L1 = 2.0, L2 = 2.0;
+    const jointX = (parent, r, len) => {        // joint housing, pitch axis = local x
+      const k = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 20), darkMat);
+      k.rotation.z = Math.PI / 2; k.castShadow = true; parent.add(k); return k;
+    };
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.44, 0.3, 24), darkMat);
     base.position.y = 0.15; base.castShadow = true; group.add(base);
-    const column = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, TOP - 0.3, 24), bodyMat);
-    column.position.y = 0.3 + (TOP - 0.3) / 2; column.castShadow = true; group.add(column);
+    const column = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.24, 0.55, 24), bodyMat);
+    column.position.y = 0.575; column.castShadow = true; group.add(column);
 
-    const j1 = new THREE.Group(); j1.position.y = TOP; group.add(j1);   // shoulder yaw
-    const shoulder = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.16, 24), darkMat);
-    shoulder.castShadow = true; j1.add(shoulder);
-    const link1 = _box(j1, 0.18, 0.12, L, bodyMat);
-    link1.geometry.translate(0, 0, L / 2);
+    const j1 = new THREE.Group(); j1.position.y = 0.85; group.add(j1);  // base yaw
+    const turret = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.19, 0.25, 24), bodyMat);
+    turret.position.y = 0.125; turret.castShadow = true; j1.add(turret);
 
-    const j2 = new THREE.Group(); j2.position.set(0, 0, L); j1.add(j2); // elbow yaw
-    const elbow = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.14, 20), darkMat);
-    elbow.castShadow = true; j2.add(elbow);
-    const link2 = _box(j2, 0.13, 0.1, L, bodyMat);
-    link2.geometry.translate(0, -0.02, L / 2);
+    const j2 = new THREE.Group(); j2.position.y = 0.3; j1.add(j2);      // shoulder pitch (world y 1.15)
+    jointX(j2, 0.17, 0.32);
+    const link1 = _box(j2, 0.15, 0.15, L1, bodyMat);
+    link1.geometry.translate(0, 0, L1 / 2);
 
-    // wrist at the end of the chain: the IK puts it where the effector is,
-    // a drop link reaches down to table height, fingers do the grasping
-    const eff = new THREE.Group(); eff.position.set(0, 0, L); j2.add(eff);
+    const j3 = new THREE.Group(); j3.position.set(0, 0, L1); j2.add(j3); // elbow pitch
+    jointX(j3, 0.13, 0.26);
+    const link2 = _box(j3, 0.12, 0.12, L2, bodyMat);
+    link2.geometry.translate(0, 0, L2 / 2);
+
+    const wrist = new THREE.Group(); wrist.position.set(0, 0, L2); j3.add(wrist);
+    jointX(wrist, 0.09, 0.18);
     const drop = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.04, 0.5, 14), darkMat);
-    drop.position.y = -0.27; drop.castShadow = true; eff.add(drop);
-    _box(eff, 0.14, 0.05, 0.1, bodyMat, 0, -0.54, 0);
-    _box(eff, 0.012, 0.03, 0.06, accentMat, 0, -0.51, 0);
+    drop.position.y = -0.27; drop.castShadow = true; wrist.add(drop);
+    _box(wrist, 0.14, 0.05, 0.1, bodyMat, 0, -0.54, 0);
+    _box(wrist, 0.012, 0.03, 0.06, accentMat, 0, -0.51, 0);
     const fingers = [];
     for (const s of [-1, 1]) {
-      const f = _box(eff, 0.025, 0.16, 0.06, darkMat, s * 0.085, -0.62, 0);
+      const f = _box(wrist, 0.025, 0.16, 0.06, darkMat, s * 0.085, -0.62, 0);
       fingers.push({ f, s });
     }
-    bot.armParts = { j1, j2, eff, fingers, reach: 4.0 };
+    bot.armParts = { j1, j2, j3, wrist, fingers, reach: 4.0,
+                     L1, L2, shoulderH: 1.15, wristH: 0.9 };
     return { standH: 0, stepTime: 1, eyeH: 3.0, speed: 1.2 };
   },
   drone(group) {                                /* Mavic-ish: diagonal arms, pods, gimbal */
@@ -643,17 +649,37 @@ function updateBody(dt, cmd) {
     const p = bot.armParts;
     const nx = bot.pos.x + f * dt, nz = bot.pos.z + st * dt;
     if (Math.hypot(nx, nz) < p.reach * 0.95) { bot.pos.x = nx; bot.pos.z = nz; }
-    const r = Math.max(0.2, Math.hypot(bot.pos.x, bot.pos.z));
-    const az = Math.atan2(bot.pos.x, bot.pos.z);
-    const L = p.reach / 2;
-    const aa = Math.acos(THREE.MathUtils.clamp(r / (2 * L), -1, 1));
-    p.j1.rotation.y = az + aa;
-    p.j2.rotation.y = -2 * aa;
-    // links now match the IK lengths, so the wrist rides the chain; the
-    // fingers close on grasp
-    for (const { f, s } of p.fingers)
-      f.position.x += ((bot.grip ? 0.045 : 0.085) * s - f.position.x) * Math.min(1, dt * 12);
-    if (bot.carrying) bot.carrying.mesh.position.set(bot.pos.x, 0.3, bot.pos.z);
+    // vertical 2-link IK in the yaw plane: shoulder pitch + elbow pitch
+    // put the wrist at (d, wristH); the wrist counter-pitches to stay level
+    const d = Math.max(0.2, Math.hypot(bot.pos.x, bot.pos.z));
+    const dy = p.wristH - p.shoulderH;
+    const D = Math.min(Math.hypot(d, dy), p.L1 + p.L2 - 1e-3);
+    const phi = Math.atan2(dy, d);
+    const a2 = Math.acos(THREE.MathUtils.clamp(
+      (p.L1 * p.L1 + D * D - p.L2 * p.L2) / (2 * p.L1 * D), -1, 1));
+    const interior = Math.acos(THREE.MathUtils.clamp(
+      (p.L1 * p.L1 + p.L2 * p.L2 - D * D) / (2 * p.L1 * p.L2), -1, 1));
+    const t1 = phi + a2, t2 = -(Math.PI - interior);
+    // slew-limit the joints: near the base atan2 flips fast and the IK
+    // folds — a real arm swings through, it doesn't whip (the shake fix)
+    const goal = { yaw: Math.atan2(bot.pos.x, bot.pos.z), sh: -t1, el: -t2, wr: t1 + t2 };
+    p.cur = p.cur || { ...goal };
+    const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+    const maxStep = dt * 2.8;
+    p.cur.yaw += THREE.MathUtils.clamp(wrap(goal.yaw - p.cur.yaw), -maxStep, maxStep);
+    for (const k of ["sh", "el", "wr"])
+      p.cur[k] += THREE.MathUtils.clamp(goal[k] - p.cur[k], -maxStep, maxStep);
+    p.j1.rotation.y = p.cur.yaw;
+    p.j2.rotation.x = p.cur.sh;
+    p.j3.rotation.x = p.cur.el;
+    p.wrist.rotation.x = p.cur.wr;
+    for (const { f: fin, s } of p.fingers)
+      fin.position.x += ((bot.grip ? 0.045 : 0.085) * s - fin.position.x) * Math.min(1, dt * 12);
+    if (bot.carrying) {
+      // the block hangs from the fingers — the visual wrist, not the IK target
+      const w = p.wrist.getWorldPosition(new THREE.Vector3());
+      bot.carrying.mesh.position.set(w.x, 0.3, w.z);
+    }
     return;
   }
 
