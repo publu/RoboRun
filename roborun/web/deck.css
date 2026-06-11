@@ -110,12 +110,33 @@ body::before {
   flex: 1;
   display: grid;
   grid-template-columns: 1fr 430px;
+  grid-template-rows: 1fr 230px;
   gap: 14px;
   padding: 14px;
   min-height: 0;
   position: relative;
   z-index: 1;
 }
+.cam { grid-row: 1 / 3; }
+
+/* ============ SPATIAL (point cloud) ============ */
+.spatial {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+.spatial-body { position: relative; flex: 1; min-height: 0; }
+.spatial-body canvas { width: 100%; height: 100%; display: block; }
+.spatial-empty {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 6px; text-align: center;
+}
+.spatial-empty span { font-size: 16px; font-weight: 700; letter-spacing: 0.3em; color: var(--faint); }
+.spatial-empty small { font-size: 11px; letter-spacing: 0.05em; color: var(--faint); line-height: 1.5; }
+.spatial-empty.hidden { display: none; }
 
 /* ============ CAMERA ============ */
 

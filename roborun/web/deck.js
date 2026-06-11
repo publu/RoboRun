@@ -533,3 +533,72 @@ if (new URLSearchParams(location.search).get("runs")) {
 connectEvents();
 pollHud();
 pollBadge();
+
+/* ============ SPATIAL — the robot's accumulated world ============ */
+/* Every /scan return, projected through the odometry it was taken at,
+   drawn in the world frame: the point-cloud spatial memory a robot
+   builds just by moving. Near returns warm, far returns cool. */
+const spatialCanvas = document.getElementById("spatialCanvas");
+const spatialEmpty = document.getElementById("spatialEmpty");
+const spatialStatus = document.getElementById("spatialStatus");
+
+function drawCloud(points, pose) {
+  const ctx = spatialCanvas.getContext("2d");
+  const w = spatialCanvas.clientWidth, h = spatialCanvas.clientHeight;
+  if (spatialCanvas.width !== w || spatialCanvas.height !== h) {
+    spatialCanvas.width = w; spatialCanvas.height = h;
+  }
+  ctx.fillStyle = "#07090c";
+  ctx.fillRect(0, 0, w, h);
+
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const [x, z] of points) {
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+  }
+  if (pose) {
+    minX = Math.min(minX, pose.x); maxX = Math.max(maxX, pose.x);
+    minZ = Math.min(minZ, pose.z); maxZ = Math.max(maxZ, pose.z);
+  }
+  const span = Math.max(maxX - minX, maxZ - minZ, 4) * 1.15;
+  const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+  const scale = Math.min(w, h) / span;
+  const px = (x) => w / 2 + (x - cx) * scale;
+  const pz = (z) => h / 2 + (z - cz) * scale;
+
+  for (const [x, z, r] of points) {
+    const hue = 200 - Math.min(r / 10, 1) * 170;   // near=warm, far=cool
+    ctx.fillStyle = `hsl(${hue} 85% 55% / 0.8)`;
+    ctx.fillRect(px(x) - 1, pz(z) - 1, 2, 2);
+  }
+
+  if (pose) {
+    ctx.fillStyle = "#00d47e";
+    ctx.fillRect(px(pose.x) - 3, pz(pose.z) - 3, 6, 6);
+    ctx.strokeStyle = "#00d47e";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(px(pose.x), pz(pose.z));
+    ctx.lineTo(px(pose.x + Math.cos(pose.heading) * 0.9),
+               pz(pose.z - Math.sin(pose.heading) * 0.9));
+    ctx.stroke();
+  }
+}
+
+async function pollCloud() {
+  try {
+    const d = await (await fetch("/api/ros/cloud")).json();
+    if (d.ok && d.points && d.points.length) {
+      spatialEmpty.classList.add("hidden");
+      drawCloud(d.points, d.pose);
+      spatialStatus.textContent = `${d.points.length} pts` +
+        (d.pose ? ` · x ${d.pose.x.toFixed(1)} z ${d.pose.z.toFixed(1)}` : "") +
+        (d.robot_type ? ` · ${d.robot_type}` : "");
+    } else {
+      spatialEmpty.classList.remove("hidden");
+      spatialStatus.textContent = "no lidar yet";
+    }
+  } catch {}
+  setTimeout(pollCloud, 600);
+}
+pollCloud();

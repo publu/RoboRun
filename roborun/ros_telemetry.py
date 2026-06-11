@@ -75,6 +75,17 @@ class RosTelemetryBridge:
         # (a MAVLink drone listens on the mavros setpoint topic, not /cmd_vel)
         self.robot_type = None
         self.cmd_vel_topic = "/cmd_vel"
+        # World-frame point cloud: every scan return projected through the
+        # pose it was taken at, accumulated — the robot's spatial memory,
+        # visible in the deck (EXPERIENCE_MATRIX G3)
+        from collections import deque
+        self._cloud: deque = deque(maxlen=20000)
+
+    def cloud_points(self, limit: int = 8000) -> list:
+        """[(wx, wz, range), ...] newest-last, for the deck's SPATIAL panel."""
+        with self._handle_lock:
+            pts = list(self._cloud)
+        return pts[-limit:]
 
     def _handle_put(self, key: str, value: Any) -> None:
         with self._handle_lock:
@@ -113,6 +124,7 @@ class RosTelemetryBridge:
         self._last_host = None
         with self._handle_lock:
             self._handle.clear()
+            self._cloud.clear()
 
     def _loop(self, initial_host: str | None) -> None:
         from roborun.telemetry import TelemetryBus
@@ -338,6 +350,23 @@ class RosTelemetryBridge:
                         sectors[k] = r
                 self._handle_put("lidar",
                                  [round(s if s is not None else rmax, 2) for s in sectors])
+
+                # accumulate the world-frame cloud through the pose this
+                # scan was taken at (subsampled; the deque caps memory)
+                pose = self.handle_pose()
+                if pose is not None:
+                    px, pz, hd = pose["x"], pose["z"], pose["heading"]
+                    pts = []
+                    for i in range(0, len(ranges), 2):
+                        r = ranges[i]
+                        if not isinstance(r, (int, float)) or not (0.01 < r < rmax):
+                            continue
+                        a = hd + amin + i * ainc
+                        pts.append((round(px + math.cos(a) * r, 3),
+                                    round(pz - math.sin(a) * r, 3),
+                                    round(r, 2)))
+                    with self._handle_lock:
+                        self._cloud.extend(pts)
             return on_scan
 
         return None

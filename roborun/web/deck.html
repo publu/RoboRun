@@ -108,6 +108,22 @@
         <span class="bb-foot-right">sha-256 · merkle · ed25519</span>
       </div>
     </aside>
+
+    <!-- SPATIAL — the robot's accumulated world (lidar point cloud) -->
+    <aside class="spatial">
+      <div class="bb-head">
+        <span class="bb-title">SPATIAL</span>
+        <span class="bb-status" id="spatialStatus">no lidar yet</span>
+      </div>
+      <div class="spatial-body">
+        <canvas id="spatialCanvas"></canvas>
+        <div class="spatial-empty" id="spatialEmpty">
+          <span>POINT CLOUD</span>
+          <small>connect a robot with /scan — every return is mapped<br>
+          through live odometry into the world frame</small>
+        </div>
+      </div>
+    </aside>
   </main>
 
   <!-- STAMP OVERLAY -->

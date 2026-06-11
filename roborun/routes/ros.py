@@ -16,6 +16,20 @@ def _get_ros_client(host: str | None = None):
     return client
 
 
+@get("/api/ros/cloud")
+def cloud(h):
+    """World-frame lidar point cloud + live pose, for the deck's SPATIAL
+    panel — the robot's accumulated spatial memory (EXPERIENCE_MATRIX G3)."""
+    from roborun.ros_telemetry import get_bridge
+    b = get_bridge()
+    send_json(h, 200, {
+        "ok": True,
+        "points": b.cloud_points(),
+        "pose": b.handle_pose(),
+        "robot_type": b.robot_type.value if b.robot_type else None,
+    })
+
+
 @get("/api/ros/topics")
 def topics(h):
     from urllib.parse import parse_qs, urlparse
