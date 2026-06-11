@@ -57,11 +57,40 @@ def _quaternion_to_euler(x: float, y: float, z: float, w: float) -> dict[str, fl
 
 
 class RosTelemetryBridge:
+
+    HANDLE_SECTORS = 36
+    HANDLE_MAX_AGE = 2.0   # stale odometry means go blind, not act on the past
+
     def __init__(self) -> None:
         self._running = False
         self._thread: threading.Thread | None = None
         self._subscribed_topics: set[str] = set()
         self._last_host: str | None = None
+        # Handle-shaped state (docs/SIM_SPEC.md contract): the same
+        # {x, z, heading} and 36-sector scan the arena provides, so a
+        # behavior written in the sim ports 1:1 to the connected robot.
+        self._handle: dict[str, Any] = {}
+        self._handle_lock = threading.Lock()
+
+    def _handle_put(self, key: str, value: Any) -> None:
+        with self._handle_lock:
+            self._handle[key] = (time.monotonic(), value)
+
+    def _handle_get(self, key: str, max_age: float) -> Any:
+        with self._handle_lock:
+            ts, value = self._handle.get(key, (0.0, None))
+        return value if time.monotonic() - ts <= max_age else None
+
+    def handle_pose(self, max_age: float = HANDLE_MAX_AGE) -> dict | None:
+        """Latest odometry in handle frame: {x, z, heading} (+y altitude).
+        ROS ground plane x,y (yaw CCW) maps to handle x,z via z = -y, so
+        locate()'s world projection holds on hardware exactly as in sim."""
+        return self._handle_get("pose", max_age)
+
+    def handle_lidar(self, max_age: float = HANDLE_MAX_AGE) -> list[float]:
+        """Latest /scan resampled to 36 sectors, [0] dead ahead, CCW —
+        the arena's lidar schema. Blind sectors read as range_max."""
+        return self._handle_get("lidar", max_age) or []
 
     @property
     def is_running(self) -> bool:
@@ -78,6 +107,8 @@ class RosTelemetryBridge:
         self._running = False
         self._subscribed_topics.clear()
         self._last_host = None
+        with self._handle_lock:
+            self._handle.clear()
 
     def _loop(self, initial_host: str | None) -> None:
         from roborun.telemetry import TelemetryBus
@@ -130,8 +161,11 @@ class RosTelemetryBridge:
             if handler is None:
                 continue
 
+            # topics the policy handle reads arrive at policy rate;
+            # dashboard-only topics stay at chart rate
+            throttle = 100 if topic in ("/odom", "/scan") else 500
             try:
-                client.subscribe(topic, msg_type, handler, throttle_rate=500)
+                client.subscribe(topic, msg_type, handler, throttle_rate=throttle)
                 self._subscribed_topics.add(topic)
             except Exception:
                 pass
@@ -172,6 +206,15 @@ class RosTelemetryBridge:
                     orient.get("z", 0), orient.get("w", 1),
                 )
                 bus.push(robot_id, "orientation", euler)
+
+                # handle frame (SIM_SPEC): x→x, z = -ROS y, heading = yaw,
+                # y carries altitude for aerial robots
+                self._handle_put("pose", {
+                    "x": pos.get("x", 0.0),
+                    "z": -pos.get("y", 0.0),
+                    "y": pos.get("z", 0.0),
+                    "heading": euler["yaw"],
+                })
 
                 bus.push(robot_id, "velocity", {
                     "x": lin.get("x", 0),
@@ -249,6 +292,25 @@ class RosTelemetryBridge:
                     "mean_range": round(sum(valid) / len(valid), 2),
                     "points": len(ranges),
                 })
+
+                # resample to the handle's 36 CCW sectors, [0] dead ahead;
+                # nearest return wins inside a sector (the safe reading),
+                # blind sectors read range_max (no info = nothing seen)
+                n = self.HANDLE_SECTORS
+                rmax = msg.get("range_max", 100.0) or 100.0
+                amin = msg.get("angle_min", 0.0)
+                ainc = msg.get("angle_increment",
+                               (msg.get("angle_max", 6.2832) - amin) / max(len(ranges), 1))
+                sectors = [None] * n
+                width = 2 * math.pi / n
+                for i, r in enumerate(ranges):
+                    if not isinstance(r, (int, float)) or not (0.01 < r < rmax):
+                        continue
+                    k = int(round((amin + i * ainc) / width)) % n
+                    if sectors[k] is None or r < sectors[k]:
+                        sectors[k] = r
+                self._handle_put("lidar",
+                                 [round(s if s is not None else rmax, 2) for s in sectors])
             return on_scan
 
         return None

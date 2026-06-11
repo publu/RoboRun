@@ -254,12 +254,20 @@ class Robot:
             return []
 
     def pose(self) -> dict | None:
-        """{x, z, heading} when the world provides odometry (arena does;
-        real robots will via /odom). None means dead-reckon or go blind."""
+        """{x, z, heading} in the handle frame — from the arena when it's
+        live, otherwise from the connected robot's /odom (ros_telemetry
+        keeps it handle-shaped). None means stale or absent odometry:
+        go blind loudly, never act on the past."""
         try:
             from roborun.arena import get_arena
             a = get_arena()
-            return a.pose() if a.is_active() else None
+            if a.is_active():
+                return a.pose()
+        except Exception:
+            pass
+        try:
+            from roborun.ros_telemetry import get_bridge
+            return get_bridge().handle_pose()
         except Exception:
             return None
 
@@ -352,12 +360,20 @@ class Robot:
         return False
 
     def lidar(self) -> list[float]:
-        """360° range scan in meters, index 0 = straight ahead, CCW.
-        Arena provides it; webcam mode has no lidar -> []."""
+        """360° range scan in meters, 36 sectors, index 0 = straight
+        ahead, CCW — from the arena when it's live, otherwise the
+        connected robot's /scan resampled to the same schema. Webcam
+        mode has no lidar -> []."""
         try:
             from roborun.arena import get_arena
             a = get_arena()
-            return a.lidar() if a.is_active() else []
+            if a.is_active():
+                return a.lidar()
+        except Exception:
+            pass
+        try:
+            from roborun.ros_telemetry import get_bridge
+            return get_bridge().handle_lidar()
         except Exception:
             return []
 
