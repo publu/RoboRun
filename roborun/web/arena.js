@@ -470,17 +470,17 @@ function _box(group, w, h, d, m, x = 0, y = 0, z = 0) {
 }
 
 const BODIES = {
-  dog(group) {                                  /* Go2-ish */
+  dog(group, parts) {                                  /* Go2-ish */
     _box(group, 0.6, 0.17, 0.28, bodyMat);
     _box(group, 0.2, 0.12, 0.2, darkMat, 0.34, 0.05, 0);
     _box(group, 0.02, 0.055, 0.13, accentMat, 0.445, 0.05, 0);   // sensor face
-    bot.legs = legSet(group, [
+    parts.legs = legSet(group, [
       { x: 0.25, y: -0.06, z: -0.15, phase: 0 }, { x: 0.25, y: -0.06, z: 0.15, phase: 1 },
       { x: -0.25, y: -0.06, z: -0.15, phase: 1 }, { x: -0.25, y: -0.06, z: 0.15, phase: 0 },
     ], 0.26, 0.26);
     return { standH: 0.42, stepTime: 0.28, eyeH: 0.45, speed: 1.0 };
   },
-  biped(group) {                                /* G1-ish: pelvis, visor, arms */
+  biped(group, parts) {                                /* G1-ish: pelvis, visor, arms */
     _box(group, 0.28, 0.4, 0.24, bodyMat, 0, 0.32, 0);
     _box(group, 0.24, 0.16, 0.2, darkMat, 0, 0.04, 0);
     _box(group, 0.17, 0.17, 0.17, darkMat, 0, 0.62, 0);
@@ -495,12 +495,12 @@ const BODIES = {
       sh.add(el);
       _box(el, 0.06, 0.22, 0.06, bodyMat, 0, -0.11, 0);
     }
-    bot.legs = legSet(group, [
+    parts.legs = legSet(group, [
       { x: 0, y: -0.03, z: -0.11, phase: 0 }, { x: 0, y: -0.03, z: 0.11, phase: 1 },
     ], 0.42, 0.42);
     return { standH: 0.85, stepTime: 0.42, eyeH: 1.45, speed: 0.6 };
   },
-  arm(group) {                                  /* vertical xArm: yaw base, pitch shoulder/elbow, level wrist */
+  arm(group, parts) {                                  /* vertical xArm: yaw base, pitch shoulder/elbow, level wrist */
     const L1 = 2.0, L2 = 2.0;
     const jointX = (parent, r, len) => {        // joint housing, pitch axis = local x
       const k = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 20), darkMat);
@@ -536,15 +536,15 @@ const BODIES = {
       const f = _box(wrist, 0.025, 0.16, 0.06, darkMat, s * 0.085, -0.62, 0);
       fingers.push({ f, s });
     }
-    bot.armParts = { j1, j2, j3, wrist, fingers, reach: 4.0,
+    parts.armParts = { j1, j2, j3, wrist, fingers, reach: 4.0,
                      L1, L2, shoulderH: 1.5, wristH: 0.9 };
     return { standH: 0, stepTime: 1, eyeH: 3.0, speed: 1.2 };
   },
-  drone(group) {                                /* Mavic-ish: diagonal arms, pods, gimbal */
+  drone(group, parts) {                                /* Mavic-ish: diagonal arms, pods, gimbal */
     _box(group, 0.38, 0.1, 0.24, bodyMat);
     _box(group, 0.1, 0.06, 0.08, darkMat, 0.18, -0.04, 0);
     _box(group, 0.012, 0.03, 0.05, accentMat, 0.232, -0.04, 0);  // gimbal lens
-    bot.rotors = [];
+    parts.rotors = [];
     for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
       const arm = _box(group, 0.24, 0.025, 0.04, darkMat, sx * 0.19, 0.01, sz * 0.15);
       arm.rotation.y = -sx * sz * Math.PI / 4;
@@ -554,7 +554,7 @@ const BODIES = {
         new THREE.MeshStandardMaterial({ color: 0x4a7ad8, transparent: true, opacity: 0.45 }));
       rotor.position.set(sx * 0.27, 0.052, sz * 0.23);
       group.add(rotor);
-      bot.rotors.push(rotor);
+      parts.rotors.push(rotor);
     }
     return { standH: 1.0, stepTime: 1, eyeH: 0, speed: 1.3 };
   },
@@ -569,7 +569,7 @@ function buildBody(type) {
   bot.type = type;
   bot.group = new THREE.Group();
   bot.legs = []; bot.rotors = []; bot.armParts = null;
-  bodySpec = BODIES[type](bot.group);
+  bodySpec = BODIES[type](bot.group, bot);
   scene.add(bot.group);
 }
 
@@ -1418,123 +1418,48 @@ const ROBOTS = [
   { type: "drone", label: "DRONE",     tag: "fly the rings — altitude is yours" },
 ];
 function previewModel(type) {
+  // The cards instantiate the sim's own BODIES builders — the robot you
+  // hover is mesh-for-mesh the robot you drive. Only the idle/hover
+  // animation is preview-specific (in the sim, physics animates it).
   const g = new THREE.Group();
-  const body = new THREE.MeshStandardMaterial({ color: 0xc8cdd4, roughness: .5, metalness: .35 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x2a323a, roughness: .6 });
-  const accent = new THREE.MeshStandardMaterial({ color: 0x00d47e, emissive: 0x00d47e,
-                                                  emissiveIntensity: .35 });
-  const mesh = (geo, m, x = 0, y = 0, z = 0, parent = g) => {
-    const k = new THREE.Mesh(geo, m); k.position.set(x, y, z); parent.add(k); return k;
-  };
-  const box = (w, h, d, m, x, y, z, parent) =>
-    mesh(new THREE.BoxGeometry(w, h, d), m, x, y, z, parent);
-  const jointCyl = (r, len, m, x, y, z, parent) => {   // horizontal axis = a joint
-    const k = mesh(new THREE.CylinderGeometry(r, r, len, 18), m, x, y, z, parent);
-    k.rotation.x = Math.PI / 2; return k;
-  };
+  const parts = { legs: [], rotors: [], armParts: null };
+  BODIES[type](g, parts);
 
-  if (type === "dog") {                              /* Go2-ish: knees, sensor head */
-    box(.58, .16, .25, body, 0, .43, 0);
-    box(.18, .11, .19, dark, .32, .47, 0);
-    box(.02, .05, .12, accent, .415, .47, 0);        // sensor face
-    const legs = [];
-    for (const [x, z, phase] of [[.21, -.13, 0], [.21, .13, 1],
-                                 [-.21, -.13, 1], [-.21, .13, 0]]) {
-      const hip = new THREE.Group(); hip.position.set(x, .4, z); g.add(hip);
-      box(.06, .22, .05, dark, 0, -.11, 0, hip);
-      const knee = new THREE.Group(); knee.position.set(0, -.22, 0); hip.add(knee);
-      box(.045, .2, .04, body, 0, -.1, 0, knee);
-      legs.push({ hip, knee, phase });
-    }
-    return { group: g, freqIdle: 1.1, freqHover: 4.2, anim(ph, h) {
-      for (const l of legs) {                        // trot: knees fold on the back-swing
-        const a = ph + l.phase * Math.PI;
-        l.hip.rotation.z = Math.sin(a) * (.1 + h * .3);
-        l.knee.rotation.z = .22 + Math.max(0, -Math.sin(a - .7)) * (.18 + h * .55);
-      }
-      g.position.y = Math.abs(Math.sin(ph)) * .01 * (1 + h * 2);
-    } };
+  if (type === "dog" || type === "biped") {
+    const dogish = type === "dog";
+    return { group: g, freqIdle: dogish ? 1.1 : .9, freqHover: dogish ? 4.2 : 3.4,
+      anim(ph, h) {
+        for (const l of parts.legs) {                // trot: knees fold on the back-swing
+          const a = ph + (l.hip.phase || 0) * Math.PI;
+          l.hipPivot.rotation.z = Math.sin(a) * ((dogish ? .1 : .06) + h * .28);
+          l.kneePivot.rotation.z =
+            -(.18 + Math.max(0, -Math.sin(a - .7)) * (.15 + h * .5));
+        }
+        g.position.y = Math.abs(Math.sin(ph)) * .01 * (1 + h * 2);
+      } };
   }
 
-  if (type === "biped") {                            /* G1-ish: arms, visor */
-    box(.26, .38, .2, body, 0, 1.06, 0);
-    box(.22, .16, .18, dark, 0, .78, 0);
-    box(.16, .16, .16, dark, 0, 1.37, 0);
-    box(.12, .045, .02, accent, 0, 1.39, .082);      // visor
-    const arms = [], legs = [];
-    for (const s of [-1, 1]) {
-      const sh = new THREE.Group(); sh.position.set(0, 1.21, s * .18); g.add(sh);
-      box(.06, .26, .06, dark, 0, -.13, 0, sh);
-      const el = new THREE.Group(); el.position.set(0, -.26, 0); sh.add(el);
-      box(.05, .22, .05, body, 0, -.11, 0, el);
-      el.rotation.z = .25;
-      arms.push({ sh, phase: s > 0 ? 0 : 1 });
-      const hip = new THREE.Group(); hip.position.set(0, .7, s * .07); g.add(hip);
-      box(.075, .36, .075, dark, 0, -.18, 0, hip);
-      const knee = new THREE.Group(); knee.position.set(0, -.36, 0); hip.add(knee);
-      box(.065, .32, .065, body, 0, -.16, 0, knee);
-      legs.push({ hip, knee, phase: s > 0 ? 0 : 1 });
-    }
-    return { group: g, freqIdle: .9, freqHover: 3.4, anim(ph, h) {
-      for (const l of legs) {
-        const a = ph + l.phase * Math.PI;
-        l.hip.rotation.z = Math.sin(a) * (.06 + h * .3);
-        l.knee.rotation.z = -Math.max(0, -Math.sin(a - .7)) * (.12 + h * .5);
-      }
-      for (const a of arms)                          // arms counter-swing the legs
-        a.sh.rotation.z = Math.sin(ph + a.phase * Math.PI + Math.PI) * (.05 + h * .25);
-      g.position.y = Math.abs(Math.sin(ph)) * .008 * (1 + h * 2);
-    } };
-  }
-
-  if (type === "arm") {                              /* xArm-ish: base yaw + 3 pitch axes + gripper */
-    mesh(new THREE.CylinderGeometry(.17, .2, .1, 24), dark, 0, .05, 0);
-    const j1 = new THREE.Group(); j1.position.y = .1; g.add(j1);
-    mesh(new THREE.CylinderGeometry(.12, .13, .14, 24), body, 0, .07, 0, j1);
-    const j2 = new THREE.Group(); j2.position.y = .17; j1.add(j2);
-    jointCyl(.09, .2, dark, 0, 0, 0, j2);
-    box(.1, .4, .1, body, 0, .2, 0, j2);
-    const j3 = new THREE.Group(); j3.position.y = .4; j2.add(j3);
-    jointCyl(.075, .17, dark, 0, 0, 0, j3);
-    box(.085, .34, .085, body, 0, .17, 0, j3);
-    const j4 = new THREE.Group(); j4.position.y = .34; j3.add(j4);
-    jointCyl(.06, .14, dark, 0, 0, 0, j4);
-    box(.06, .1, .06, body, 0, .07, 0, j4);
-    const fingers = [];
-    for (const s of [-1, 1]) {
-      const f = box(.016, .085, .04, accent, s * .035, .16, 0, j4);
-      fingers.push({ f, s });
-    }
-    j2.rotation.z = -.55; j3.rotation.z = 1.0; j4.rotation.z = -.45;
+  if (type === "arm") {
+    const A = parts.armParts;
+    // the same reach-out-front stance the sim IK takes at d ≈ 2.6 m
+    const T1 = .61, T2 = -1.68;
     return { group: g, freqIdle: .7, freqHover: 1.9, anim(ph, h) {
-      j1.rotation.y = Math.sin(ph * .5) * (.25 + h * .55);
-      j2.rotation.z = -.55 + Math.sin(ph * .8) * (.07 + h * .22);
-      j3.rotation.z = 1.0 + Math.cos(ph * .8) * (.09 + h * .28);
-      // wrist counter-rotates to keep the gripper roughly level
-      j4.rotation.z = -(j2.rotation.z + j3.rotation.z) * .9;
-      const grip = .035 - (Math.sin(ph * 1.6) * .5 + .5) * h * .02;
-      for (const { f, s } of fingers) f.position.x = s * grip;
+      A.j1.rotation.y = Math.sin(ph * .5) * (.3 + h * .5);
+      const b1 = T1 + Math.sin(ph * .8) * (.05 + h * .15);
+      const b2 = T2 + Math.cos(ph * .8) * (.07 + h * .2);
+      A.j2.rotation.x = -b1;
+      A.j3.rotation.x = -b2;
+      A.wrist.rotation.x = b1 + b2;                  // gripper stays level
+      const grip = .085 - (Math.sin(ph * 1.6) * .5 + .5) * h * .04;
+      for (const { f, s } of A.fingers) f.position.x = s * grip;
     } };
   }
 
-  /* drone (Mavic-ish): diagonal arms, motor pods, gimbal — climbs on hover */
-  box(.32, .085, .2, body, 0, .9, 0);
-  box(.09, .05, .07, dark, .15, .865, 0);            // gimbal camera
-  box(.01, .025, .05, accent, .196, .865, 0);
-  const rotors = [];
-  for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-    const arm = box(.2, .022, .035, dark, sx * .17, .91, sz * .12);
-    arm.rotation.y = -sx * sz * Math.PI / 4;
-    mesh(new THREE.CylinderGeometry(.022, .026, .045, 12), dark, sx * .235, .92, sz * .185);
-    const r = mesh(new THREE.CylinderGeometry(.1, .1, .01, 18),
-      new THREE.MeshStandardMaterial({ color: 0x4a7ad8, transparent: true, opacity: .45 }),
-      sx * .235, .948, sz * .185);
-    rotors.push(r);
-  }
+  /* drone: rotors always spin; hover climbs and descends with a bank */
   return { group: g, freqIdle: 1.0, freqHover: 1.6, anim(ph, h) {
-    for (const r of rotors) r.rotation.y = ph * 9 * (1 + h);
-    g.position.y = Math.sin(ph * .7) * .04 + h * Math.sin(ph * 1.1) * .16;   // up + down
-    g.rotation.x = Math.sin(ph * .9) * .05 * h;                              // slight bank
+    for (const r of parts.rotors) r.rotation.y = ph * 9 * (1 + h);
+    g.position.y = Math.sin(ph * .7) * .04 + h * Math.sin(ph * 1.1) * .16;
+    g.rotation.x = Math.sin(ph * .9) * .05 * h;
   } };
 }
 const startEl = document.getElementById("start");
@@ -1566,6 +1491,7 @@ function buildStartScreen() {
     key.position.set(2, 3, 1.5);
     pscene.add(key);
     const pv = previewModel(r.type);
+    pv.anim(0, 0);                 // settle into the stance before framing
     pscene.add(pv.group);
     // frame the model from its bounding box — every robot lands centered
     const bb = new THREE.Box3().setFromObject(pv.group);
