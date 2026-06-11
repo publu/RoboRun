@@ -296,9 +296,9 @@ class RosbridgeClient:
 
     def move(self, linear_x: float = 0.0, linear_y: float = 0.0,
              angular_z: float = 0.0,
-             topic: str = "/cmd_vel") -> None:
+             topic: str = "/cmd_vel", *, linear_z: float = 0.0) -> None:
         self.publish(topic, "geometry_msgs/Twist", {
-            "linear": {"x": linear_x, "y": linear_y, "z": 0.0},
+            "linear": {"x": linear_x, "y": linear_y, "z": linear_z},
             "angular": {"x": 0.0, "y": 0.0, "z": angular_z},
         })
 

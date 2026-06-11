@@ -71,6 +71,10 @@ class RosTelemetryBridge:
         # behavior written in the sim ports 1:1 to the connected robot.
         self._handle: dict[str, Any] = {}
         self._handle_lock = threading.Lock()
+        # What kind of robot answered, and where its velocity commands go
+        # (a MAVLink drone listens on the mavros setpoint topic, not /cmd_vel)
+        self.robot_type = None
+        self.cmd_vel_topic = "/cmd_vel"
 
     def _handle_put(self, key: str, value: Any) -> None:
         with self._handle_lock:
@@ -144,6 +148,13 @@ class RosTelemetryBridge:
             self._subscribed_topics.clear()
             self._last_host = host
 
+        self._subscribe_client(bus, client)
+
+    def _subscribe_client(self, bus: Any, client: Any) -> None:
+        """Subscribe everything the handle and dashboard need on this
+        client. Split out so journey tests can run it against a mock
+        rosbridge robot — every robot profile gets tested without
+        hardware (EXPERIENCE_MATRIX G4)."""
         try:
             available = client.list_topics(timeout=3.0)
         except Exception:
@@ -151,7 +162,22 @@ class RosTelemetryBridge:
 
         available_names = {t["topic"] for t in available}
 
-        for topic, msg_type in STANDARD_TOPICS:
+        # the robot's own topic map (mavros drones, etc.) extends the
+        # standard table — same handlers, the robot's topic names
+        from roborun.robot_types import detect_type, get_profile
+        self.robot_type = detect_type(ros_topics=sorted(available_names))
+        type_topics = (get_profile(self.robot_type) or {}).get("ros_topics", {})
+        self.cmd_vel_topic = type_topics.get("cmd_vel", "/cmd_vel")
+        _TYPE_MSG = {"odom": "nav_msgs/Odometry",
+                     "battery": "sensor_msgs/BatteryState",
+                     "imu": "sensor_msgs/Imu",
+                     "scan": "sensor_msgs/LaserScan"}
+        table = list(STANDARD_TOPICS) + [
+            (topic, _TYPE_MSG[key]) for key, topic in type_topics.items()
+            if key in _TYPE_MSG and topic not in {t for t, _ in STANDARD_TOPICS}
+        ]
+
+        for topic, msg_type in table:
             if topic in self._subscribed_topics:
                 continue
             if topic not in available_names:
@@ -163,9 +189,10 @@ class RosTelemetryBridge:
 
             # topics the policy handle reads arrive at policy rate;
             # dashboard-only topics stay at chart rate
-            throttle = 100 if topic in ("/odom", "/scan") else 500
+            handle_fed = "Odometry" in msg_type or "LaserScan" in msg_type
             try:
-                client.subscribe(topic, msg_type, handler, throttle_rate=throttle)
+                client.subscribe(topic, msg_type, handler,
+                                 throttle_rate=100 if handle_fed else 500)
                 self._subscribed_topics.add(topic)
             except Exception:
                 pass

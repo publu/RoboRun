@@ -426,7 +426,12 @@ class Robot:
                 from roborun.rosbridge import get_client
                 client = get_client(auto_connect=False)
                 if client and client.health.get("connected"):
-                    client.move(forward, strafe, turn)
+                    # the robot's own command topic (mavros setpoint for
+                    # drones), and climb rides Twist linear.z — the same
+                    # four axes the arena takes (SIM_SPEC contract)
+                    from roborun.ros_telemetry import get_bridge
+                    client.move(forward, strafe, turn,
+                                get_bridge().cmd_vel_topic, linear_z=climb)
                     sent = True
             except Exception:
                 pass
