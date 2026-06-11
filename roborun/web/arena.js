@@ -209,7 +209,7 @@ def player_policy(robot):
          + "drives the end-effector — forward=+x, strafe=+z; grasp(True) "
          + "closes near a block, grasp(False) releases. pose() is the "
          + "effector. Sort all four.",
-    bounds: 8, spawn: { x: 0, z: 0, heading: 0 },
+    bounds: 8, spawn: { x: 1.6, z: 0, heading: 0 },   // effector home: out front, not over the base
     rooms: [], walls: [],
     props: [
       { kind: "block", color: "red", x: -1.5, z: -2, id: 0 },
@@ -506,27 +506,27 @@ const BODIES = {
       const k = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 20), darkMat);
       k.rotation.z = Math.PI / 2; k.castShadow = true; parent.add(k); return k;
     };
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.44, 0.3, 24), darkMat);
-    base.position.y = 0.15; base.castShadow = true; group.add(base);
-    const column = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.24, 0.55, 24), bodyMat);
-    column.position.y = 0.575; column.castShadow = true; group.add(column);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.56, 0.34, 24), darkMat);
+    base.position.y = 0.17; base.castShadow = true; group.add(base);
+    const column = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.3, 0.86, 24), bodyMat);
+    column.position.y = 0.77; column.castShadow = true; group.add(column);
 
-    const j1 = new THREE.Group(); j1.position.y = 0.85; group.add(j1);  // base yaw
-    const turret = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.19, 0.25, 24), bodyMat);
-    turret.position.y = 0.125; turret.castShadow = true; j1.add(turret);
+    const j1 = new THREE.Group(); j1.position.y = 1.2; group.add(j1);   // base yaw
+    const turret = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.23, 0.3, 24), bodyMat);
+    turret.position.y = 0.15; turret.castShadow = true; j1.add(turret);
 
-    const j2 = new THREE.Group(); j2.position.y = 0.3; j1.add(j2);      // shoulder pitch (world y 1.15)
-    jointX(j2, 0.17, 0.32);
-    const link1 = _box(j2, 0.15, 0.15, L1, bodyMat);
+    const j2 = new THREE.Group(); j2.position.y = 0.3; j1.add(j2);      // shoulder pitch (world y 1.5)
+    jointX(j2, 0.24, 0.46);
+    const link1 = _box(j2, 0.2, 0.2, L1, bodyMat);
     link1.geometry.translate(0, 0, L1 / 2);
 
     const j3 = new THREE.Group(); j3.position.set(0, 0, L1); j2.add(j3); // elbow pitch
-    jointX(j3, 0.13, 0.26);
-    const link2 = _box(j3, 0.12, 0.12, L2, bodyMat);
+    jointX(j3, 0.18, 0.38);
+    const link2 = _box(j3, 0.16, 0.16, L2, bodyMat);
     link2.geometry.translate(0, 0, L2 / 2);
 
     const wrist = new THREE.Group(); wrist.position.set(0, 0, L2); j3.add(wrist);
-    jointX(wrist, 0.09, 0.18);
+    jointX(wrist, 0.12, 0.26);
     const drop = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.04, 0.5, 14), darkMat);
     drop.position.y = -0.27; drop.castShadow = true; wrist.add(drop);
     _box(wrist, 0.14, 0.05, 0.1, bodyMat, 0, -0.54, 0);
@@ -537,7 +537,7 @@ const BODIES = {
       fingers.push({ f, s });
     }
     bot.armParts = { j1, j2, j3, wrist, fingers, reach: 4.0,
-                     L1, L2, shoulderH: 1.15, wristH: 0.9 };
+                     L1, L2, shoulderH: 1.5, wristH: 0.9 };
     return { standH: 0, stepTime: 1, eyeH: 3.0, speed: 1.2 };
   },
   drone(group) {                                /* Mavic-ish: diagonal arms, pods, gimbal */
@@ -648,10 +648,20 @@ function updateBody(dt, cmd) {
   if (bot.type === "arm") {
     const p = bot.armParts;
     const nx = bot.pos.x + f * dt, nz = bot.pos.z + st * dt;
-    if (Math.hypot(nx, nz) < p.reach * 0.95) { bot.pos.x = nx; bot.pos.z = nz; }
+    // workspace is an annulus: outer = reach, inner keep-out stops the IK
+    // from folding onto its own base; paths through the middle slide
+    // around the rim like a wall instead of sticking
+    const dNow = Math.hypot(bot.pos.x, bot.pos.z), dNew = Math.hypot(nx, nz);
+    if (dNew < p.reach * 0.95) {
+      if (dNew > 0.7 || dNew > dNow) { bot.pos.x = nx; bot.pos.z = nz; }
+      else {
+        const a = Math.atan2(nz, nx);
+        bot.pos.x = Math.cos(a) * 0.72; bot.pos.z = Math.sin(a) * 0.72;
+      }
+    }
     // vertical 2-link IK in the yaw plane: shoulder pitch + elbow pitch
     // put the wrist at (d, wristH); the wrist counter-pitches to stay level
-    const d = Math.max(0.2, Math.hypot(bot.pos.x, bot.pos.z));
+    const d = Math.max(0.7, Math.hypot(bot.pos.x, bot.pos.z));
     const dy = p.wristH - p.shoulderH;
     const D = Math.min(Math.hypot(d, dy), p.L1 + p.L2 - 1e-3);
     const phi = Math.atan2(dy, d);
