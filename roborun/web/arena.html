@@ -280,6 +280,17 @@ player_policy and poll arena_status until won. No teleop.</pre>
   <span class="note">Heads-up: use this HTTP endpoint while the server is running — the
   standalone <b>roborun-mcp</b> stdio command is for driving robots without the deck and
   can't see this arena.</span>
+  <h2 style="margin-top:18px">DRIVE A REAL ROBOT</h2>
+  <span class="note">The policy that beats a chamber is a file, and the file is the product:
+  the same <b>pose() / lidar() / see() / move()</b> handle drives hardware. Point roborun at
+  the robot once; every later plain <b>roborun</b> reconnects automatically.</span>
+  <pre>pip install ros-agent
+roborun connect 192.168.1.42   # rosbridge on the robot — prints the exact
+                               # two setup lines to run there if it's missing
+roborun                        # deck + arena + your behaviors, now on hardware</pre>
+  <span class="note">Works with Unitree Go2/G1, TurtleBot, drones (MAVLink), anything with
+  rosbridge or DDS — no ROS install on your machine. <b>roborun connect --scan</b> does
+  DDS discovery when rosbridge isn't allowed.</span>
 </div></div>
 
 <div id="win"><div class="card">
