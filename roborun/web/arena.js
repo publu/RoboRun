@@ -799,6 +799,14 @@ function drawMap() {
       mapCtx.fillRect(cx, cz - 1, 1, 3);
     }
   }
+  if (serverIntent?.target) {
+    const [tx, tz] = cellOf(serverIntent.target[0], serverIntent.target[1]);
+    if (tx >= 1 && tx < GRID - 1 && tz >= 1 && tz < GRID - 1) {
+      mapCtx.fillStyle = (Date.now() % 700) < 380 ? "#e0c050" : "#7a6a28";
+      mapCtx.fillRect(tx - 2, tz, 5, 1);     // pulsing ✕ — where it's headed
+      mapCtx.fillRect(tx, tz - 2, 1, 5);
+    }
+  }
   const [cx, cz] = cellOf(bot.pos.x, bot.pos.z);
   mapCtx.fillStyle = "#00d47e";
   mapCtx.fillRect(cx - 1, cz - 1, 3, 3);
@@ -1210,6 +1218,7 @@ async function bootWasm() {
 
 let serverCmd = { forward: 0, strafe: 0, turn: 0, climb: 0, grip: 0 };
 let serverAnswer = null;
+let serverIntent = null;
 let linked = false, lastLidar = [];
 let serverSightings = [];
 async function pollSightings() {
@@ -1239,6 +1248,7 @@ async function pollCmd() {
       const r = await (await fetch("/api/arena/cmd")).json();
       serverCmd = r.cmd;
       serverAnswer = r.answer;
+      serverIntent = r.intent || null;
       if (!linked) { linked = true; startAttemptRecording(); }
     } catch { linked = false; }
   }
@@ -1264,6 +1274,7 @@ async function pushState() {
       const r = wasmRT.tick(currentState());
       serverCmd = r.cmd;
       serverAnswer = r.answer;
+      serverIntent = r.intent || null;
       if (r.error) policyStatus(r.error.trim().split("\n").pop(), "err");
     } catch {}
   } else if (linked) {
@@ -1271,7 +1282,22 @@ async function pushState() {
   }
   setTimeout(pushState, 100);
 }
+const toastsEl = document.getElementById("toasts");
+function showToast(text) {
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.textContent = text;
+  t.addEventListener("animationend", (e) => {
+    if (e.animationName === "toast-out") t.remove();
+  });
+  toastsEl.appendChild(t);
+  while (toastsEl.children.length > 4) toastsEl.firstChild.remove();
+}
+
 function postEvent(type, title, detail) {
+  if (type === "detection" || type === "task" ||
+      (type === "arena" && !title.startsWith("level loaded")))
+    showToast(title);
   if (MODE === "wasm") {
     try { wasmRT?.emitEvent(type, title, detail); } catch {}
     return;
@@ -1509,6 +1535,9 @@ function currentRoom() {
   return "field";
 }
 function updateTelemetry() {
+  const it = document.getElementById("intent");
+  it.textContent = serverIntent
+    ? `▸ ${serverIntent.verb} — ${serverIntent.detail}` : "";
   document.getElementById("teleRoom").textContent = `room ${currentRoom()}`;
   document.getElementById("teleOdo").textContent = `odometer ${odo.toFixed(1)} m`;
   document.getElementById("telePose").textContent = bot.type === "drone"

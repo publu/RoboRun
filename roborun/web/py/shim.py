@@ -120,6 +120,7 @@ def tick(state_json: str) -> str:
 
     err, _policy_error = _policy_error, None
     return json.dumps({"cmd": arena.cmd(), "answer": arena.answer(),
+                       "intent": arena.intent(),
                        "running": _policy is not None, "error": err})
 
 

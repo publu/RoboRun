@@ -82,6 +82,20 @@
   #p-status .link.on { color: #00d47e; }
   #p-status .link.off { color: #e0a030; }
   #p-status .rec { color: #d84a4a; }
+  #p-status .intent { color: #00d47e; min-height: 16px;
+                      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #p-status .intent:empty { display: none; }
+
+  /* discovery toasts — perception events pop as they happen */
+  #toasts { position: fixed; right: 12px; bottom: 44px; z-index: 45;
+            display: flex; flex-direction: column-reverse; gap: 6px;
+            pointer-events: none; max-width: 320px; }
+  .toast { background: rgba(11,14,17,.92); border: 1px solid #1f4434;
+           border-left: 3px solid #00d47e; border-radius: 6px;
+           padding: 6px 10px; color: #d7e0e8; font-size: 12px;
+           animation: toast-in .18s ease-out, toast-out .5s ease-in 3s forwards; }
+  @keyframes toast-in { from { transform: translateX(20px); opacity: 0; } }
+  @keyframes toast-out { to { opacity: 0; } }
 
   #map { display: block; image-rendering: pixelated; width: 100%; border-radius: 4px; }
 
@@ -234,6 +248,7 @@
   <div class="p-body">
     <div>⏱ <span id="clock">0.0s</span> <span class="rec" id="rec"></span></div>
     <div class="link off" id="link">behaviors: searching…</div>
+    <div class="intent" id="intent"></div>
     <div id="cmdline">cmd —</div>
     <div class="tele" id="teleRoom">room —</div>
     <div class="tele" id="teleOdo">odometer 0.0 m</div>
@@ -334,6 +349,8 @@ roborun                        # deck + arena + your behaviors, now on hardware<
   <div class="after server-only"><a href="/?runs=1" target="_blank">open the sealed run in the deck →</a></div>
   <div class="after wasm-only" style="display:none"><a href="#" onclick="document.querySelector('#toolbar [data-panel=p-runs]').click();document.getElementById('win').classList.remove('show');return false">view all recorded attempts → RUNS</a></div>
 </div></div>
+
+<div id="toasts"></div>
 
 <div id="keys">drag headers · resize corners · ⌘⏎ run · L lidar cloud · C main camera · N level · <b style="color:#6b7b88">WASD takes over anytime</b> (practice run)<span class="server-only"> · <a href="/">deck</a></span></div>
 

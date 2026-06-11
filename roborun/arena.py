@@ -30,6 +30,8 @@ class ArenaState:
         self._state: dict[str, Any] = {}
         self._state_ts = 0.0
         self._answer: dict[str, Any] | None = None
+        self._intent: dict[str, Any] | None = None
+        self._intent_ts = 0.0
 
     # ── Python side (behaviors) ──────────────────────────────────────────
 
@@ -44,6 +46,19 @@ class ArenaState:
     def set_grip(self, closed: bool) -> None:
         with self._lock:
             self._cmd["grip"] = 1.0 if closed else 0.0
+
+    def set_intent(self, intent: dict | None) -> None:
+        """What the policy is TRYING to do right now — the verbs report it,
+        the UI narrates it. Stale intent (policy stopped) reads as None."""
+        with self._lock:
+            self._intent = intent
+            self._intent_ts = time.monotonic()
+
+    def intent(self) -> dict | None:
+        with self._lock:
+            if time.monotonic() - self._intent_ts > 1.5:
+                return None
+            return dict(self._intent) if self._intent else None
 
     def set_answer(self, text: str) -> None:
         with self._lock:

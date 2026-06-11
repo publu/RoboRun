@@ -291,7 +291,27 @@ class Robot:
         if t is None:
             self.stop()
             return False
-        return self.goto(t[0], t[1], tol=tol)
+        label = getattr(thing, "label", "target")
+        dist = getattr(thing, "dist", None)
+        self._intent("approach", f"{label}" + (f" · {dist:.1f}m" if dist else ""), t)
+        self._in_verb = True
+        try:
+            return self.goto(t[0], t[1], tol=tol)
+        finally:
+            self._in_verb = False
+
+    def _intent(self, verb: str, detail: str,
+                target: tuple[float, float] | None = None) -> None:
+        """Report what this verb is trying to do — the arena narrates it
+        live (status line, map marker). Cheap, fire-and-forget."""
+        try:
+            from roborun.arena import get_arena
+            a = get_arena()
+            if a.is_active():
+                a.set_intent({"verb": verb, "detail": detail,
+                              "target": list(target) if target else None})
+        except Exception:
+            pass
 
     def explore(self) -> bool:
         """One tick of frontier exploration — build an occupancy map from
@@ -321,6 +341,8 @@ class Robot:
         path = ex["path"]
         if not path:
             ex["done"] = True
+            self._intent("explore", f"fully mapped — {len(grid)} cells, "
+                                    "nothing unknown reachable")
             self.stop()
             return True
         while path and math.hypot(path[0][0] * _EXPLORE_CELL - pose["x"],
@@ -329,12 +351,20 @@ class Robot:
         if not path:
             return False
         tx, tz = path[min(4, len(path) - 1)]
+        wx, wz = tx * _EXPLORE_CELL, tz * _EXPLORE_CELL
+        self._intent("explore",
+                     f"mapped {len(grid)} cells · chasing unseen space",
+                     (path[-1][0] * _EXPLORE_CELL, path[-1][1] * _EXPLORE_CELL))
         ahead = min(scan[:2] + scan[-2:])
-        if ahead < 0.6:
-            left, right = sum(scan[6:12]), sum(scan[-12:-6])
-            self.move(turn=1.0 if left > right else -1.0)
-        else:
-            self.goto(tx * _EXPLORE_CELL, tz * _EXPLORE_CELL)
+        self._in_verb = True
+        try:
+            if ahead < 0.6:
+                left, right = sum(scan[6:12]), sum(scan[-12:-6])
+                self.move(turn=1.0 if left > right else -1.0)
+            else:
+                self.goto(wx, wz)
+        finally:
+            self._in_verb = False
         return False
 
     def goto(self, x: float, z: float, speed: float = 0.9,
@@ -342,6 +372,8 @@ class Robot:
         """One tick of drive-toward-point. Call it every tick; it steers and
         returns True once within tol. Needs pose (arena / odom robots).
         Routing around walls is your policy's job — this is the last meter."""
+        if not getattr(self, "_in_verb", False):
+            self._intent("goto", f"→ ({x:.1f}, {z:.1f})", (x, z))
         import math
         pose = self.pose()
         if pose is None:
