@@ -13,7 +13,109 @@ import { initPhysics, createWorld } from "./physics.js";
 const COLORS = { red: 0xd84a4a, blue: 0x4a7ad8, green: 0x44b86a,
                  yellow: 0xd8b54a, purple: 0x9a5ad8 };
 
+const SANDBOX_LEVELS = [
+  /* ── SANDBOX — the dev loop, no game. Code a robot, watch it run,
+     deploy the same file with `roborun connect <ip>`. ── */
+  {
+    name: "dog-sandbox", robot: "dog", sandbox: true,
+    title: "DOG — SANDBOX",
+    brief: "No objective, no timer. An open room, crates with real physics, "
+         + "things to see(). Edit the policy here — or edit behaviors/*.py in "
+         + "your own editor when running locally: saves hot-reload onto the "
+         + "robot. The same file drives a real Go2 after `roborun connect`.",
+    bounds: 12, spawn: { x: 0, z: 0, heading: 0 },
+    rooms: [],
+    walls: [[-12, -12, 12, -12], [-12, 12, 12, 12],
+            [-12, -12, -12, 12], [12, -12, 12, 12]],
+    props: [
+      { kind: "crate", color: "yellow", x: 3, z: -2, id: 0 },
+      { kind: "crate", color: "yellow", x: -2.5, z: 3, id: 1 },
+      { kind: "door", color: "red", x: -6, z: -6 },
+      { kind: "door", color: "blue", x: 7, z: 5 },
+      { kind: "button", color: "green", x: 5, z: -6, id: 9 },
+    ],
+    win: { type: "sandbox" },
+    demo: `from roborun.behaviors import behavior
+
+# SANDBOX — no objective. Edit, RUN, repeat. Locally this is a real file
+# (behaviors/player_policy.py); saving it in any editor hot-reloads the
+# robot. The same handle drives real hardware: pose/lidar/see/move.
+
+@behavior(hz=10)
+def player_policy(robot):
+    scan = robot.lidar()
+    if scan and min(scan[:3] + scan[-3:]) < 1.0:
+        return robot.move(turn=1.2)        # wall coming up — turn away
+    robot.move(forward=0.8)                # cruise; try robot.see("crate")
+`,
+  },
+  {
+    name: "biped-sandbox", robot: "biped", sandbox: true,
+    title: "HUMANOID — SANDBOX",
+    brief: "No objective. Walk, look around, shove the crates (they are real "
+         + "rigid bodies). Edit the policy here or in behaviors/*.py locally; "
+         + "the same file drives a real G1 after `roborun connect`.",
+    bounds: 10, spawn: { x: 0, z: 3, heading: 1.57 },
+    rooms: [],
+    walls: [[-10, -10, 10, -10], [-10, 10, 10, 10],
+            [-10, -10, -10, 10], [10, -10, 10, 10]],
+    props: [
+      { kind: "crate", color: "yellow", x: 0, z: -3, id: 0 },
+      { kind: "crate", color: "yellow", x: 2.5, z: -4, id: 1 },
+      { kind: "zone", color: "green", x: -5, z: -5, r: 1.2, label: "green zone" },
+    ],
+    win: { type: "sandbox" },
+    demo: `from roborun.behaviors import behavior
+
+# SANDBOX — walk to a crate and lean on it. Crates are rigid bodies:
+# contact comes from the physics engine, not an animation.
+
+@behavior(hz=10)
+def player_policy(robot):
+    crates = robot.see("crate")
+    if crates:
+        robot.approach(crates[0], tol=0.5)   # push through it a little
+    else:
+        robot.explore()
+`,
+  },
+  {
+    name: "drone-sandbox", robot: "drone", sandbox: true,
+    title: "DRONE — SANDBOX",
+    brief: "No objective. Altitude is real (move(climb=…), pose()['y']), the "
+         + "rings are toys. Edit here or in behaviors/*.py locally; the same "
+         + "file drives a MAVLink drone after `roborun connect`.",
+    bounds: 14, spawn: { x: 0, z: 0, heading: 0 },
+    rooms: [],
+    walls: [[-14, -14, 14, -14], [-14, 14, 14, 14],
+            [-14, -14, -14, 14], [14, -14, 14, 14]],
+    props: [
+      { kind: "ring", color: "green", x: -5, z: -5, y: 1.6, id: 0 },
+      { kind: "ring", color: "purple", x: 6, z: 4, y: 2.6, id: 1 },
+      { kind: "crate", color: "yellow", x: 2, z: -3, id: 0 },
+    ],
+    win: { type: "sandbox" },
+    demo: `from roborun.behaviors import behavior
+from math import cos, sin
+
+# SANDBOX — lazy orbit with altitude. climb stacks on goto; pose()['y']
+# is real altitude with a ceiling and a floor.
+
+@behavior(hz=10)
+def player_policy(robot):
+    pose = robot.pose()
+    if not pose:
+        return robot.stop()
+    t = robot.state.setdefault("t", 0) + 1
+    robot.state["t"] = t
+    robot.goto(6 * cos(t / 80), 6 * sin(t / 80), tol=0.8)
+    robot.move(climb=0.6 if pose.get("y", 1) < 2.2 else -0.2)
+`,
+  },
+];
+
 const LEVELS = [
+  ...SANDBOX_LEVELS,
   /* ── DOG 1 · DOOR CENSUS — explore, count with perception, answer ── */
   {
     name: "dog-census", robot: "dog",
@@ -1667,5 +1769,6 @@ requestAnimationFrame(frame);
 /* harness hook — scripts/e2e_arena.mjs drives the page without the UI */
 window.__arena = {
   setCode, loadLevel,
+  levels: () => LEVELS.map((l) => l.name),
   status: () => ({ won, level: LV.name, mode: MODE, wasmReady: !!wasmRT }),
 };
