@@ -204,11 +204,13 @@ def player_policy(robot):
   {
     name: "arm-sort", robot: "arm",
     title: "ARM 01 — SORT THE BLOCKS",
-    brief: "A fixed arm over a table. Four blocks (red/blue), two bins: RED "
-         + "bin at (-3, 0), BLUE bin at (3, 0). Controls differ: move() "
-         + "drives the end-effector — forward=+x, strafe=+z; grasp(True) "
-         + "closes near a block, grasp(False) releases. pose() is the "
-         + "effector. Sort all four.",
+    brief: "A fixed arm over a table, camera ON the hand (eye-in-hand): it "
+         + "looks radially outward from the base, so orbit the hand to scan "
+         + "the table — pose()['heading'] is where it's looking. Four blocks "
+         + "(red/blue), two bins: RED at (-3, 0), BLUE at (3, 0). move() "
+         + "drives the hand in world axes (forward=+x, strafe=+z); "
+         + "grasp(True) near a block picks it up, grasp(False) releases. "
+         + "Sort all four.",
     bounds: 8, spawn: { x: 1.6, z: 0, heading: 0 },   // effector home: out front, not over the base
     rooms: [], walls: [],
     props: [
@@ -221,7 +223,7 @@ def player_policy(robot):
     ],
     win: { type: "sort", blocks: 4, grabDist: 0.4 },
     demo: `from roborun.behaviors import behavior
-from math import cos, sin
+from math import atan2, cos, sin, hypot
 
 FOV = 1.323
 BINS = {"red": (-3, 0), "blue": (3, 0)}   # given in the brief
@@ -234,6 +236,26 @@ def toward(robot, pose, tx, tz, tol=0.25):
                strafe=max(-0.8, min(0.8, 2 * dz)))
     return False
 
+def go(robot, pose, tx, tz, tol=0.25):
+    # the base sits at (0,0) inside the workspace: if the straight line
+    # to the target crosses its keep-out, arc around it first
+    x, z = pose["x"], pose["z"]
+    dx, dz = tx - x, tz - z
+    L2 = dx * dx + dz * dz or 1e-9
+    t = max(0.0, min(1.0, -(x * dx + z * dz) / L2))
+    if hypot(x + t * dx, z + t * dz) < 0.95:
+        ca, ta = atan2(z, x), atan2(tz, tx)
+        s = 1.0 if sin(ta - ca) > 0 else -1.0
+        wa = ca + s * 0.5                  # waypoint half a radian around
+        toward(robot, pose, cos(wa) * 1.3, sin(wa) * 1.3, tol=0.3)
+        return False
+    return toward(robot, pose, tx, tz, tol)
+
+def planar(dist):
+    # the wrist camera is ~0.7 m above the block tops; dist is 3D,
+    # so take out the height before projecting onto the table
+    return max(0.05, max(dist * dist - 0.49, 0.0) ** 0.5)
+
 @behavior(hz=10)
 def player_policy(robot):
     pose = robot.pose()
@@ -243,21 +265,33 @@ def player_policy(robot):
 
     if st.get("carrying"):                 # take it to the matching bin
         bx, bz = BINS[st["carrying"]]
-        if toward(robot, pose, bx, bz):
+        if go(robot, pose, bx, bz):
             robot.grasp(False)
             st["carrying"] = None
         return
 
     blocks = robot.see("red block") + robot.see("blue block")
-    if not blocks:
-        return robot.stop()                # table clear — done
-    b = min(blocks, key=lambda d: d.dist or 9)
-    a = (0.5 - b.cx) * FOV                 # effector camera looks along +x
-    tx = pose["x"] + cos(a) * (b.dist or 0)
-    tz = pose["z"] - sin(a) * (b.dist or 0)
-    if toward(robot, pose, tx, tz):
-        robot.grasp(True)
-        st["carrying"] = b.label.split()[0]
+    if blocks:                             # in view: project via the hand camera
+        st["idle"] = 0
+        b = min(blocks, key=lambda d: d.dist or 9)
+        a = pose["heading"] + (0.5 - b.cx) * FOV
+        tx = pose["x"] + cos(a) * planar(b.dist or 0)
+        tz = pose["z"] - sin(a) * planar(b.dist or 0)
+        if toward(robot, pose, tx, tz):
+            robot.grasp(True)
+            st["carrying"] = b.label.split()[0]
+        return
+
+    # nothing in view: orbit inside the blocks' radius — the wrist camera
+    # sweeps the whole table once per lap
+    st["idle"] = st.get("idle", 0) + 1
+    if st["idle"] > 160:
+        return robot.stop()                # a full sweep saw nothing — done
+    x, z = pose["x"], pose["z"]
+    d = max(0.3, hypot(x, z))
+    pull = 0.8 * (1.2 - d)                 # hold a 1.2 m scan orbit
+    robot.move(forward=pull * x / d - 0.7 * z / d,
+               strafe=pull * z / d + 0.7 * x / d)
 `,
   },
 
@@ -529,11 +563,13 @@ const BODIES = {
     jointX(wrist, 0.12, 0.26);
     const drop = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.04, 0.5, 14), darkMat);
     drop.position.y = -0.27; drop.castShadow = true; wrist.add(drop);
-    _box(wrist, 0.14, 0.05, 0.1, bodyMat, 0, -0.54, 0);
-    _box(wrist, 0.012, 0.03, 0.06, accentMat, 0, -0.51, 0);
+    _box(wrist, 0.16, 0.06, 0.12, bodyMat, 0, -0.54, 0);          // palm
+    _box(wrist, 0.09, 0.06, 0.07, darkMat, 0, -0.42, 0.07);       // wrist camera (eye-in-hand)
+    _box(wrist, 0.03, 0.03, 0.012, accentMat, 0, -0.42, 0.108);   // lens, looking outward
     const fingers = [];
     for (const s of [-1, 1]) {
-      const f = _box(wrist, 0.025, 0.16, 0.06, darkMat, s * 0.085, -0.62, 0);
+      const f = _box(wrist, 0.028, 0.17, 0.07, darkMat, s * 0.085, -0.65, 0);
+      _box(f, 0.026, 0.05, 0.066, bodyMat, -s * 0.012, -0.06, 0); // inward fingertip pad
       fingers.push({ f, s });
     }
     parts.armParts = { j1, j2, j3, wrist, fingers, reach: 4.0,
@@ -655,10 +691,19 @@ function updateBody(dt, cmd) {
     if (dNew < p.reach * 0.95) {
       if (dNew > 0.7 || dNew > dNow) { bot.pos.x = nx; bot.pos.z = nz; }
       else {
-        const a = Math.atan2(nz, nx);
+        let a = Math.atan2(nz, nx);
+        const cur = Math.atan2(bot.pos.z, bot.pos.x);
+        // a purely radial push has no tangential component — nudge CCW so
+        // the hand walks around the rim instead of deadlocking at the
+        // antipode of its target
+        if (Math.abs(Math.atan2(Math.sin(a - cur), Math.cos(a - cur))) < 0.02)
+          a = cur + 0.05;
         bot.pos.x = Math.cos(a) * 0.72; bot.pos.z = Math.sin(a) * 0.72;
       }
     }
+    // eye-in-hand: the wrist camera looks radially outward from the base,
+    // so sweeping the hand around the base scans the table
+    bot.heading = Math.atan2(-bot.pos.z, bot.pos.x);
     // vertical 2-link IK in the yaw plane: shoulder pitch + elbow pitch
     // put the wrist at (d, wristH); the wrist counter-pitches to stay level
     const d = Math.max(0.7, Math.hypot(bot.pos.x, bot.pos.z));
@@ -717,7 +762,7 @@ function updateBody(dt, cmd) {
 const raycaster = new THREE.Raycaster();
 const LIDAR_RAYS = 36, LIDAR_RANGE = 8;
 function eyePos() {
-  if (bot.type === "arm") return new THREE.Vector3(bot.pos.x, 0.6, bot.pos.z);
+  if (bot.type === "arm") return new THREE.Vector3(bot.pos.x, 0.85, bot.pos.z);
   return new THREE.Vector3(bot.pos.x,
     bot.type === "drone" ? bot.alt : bodySpec.eyeH, bot.pos.z);
 }
