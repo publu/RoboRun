@@ -43,10 +43,12 @@ const SANDBOX_LEVELS = [
 
 @behavior(hz=10)
 def player_policy(robot):
-    scan = robot.lidar()
-    if scan and min(scan[:3] + scan[-3:]) < 1.0:
+    walls = robot.clearance()              # {"ahead","left","right","behind"}
+    if (walls["ahead"] or 9) < 1.0:
         return robot.move(turn=1.2)        # wall coming up — turn away
     robot.move(forward=0.8)                # cruise; try robot.see("crate")
+    # more to play with: robot.openings() = doorways in mapped walls,
+    # robot.frontier() = unseen space, robot.route(x, z) = path to it
 `,
   },
   {

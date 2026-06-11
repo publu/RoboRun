@@ -19,6 +19,8 @@ The `robot` handle:
     robot.pose()             {x, z, heading} odometry (arena / robots with odom)
     robot.seen(label=None)   the system's automatic sighting memory this run
     robot.goto(x, z)         one tick of drive-toward; True when arrived
+    robot.clearance()        {"ahead","left","right","behind"} wall distances
+    robot.openings()         doorways found in the mapped walls, nearest first
     robot.frontier()         (x,z) edge of unseen space — None when fully seen
     robot.route(x, z)        next waypoint through space known to be clear
     robot.mapped()           cells of spatial memory so far
@@ -365,6 +367,69 @@ class Robot:
         c = fronts[0] if prefer == "near" else fronts[-1]
         fr.update(cell=c, age=0, prefer=prefer)
         return (c[0] * _EXPLORE_CELL, c[1] * _EXPLORE_CELL)
+
+    def clearance(self) -> dict:
+        """WALLS, in plain words: nearest obstacle distance around the
+        robot — {"ahead", "left", "right", "behind"} in meters. Just the
+        lidar, sliced the way you'd ask the question:
+
+            if robot.clearance()["ahead"] < 0.6:  # wall coming up
+        """
+        scan = self.lidar()
+        if not scan:
+            return {"ahead": None, "left": None, "right": None, "behind": None}
+        n = len(scan)
+        q = n // 4
+        sector = lambda i: min(scan[(i - 2) % n], scan[(i - 1) % n], scan[i % n],
+                               scan[(i + 1) % n], scan[(i + 2) % n])
+        return {"ahead": sector(0), "left": sector(q),
+                "behind": sector(2 * q), "right": sector(3 * q)}
+
+    def openings(self) -> list[tuple[float, float]]:
+        """DOORS, structurally: gaps in the walls the robot has mapped,
+        wide enough to drive through — doorways, gates, passages — as
+        world points, nearest first. Derived from spatial memory, so the
+        robot has to have seen the wall to know about the hole in it.
+
+            for door in robot.openings():
+                if robot.goto(*door): ...
+        """
+        import math
+        grid, pose = self._spatial()
+        if grid is None:
+            return []
+        cells = []
+        for (cx, cz), v in list(grid.items()):
+            if v != 1:
+                continue
+            # a doorway cell: walls close on both sides of one axis,
+            # open passage along the other
+            for (wa, wb), (pa, pb) in ((((1, 0), (-1, 0)), ((0, 1), (0, -1))),
+                                       (((0, 1), (0, -1)), ((1, 0), (-1, 0)))):
+                if (_near_wall(grid, cx, cz, wa) and _near_wall(grid, cx, cz, wb)
+                        and _open_run(grid, cx, cz, pa) and _open_run(grid, cx, cz, pb)):
+                    cells.append((cx, cz))
+                    break
+        # cluster adjacent doorway cells into one opening each
+        out = []
+        used = set()
+        for c in cells:
+            if c in used:
+                continue
+            group = [c]
+            used.add(c)
+            queue = [c]
+            while queue:
+                gx, gz = queue.pop()
+                for o in cells:
+                    if o not in used and abs(o[0] - gx) <= 2 and abs(o[1] - gz) <= 2:
+                        used.add(o)
+                        group.append(o)
+                        queue.append(o)
+            out.append((sum(g[0] for g in group) / len(group) * _EXPLORE_CELL,
+                        sum(g[1] for g in group) / len(group) * _EXPLORE_CELL))
+        out.sort(key=lambda w: math.hypot(w[0] - pose["x"], w[1] - pose["z"]))
+        return out
 
     def route(self, x: float, z: float) -> tuple[float, float] | None:
         """HOW DO I GET THERE THROUGH WHAT I KNOW? Next waypoint toward
@@ -900,6 +965,18 @@ def _explore_clear(grid: dict, c: tuple) -> bool:
             if grid.get((c[0] + dx, c[1] + dz)) == 2:
                 return False
     return True
+
+
+def _near_wall(grid: dict, cx: int, cz: int, d: tuple, reach: int = 3) -> bool:
+    for k in range(1, reach + 1):
+        if grid.get((cx + d[0] * k, cz + d[1] * k)) == 2:
+            return True
+    return False
+
+
+def _open_run(grid: dict, cx: int, cz: int, d: tuple, run: int = 3) -> bool:
+    return all(grid.get((cx + d[0] * k, cz + d[1] * k)) == 1
+               for k in range(1, run + 1))
 
 
 def _explore_frontiers(grid: dict, pose: dict) -> list:

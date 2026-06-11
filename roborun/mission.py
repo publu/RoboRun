@@ -30,6 +30,10 @@ called 10x/second. It must never block. The handle:
       for "how many X did I see" questions; never hand-roll a ledger
   robot.move(forward=0, strafe=0, turn=0, climb=0)   (clamped; climb = drones)
   robot.goto(x, z, tol=0.45) -> True when arrived (steers one tick)
+  robot.clearance() -> {"ahead","left","right","behind"} nearest wall (m)
+      ("don't hit the wall" = if robot.clearance()["ahead"] < 0.6: turn)
+  robot.openings() -> [(x, z), ...] doorways/passages found in the walls
+      the robot has mapped, nearest first ("go through the door")
   robot.frontier(prefer="near") -> (x, z) | None
       WHERE IS NEW SPACE? The edge of what the robot hasn't seen; None
       once everything reachable is seen (that is your "done").

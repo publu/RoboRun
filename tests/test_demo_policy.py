@@ -148,6 +148,8 @@ class SimRobot:
     # pose/move/stop and narrates via _intent — a no-op with no arena)
     from roborun.behaviors import Robot as _R
     goto = _R.goto
+    clearance = _R.clearance
+    openings = _R.openings
     frontier = _R.frontier
     route = _R.route
     mapped = _R.mapped
@@ -213,3 +215,27 @@ def test_census_demo_explores_all_rooms_without_a_map():
     # (distinct-location dedup), no bookkeeping in the policy
     assert getattr(robot, "answers", []) == ["6"], \
         f"answered {getattr(robot, 'answers', [])!r}, there are 6 doors"
+
+
+def test_openings_finds_the_doorways():
+    """After exploring, openings() reports the building's structure: the
+    census map has six wall gaps, one per door prop."""
+    source = load_demo_source("dog-census")
+    _, robot = run_policy(source, budget_ticks=3600)
+    doors = [(-2.5, -1), (2.5, -1), (-2.5, 1), (2.5, 1), (-1, -4.7), (1, 4.7)]
+    found = robot.openings()
+    assert len(found) >= 5, f"only {len(found)} openings: {found}"
+    import math
+    matched = sum(1 for d in doors
+                  if any(math.hypot(o[0] - d[0], o[1] - d[1]) < 1.0 for o in found))
+    assert matched >= 5, f"openings miss the doorways: {found}"
+
+
+def test_clearance_slices_the_scan():
+    r = SimRobot()                          # at spawn: corridor walls at z=±1
+    r.frontier()                            # prime spatial memory (not needed
+    c = r.clearance()                       # for clearance, but harmless)
+    assert set(c) == {"ahead", "left", "right", "behind"}
+    # corridor: open ahead/behind (x axis), walls ~1m left and right
+    assert c["ahead"] > 2.0 and c["behind"] > 2.0
+    assert 0.5 < c["left"] < 1.4 and 0.5 < c["right"] < 1.4
