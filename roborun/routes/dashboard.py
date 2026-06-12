@@ -83,28 +83,35 @@ def camera(h):
     send_json(h, 200, camera_snapshot())
 
 
+# A state file is only believable while its writer is alive: the webcam
+# pipeline rewrites it every frame. Older than this and it's a leftover
+# from a previous session — reporting it as live would show a phantom
+# camera "running" on a machine where nothing runs.
+_STATE_FRESH_S = 5.0
+
+
+def _fresh_state() -> dict | None:
+    for p in _STATE_PATHS:
+        try:
+            if not p.exists():
+                continue
+            state = json.loads(p.read_text())
+            ts = float(state.get("ts", 0)) or p.stat().st_mtime
+            if time.time() - ts < _STATE_FRESH_S:
+                return state
+        except Exception:
+            pass
+    return None
+
+
 @get("/api/scene")
 def scene(h):
-    for p in _STATE_PATHS:
-        if p.exists():
-            try:
-                send_json(h, 200, json.loads(p.read_text()))
-                return
-            except Exception:
-                pass
-    send_json(h, 200, {})
+    send_json(h, 200, _fresh_state() or {})
 
 
 @get("/api/state")
 def robot_state(h):
-    for p in _STATE_PATHS:
-        try:
-            if p.exists():
-                send_json(h, 200, json.loads(p.read_text()))
-                return
-        except Exception:
-            pass
-    send_json(h, 200, {})
+    send_json(h, 200, _fresh_state() or {"state": "stopped"})
 
 
 @post("/api/profile")

@@ -22,7 +22,7 @@ pip install ros-agent     # the package keeps its PyPI name; the command is robo
 roborun
 ```
 
-The browser opens live, and a `behaviors/` folder appears with the robot's brain. Two ways to give it a world: open **`/arena`** — a robot dog in a browser sim, body and eyes in the same world (what it does changes what it sees) — or point the webcam at your room and use it as a pure perception playground. Either way, the same brain:
+The browser opens live, and a `behaviors/` folder appears with the robot's brain. Open **`/arena`** — a robot dog in a browser sim, body and eyes in the same world (what it does changes what it sees). Nothing else to install; the base package is three small dependencies, no torch. The robot's brain:
 
 ```python
 # behaviors/follow_person.py (already running)
@@ -40,6 +40,8 @@ def follow_person(robot):
 ```
 
 Change `0.3` to `0.6`. Save. The robot speeds up **while it's running**. No restart, no build, no launch files, no framework to learn. That's the whole loop: see, think, move, in a file you can read in ten seconds.
+
+Want real eyes instead of the sim? `pip install 'ros-agent[vision]'` (YOLO + CLIP, pulls torch) and the **same file** runs against your webcam — point it at your room and `robot.see("person")` is you.
 
 ## The robot handle
 
@@ -146,6 +148,10 @@ MCP drives the robot; the [OpenClaw bridge](docs/OPENCLAW.md) lets the robot rea
 ## Why this instead of a robot framework
 
 Robot frameworks make you learn their world first: module systems, typed streams, blueprints, launch graphs, all before the robot does anything. roborun inverts it. The robot is already running, and you change its mind by saving a file. Python you already know, hot-reloaded, with vision, an LLM, and motion in one handle, plus a cryptographic record of everything it did.
+
+It's not a chat-controlled robot: behaviors run at 10 Hz with **no LLM in the loop**, and MCP, the REST API, and `robot.*` are the same functions — MCP exists so Claude/Cursor/Codex attach with one line, not because chat is the control plane. If you live in RViz and RQT, those stay better at deep introspection of a system you built; roborun is for driving a robot (or a sim, or a webcam) with short Python and AI agents **without** the ROS toolchain on your laptop — plus the one thing the classic stack doesn't do: a tamper-evident, externally-timestamped record of what the robot saw and did.
+
+And it won't rot in six months: CI runs the suite (100+ tests) on every push, releases are tagged and published to PyPI automatically, skills pin exact commit SHAs and refuse to load on drift, and DDS message definitions are vendored — no system ROS install to version-skew against.
 
 ## Contributing
 

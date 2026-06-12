@@ -210,13 +210,13 @@ class CosmosWorldModel:
     """Cosmos 3 Nano world model via MLX on Apple Silicon.
 
     Generates a predicted image from a text prompt using the 4-bit
-    quantized Cosmos 3 Nano model. Points at a local cosmos-mac checkout.
+    quantized Cosmos 3 Nano model. Points at a local cosmos-mac checkout
+    via ROBORUN_COSMOS_DIR (or the cosmos_dir argument).
     """
 
-    _COSMOS_MAC_DIR = "/Users/dao/Documents/GitHub/cosmos_mac"
-
     def __init__(self, cosmos_dir: str | None = None) -> None:
-        self._cosmos_dir = cosmos_dir or self._COSMOS_MAC_DIR
+        import os
+        self._cosmos_dir = cosmos_dir or os.environ.get("ROBORUN_COSMOS_DIR")
         self._pipe = None
         self._lock = RLock()
 
@@ -227,6 +227,11 @@ class CosmosWorldModel:
         import os
         from pathlib import Path
 
+        if not self._cosmos_dir:
+            raise RuntimeError(
+                "Cosmos world model needs a local cosmos-mac checkout: "
+                "set ROBORUN_COSMOS_DIR to its path"
+            )
         cosmos_path = Path(self._cosmos_dir)
         model_dir = cosmos_path / "models" / "Cosmos3-Nano-MLX-4bit"
         if not (model_dir / "transformer").exists():

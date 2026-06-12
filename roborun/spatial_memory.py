@@ -30,9 +30,10 @@ import time
 import uuid
 from pathlib import Path
 from threading import RLock
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
-import numpy as np
+if TYPE_CHECKING:  # numpy only backs the CLIP paths; the SQLite index runs without it
+    import numpy as np
 
 DB_DIR = Path(".roborun")
 DB_PATH = DB_DIR / "spatial_memory.db"
@@ -165,7 +166,11 @@ class SpatialMemoryStore:
             if ok:
                 thumb_blob = buf.tobytes()
 
-        emb_blob = embedding.astype(np.float32).tobytes() if embedding is not None else None
+        if embedding is not None:
+            import numpy as np
+            emb_blob = embedding.astype(np.float32).tobytes()
+        else:
+            emb_blob = None
         meta_json = json.dumps(metadata) if metadata else None
 
         s3_stored = False
@@ -205,6 +210,7 @@ class SpatialMemoryStore:
             self._id_cache = []
             self._cache_dirty = False
             return
+        import numpy as np
         ids, vecs = [], []
         for r in rows:
             ids.append(r["id"])
@@ -225,6 +231,7 @@ class SpatialMemoryStore:
             if self._emb_cache is None or len(self._id_cache) == 0:
                 return []
 
+            import numpy as np
             qvec = query_embedding.astype(np.float32).flatten()
             qnorm = np.linalg.norm(qvec)
             if qnorm > 0:
@@ -408,6 +415,7 @@ class SpatialMemoryStore:
         for r in rows:
             emb = None
             if include_embeddings and r["embedding"]:
+                import numpy as np
                 emb = np.frombuffer(r["embedding"], dtype=np.float32).tolist()
             yield {
                 "obs_id": r["id"], "robot_id": r["robot_id"], "run_id": r["run_id"],
@@ -467,4 +475,4 @@ class SpatialMemoryStore:
         dx = (row["x"] or 0) - x
         dy = (row["y"] or 0) - y
         dz = ((row["z"] or 0) - z) if z is not None else 0
-        return float(np.sqrt(dx * dx + dy * dy + dz * dz))
+        return float((dx * dx + dy * dy + dz * dz) ** 0.5)

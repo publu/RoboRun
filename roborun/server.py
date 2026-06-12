@@ -268,22 +268,35 @@ def main() -> None:
         def _autostart() -> None:
             from roborun.events import emit
             time.sleep(2.0)  # let a previous instance release the camera
+            why: list[str] = []
             try:
                 from roborun.routes._singletons import get_webcam
                 result = get_webcam().start(camera_index=0, models=["yolo"])
                 if result.get("ok"):
                     emit("system", "server", "autostart: webcam live with YOLO")
                     return
-            except Exception:
-                pass
+                why.append(f"webcam: {result.get('error', 'failed')}")
+            except ImportError:
+                why.append("webcam vision not installed (pip install 'ros-agent[vision]')")
+            except Exception as exc:
+                why.append(f"webcam: {exc}")
             try:
                 from roborun.routes._singletons import get_simulator
                 result = get_simulator().start()
                 if result.get("ok"):
                     emit("system", "server",
                          f"autostart: MuJoCo sim ({result.get('robot', 'robot')})")
-            except Exception:
-                pass
+                    return
+                why.append(f"sim: {result.get('error', 'failed')}")
+            except ImportError:
+                why.append("MuJoCo sim not installed (pip install 'ros-agent[sim]')")
+            except Exception as exc:
+                why.append(f"sim: {exc}")
+            # A blank deck with no explanation reads as broken — say exactly
+            # what didn't start and point at the path that needs no installs.
+            emit("system", "server",
+                 "no camera or sim started — " + "; ".join(why) +
+                 ". Open /arena: browser sim, nothing to install.")
         threading.Thread(target=_autostart, daemon=True, name="Autostart").start()
 
     server = ThreadingHTTPServer((HOST, PORT), Handler)

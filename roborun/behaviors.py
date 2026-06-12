@@ -107,6 +107,7 @@ class Robot:
         self._last_cmd: tuple[float, float, float] = (0.0, 0.0, 0.0)
         self._last_move_emit = 0.0
         self._warned_no_actuator = False
+        self._warned_no_vision = False
         self._last_say = ""
         self.state: dict[str, Any] = {}
 
@@ -137,6 +138,16 @@ class Robot:
                     fh, fw = frame.shape[:2] if frame is not None else (720, 1280)
                     things = [Thing(d, fw, fh) for d in wc.get_detections()
                               if d["confidence"] >= min_conf]
+        except ImportError:
+            # No eyes installed is a fact the user must hear, once — a see()
+            # that silently returns [] forever looks like a broken demo.
+            if not self._warned_no_vision:
+                self._warned_no_vision = True
+                emit("system", self._name,
+                     "robot.see() has no eyes — webcam vision needs "
+                     "pip install 'ros-agent[vision]', or open /arena "
+                     "(browser sim, nothing to install)")
+            return []
         except Exception:
             return []
         if label:
