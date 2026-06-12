@@ -404,6 +404,10 @@ addEventListener("resize", () => {
   renderer.setSize(innerWidth, innerHeight);
   specCam.aspect = innerWidth / innerHeight;
   specCam.updateProjectionMatrix();
+  // Panels re-flow with the window: default rails re-fit, custom layouts
+  // get re-clamped on screen — a resize must never strand a panel offscreen.
+  if (!layout._custom) layout = loadLayout();
+  applyLayout();
 });
 
 /* ════════════════ level building ════════════════ */
@@ -1660,8 +1664,11 @@ function applyLayout() {
     if (!el || !st) continue;
     const w = Math.min(st.w, innerWidth - 12);
     const h = Math.min(st.h, innerHeight - TOP - 8);
-    el.style.left = `${Math.max(4, Math.min(st.l, innerWidth - w - 4))}px`;
-    el.style.top = `${Math.max(TOP, Math.min(st.t, innerHeight - h - 4))}px`;
+    // clamp AND write back, so a layout saved offscreen heals itself
+    st.l = Math.max(4, Math.min(st.l, innerWidth - w - 4));
+    st.t = Math.max(TOP, Math.min(st.t, innerHeight - h - 4));
+    el.style.left = `${st.l}px`;
+    el.style.top = `${st.t}px`;
     el.style.width = `${w}px`;
     el.style.height = `${h}px`;
     el.classList.toggle("hidden", !!st.hidden);
@@ -1694,6 +1701,9 @@ function initPanels() {
         }
         for (const x of xs) if (Math.abs(l - x) < SNAP) { l = x; break; }
         for (const y of ys) if (Math.abs(t - y) < SNAP) { t = y; break; }
+        // a panel can never be dragged out of reach
+        l = Math.max(4, Math.min(l, innerWidth - pw - 4));
+        t = Math.max(46, Math.min(t, innerHeight - ph - 4));
         layout[id].l = l; layout[id].t = t;
         el.style.left = `${l}px`; el.style.top = `${t}px`;
       }

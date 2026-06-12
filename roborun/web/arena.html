@@ -127,8 +127,11 @@
   #connect .close { float: right; background: none; border: none; color: #6b7b88;
                     font: inherit; font-size: 16px; cursor: pointer; }
   #keys { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
-          color: #4a5a66; z-index: 5; white-space: nowrap; }
+          color: #4a5a66; z-index: 5; white-space: nowrap;
+          max-width: calc(100vw - 24px); overflow: hidden; text-overflow: ellipsis; }
   #keys a { color: #3a8a6a; }
+  /* below this the rails leave no open stage mid-screen for a hint line */
+  @media (max-width: 980px) { #keys { display: none; } }
 
   /* hosted (wasm) mode vs local server mode */
   .wasm-mode .wasm-only { display: block !important; }
