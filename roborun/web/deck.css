@@ -368,6 +368,7 @@ body::before {
 .bb-evt[data-type="ros"]       .evt-glyph { color: var(--phos-deep); }
 .bb-evt[data-type="system"]    .evt-glyph { color: var(--dim); }
 .bb-evt[data-type="task"]      .evt-glyph { color: var(--phos); }
+.bb-evt[data-type="notify"]    .evt-glyph { color: var(--amber); }
 
 .evt-main { min-width: 0; }
 .evt-title {

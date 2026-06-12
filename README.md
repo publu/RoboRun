@@ -125,11 +125,16 @@ Install validates the skill **without executing it** (AST check of the required 
 
 To write one: fork [roborun-skill-template](https://github.com/publu/roborun-skill-template), open it in Claude Code or Cursor, and describe what you want — the template's `AGENTS.md`/`CLAUDE.md` teach the agent the whole skill API. `roborun skill validate .`, push, done.
 
+## Text with your robot
+
+MCP drives the robot; the [OpenClaw bridge](docs/OPENCLAW.md) lets the robot reach *you*. Point `OPENCLAW_HOOKS_URL` at an [OpenClaw](https://openclaw.ai) gateway and `robot.notify("person spotted near waypoint 4")` lands on your phone over WhatsApp/Telegram — then you reply "stop the patrol" and the bundled OpenClaw skill (`integrations/openclaw/`) drives the robot back over HTTP. `behaviors/sentry.py` is the demo: a patrol that texts you when it sees someone and after each quiet lap. Every notification also lands in the sealed run, so "the robot texted me" is a verifiable claim.
+
 ## Configuration
 
 | Variable | Default | |
 |----------|---------|---|
 | `ROBORUN_PORT` | `8765` | Server port |
+| `OPENCLAW_HOOKS_URL` | unset | OpenClaw gateway hooks URL — enables `robot.notify()` push ([docs](docs/OPENCLAW.md)) |
 | `ROBOT_IP` | unset | Robot IP (or set in UI) |
 | `ANTHROPIC_API_KEY` | unset | `robot.ask()` + built-in Claude agent |
 | `OLLAMA_MODEL` | `llama3.2` | Local model for `robot.ask()` |

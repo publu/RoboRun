@@ -968,6 +968,19 @@ def _tool_behaviors(args: dict) -> dict:
     return {"ok": ok} if ok else {"ok": False, "error": f"no behavior named {name!r}"}
 
 
+def _tool_notify(args: dict) -> dict:
+    """Push a message to the robot's human via the OpenClaw bridge."""
+    text = str(args.get("text", "")).strip()
+    if not text:
+        return {"ok": False, "error": "text is required"}
+    from roborun.events import emit
+    from roborun import openclaw
+    openclaw.start_bridge()  # idempotent; stdio MCP runs in its own process
+    emit("notify", "mcp", text, {})
+    return {"ok": True,
+            "delivery": "openclaw" if openclaw.configured() else "timeline-only"}
+
+
 MCP_TOOLS = [
     # --- Discovery & connection ---
     {
@@ -1330,6 +1343,13 @@ MCP_TOOLS = [
             "action": {"type": "string", "enum": ["list", "enable", "disable"]},
             "name": {"type": "string"}}, "required": ["action"]},
     },
+    {
+        "name": "notify",
+        "description": "Send a message to the robot's human operator. Delivered to their chat (WhatsApp/Telegram/...) when the OpenClaw bridge is configured; otherwise it lands in the event timeline.",
+        "inputSchema": {"type": "object", "properties": {
+            "text": {"type": "string", "description": "The message to deliver"}},
+            "required": ["text"]},
+    },
 ]
 
 _TOOL_HANDLERS = {
@@ -1348,6 +1368,7 @@ _TOOL_HANDLERS = {
     "arena_status": _tool_arena_status,
     "write_behavior": _tool_write_behavior,
     "behaviors": _tool_behaviors,
+    "notify": _tool_notify,
     "estop": _tool_estop,
     "navigate": _tool_navigate,
     "get_services": _tool_get_services,
@@ -1398,7 +1419,7 @@ def handle_tool_call(name: str, args: dict) -> dict:
 CORE_TOOLS = {
     "scan_robots", "connect_to_robot", "get_robot_info", "get_capabilities",
     "list_topics", "subscribe_once", "publish", "move", "estop", "navigate",
-    "see", "seen", "arena_status", "write_behavior", "behaviors",
+    "see", "seen", "arena_status", "write_behavior", "behaviors", "notify",
     "call_service", "send_action_goal", "get_parameters", "set_parameter",
     "camera_snapshot", "telemetry_stream",
 }

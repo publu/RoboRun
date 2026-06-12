@@ -37,16 +37,9 @@ _journal: IO[str] | None = None
 _journal_dir: Path | None = None
 _prev_hash = GENESIS
 
-EVENT_TYPES = ("mcp_tool", "detection", "ros", "agent", "system", "task", "frame")
-ICONS = {
-    "mcp_tool": "⚙",
-    "detection": "◉",
-    "ros": "⬡",
-    "agent": "✦",
-    "system": "◆",
-    "task": "▶",
-    "frame": "▣",
-}
+# The event vocabulary. Glyphs/colors live web-side (deck.js GLYPHS, deck.css).
+EVENT_TYPES = ("mcp_tool", "detection", "ros", "agent", "system", "task", "frame",
+               "notify")
 
 
 def runs_root() -> Path:

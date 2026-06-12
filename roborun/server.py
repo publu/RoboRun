@@ -257,6 +257,11 @@ def main() -> None:
         print(f"  Created {created}/ — edit follow_person.py and save. It reloads live.")
     BehaviorRunner.get().start()
 
+    # Reach-a-human channel: forward notify events to an OpenClaw gateway
+    from roborun.openclaw import start_bridge
+    if start_bridge():
+        print(f"  OpenClaw bridge:  notify() → {os.environ['OPENCLAW_HOOKS_URL']}")
+
     # First boot should be alive, not a NO SIGNAL screen: try the webcam
     # with YOLO; fall back to the MuJoCo sim. ROBORUN_AUTOSTART=0 disables.
     if os.environ.get("ROBORUN_AUTOSTART", "1") != "0":

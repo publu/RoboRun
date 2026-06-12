@@ -4,7 +4,7 @@
 
 const $ = (id) => document.getElementById(id);
 
-const GLYPHS = { mcp_tool: "⚙", detection: "◉", ros: "⬡", agent: "✦", system: "◆", task: "▶", frame: "▣" };
+const GLYPHS = { mcp_tool: "⚙", detection: "◉", ros: "⬡", agent: "✦", system: "◆", task: "▶", frame: "▣", notify: "⚑" };
 const MAX_FEED = 80;
 
 let eventCount = 0;

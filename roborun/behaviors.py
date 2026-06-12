@@ -633,6 +633,15 @@ class Robot:
     def log(self, msg: str, **detail: Any) -> None:
         emit("task", self._name, str(msg), detail)
 
+    def notify(self, text: str, **detail: Any) -> None:
+        """Reach the human. Lands in the timeline like log(), and when the
+        OpenClaw bridge is configured (OPENCLAW_HOOKS_URL) it is pushed to
+        their chat — phone-buzz territory. Use it for "someone should hear
+        about this", not progress chatter; that's what log() is for."""
+        text = str(text).strip()
+        if text:
+            emit("notify", self._name, text, detail)
+
     # ---- memory ----
 
     def remember(self, key: str, value: Any) -> None:
@@ -863,6 +872,33 @@ def patrol(robot):
         leg["mode"] = "turn" if leg["mode"] == "walk" else "walk"
         leg["until"] = time.time() + (1.6 if leg["mode"] == "turn" else 3)
         robot.log(f"patrol: {leg['mode']}")
+    robot.move(forward=0.4 if leg["mode"] == "walk" else 0.0,
+               turn=0.9 if leg["mode"] == "turn" else 0.0)
+''',
+    "sentry.py": '''\
+"""Patrol that reaches a human. Person in view -> one notify (60s cooldown);
+each completed lap -> a status notify. Notifications always land in the
+timeline; with the OpenClaw bridge configured they hit your phone too
+(docs/OPENCLAW.md)."""
+import time
+from roborun.behaviors import behavior
+
+
+@behavior(hz=5, autostart=False)
+def sentry(robot):
+    leg = robot.state.setdefault("leg", {"mode": "walk", "until": time.time() + 3,
+                                         "turns": 0})
+    people = robot.see("person")
+    if people and time.time() > robot.state.get("quiet_until", 0):
+        robot.state["quiet_until"] = time.time() + 60
+        robot.notify(f"sentry: {len(people)} person(s) in view", count=len(people))
+    if time.time() > leg["until"]:
+        if leg["mode"] == "turn":
+            leg["turns"] += 1
+            if leg["turns"] % 4 == 0:
+                robot.notify(f"sentry: lap {leg['turns'] // 4} complete, all quiet")
+        leg["mode"] = "turn" if leg["mode"] == "walk" else "walk"
+        leg["until"] = time.time() + (1.6 if leg["mode"] == "turn" else 3)
     robot.move(forward=0.4 if leg["mode"] == "walk" else 0.0,
                turn=0.9 if leg["mode"] == "turn" else 0.0)
 ''',
