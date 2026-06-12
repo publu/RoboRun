@@ -200,6 +200,12 @@
   .vstate.good { color: #00d47e; }
   .vstate.bad { color: #d84a4a; }
   .run-row video { width: 100%; margin-top: 6px; border-radius: 4px; }
+/* robot mode: sims are sims, robots are robots — hide arena-game UI */
+body.robot-mode #p-brief, body.robot-mode #p-runs,
+body.robot-mode #btnLevels,
+body.robot-mode button[data-panel="p-brief"],
+body.robot-mode button[data-panel="p-runs"],
+body.robot-mode #teleRoom { display: none !important; }
 </style>
 </head>
 <body>

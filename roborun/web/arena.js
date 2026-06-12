@@ -915,6 +915,7 @@ function loadLevel(i) {
   else if (w.type === "rings") setChips(
     w.order.map((id) => ({ id: `r${id}`, label: `ring ${id + 1}`, done: false })));
   postEvent("arena", `level loaded: ${LV.name}`, { robot: LV.robot });
+  if (MODE === "robot" && levelGroup) levelGroup.visible = false;
 }
 levelSel.addEventListener("change", () => loadLevel(+levelSel.value));
 
@@ -1304,7 +1305,32 @@ function enterRobotMode() {
     document.getElementById("eyesImg").src =
       `${RT_BASE()}/api/camera/stream?source=${e.target.value}&t=${Date.now()}`;
   });
+  // the policy panel edits what is actually running on the robot — no
+  // sandbox starter, no silent deploys
+  const phead = document.querySelector("#p-policy .p-head span");
+  if (phead) phead.textContent = "— live on the connected robot · RUN hot-reloads it";
+  const keysEl = document.getElementById("keys");
+  if (keysEl) keysEl.innerHTML = "drag headers · resize corners · ⌘⏎ deploy · " +
+    '<b style="color:#d4a030">WASD drives the real robot</b>' +
+    '<span class="server-only"> · <a href="/">deck</a></span>';
+  if (mainCamSel) mainCamSel.value = "chase";
+  loadRobotBehavior();
   pollRobot();
+}
+let robotPolicyName = "robot_policy";
+async function loadRobotBehavior() {
+  try {
+    const r = await (await fetch("/api/behaviors")).json();
+    const live = (r.behaviors || []).find((b) =>
+      b.enabled && !["fix_camera", "heartbeat", "player_policy"].includes(b.name));
+    if (!live) { policyStatus("no behavior running — write one and RUN", ""); return; }
+    robotPolicyName = live.name;
+    const src = await api("/api/behaviors/read", { name: live.name });
+    if (src.ok) {
+      setCode(src.source);
+      policyStatus(`editing ${live.name} — live on the robot, RUN applies`, "ok");
+    }
+  } catch {}
 }
 
 /* ── network robots: surface rosbridges found on the LAN ─────────────────
@@ -1691,17 +1717,29 @@ document.getElementById("btnRun").addEventListener("click", async () => {
     if (!source.includes("@behavior")) {
       // words, not code: compile the mission into a policy first
       policyStatus("✨ compiling mission via LLM… (~10s)", "");
-      const c = await api("/api/behaviors/compile",
-                          { mission: source, context: LV.title + ": " + LV.brief });
+      const ctx = MODE === "robot"
+        ? "a real connected robot — be conservative with speeds"
+        : LV.title + ": " + LV.brief;
+      const c = await api("/api/behaviors/compile", { mission: source, context: ctx });
       if (!c.ok) { policyStatus(c.error, "err"); return; }
       source = c.source;
       setCode(source);                 // language in, code out — inspect/edit it
     }
+    // sandbox writes player_policy; robot mode edits the robot's own
+    // behavior file, and never without saying so
+    const name = MODE === "robot" ? robotPolicyName : "player_policy";
+    if (MODE === "robot" &&
+        !confirm(`Deploy "${name}" to the CONNECTED ROBOT?\nIt hot-reloads and starts moving hardware immediately.`)) {
+      policyStatus("deploy cancelled", "");
+      return;
+    }
     policyStatus("saving…", "");
-    const w = await api("/api/behaviors/write", { name: "player_policy", source });
+    const w = await api("/api/behaviors/write", { name, source });
     if (!w.ok) { policyStatus(w.error, "err"); return; }
-    await api("/api/behaviors/enable", { name: "player_policy" });
-    policyStatus("running — hot reload applies edits on every RUN", "ok");
+    await api("/api/behaviors/enable", { name });
+    policyStatus(MODE === "robot"
+      ? `live on the robot as ${name} — RUN applies edits`
+      : "running — hot reload applies edits on every RUN", "ok");
   } catch { policyStatus("no server — run `roborun` first", "err"); }
 });
 document.getElementById("btnStop").addEventListener("click", async () => {
@@ -1711,8 +1749,9 @@ document.getElementById("btnStop").addEventListener("click", async () => {
     return;
   }
   try {
-    await api("/api/behaviors/disable", { name: "player_policy" });
-    policyStatus("stopped", "");
+    const name = MODE === "robot" ? robotPolicyName : "player_policy";
+    await api("/api/behaviors/disable", { name });
+    policyStatus(MODE === "robot" ? `${name} stopped — robot holds` : "stopped", "");
   } catch {}
 });
 
