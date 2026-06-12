@@ -121,12 +121,15 @@ class RosbridgeClient:
             self._ws.send(json.dumps(msg))
 
     def _recv_loop(self) -> None:
+        from websocket import WebSocketTimeoutException
         while self._connected and self._ws:
             try:
                 raw = self._ws.recv()
                 if not raw:
                     break
                 msg = json.loads(raw)
+            except WebSocketTimeoutException:
+                continue  # a quiet socket is not a dead socket
             except Exception:
                 break
             self._dispatch(msg)

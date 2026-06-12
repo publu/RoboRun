@@ -138,7 +138,10 @@ class RosCameraPipeline:
 
     def state(self) -> dict[str, Any]:
         with self._lock:
-            return {"topic": self._topic, "active": self.is_active(),
+            # inline the freshness check: is_active() takes this same
+            # non-reentrant lock, so calling it here would self-deadlock
+            return {"topic": self._topic,
+                    "active": time.monotonic() - self._frame_ts < _FRESH,
                     "frames": self._frames, "detections": len(self._detections)}
 
 
