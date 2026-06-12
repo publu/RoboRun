@@ -6,7 +6,7 @@ the same cache `robot.see()` reads. With this, see() means "what is in
 front of the *robot*" on every backend: arena → arena ground truth,
 connected robot → this pipeline, neither → local webcam.
 
-Frames also land at /tmp/roborun_frame.jpg, so the deck's camera panel and
+Frames also land at /tmp/roborun_robot_frame.jpg, so the deck's camera panel and
 robot.ask(image=True) show the robot's view, not your desk.
 """
 from __future__ import annotations
@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-FRAME_PATH = Path("/tmp/roborun_frame.jpg")
+FRAME_PATH = Path("/tmp/roborun_robot_frame.jpg")
 _FRESH = 2.0
 _DETECT_HZ = 5.0
 

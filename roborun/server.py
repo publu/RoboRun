@@ -23,13 +23,28 @@ HOST = "127.0.0.1"
 PORT = int(os.environ.get("ROBORUN_PORT", "8765"))
 STATE_ROOT = ROOT / ".roborun"
 
-_FRAME_PATHS = [
-    Path("/tmp/roborun_frame.jpg"),
-    Path("/tmp/roborun_camera.jpg"),
-]
+# each pipeline writes its own file; the stream picks by ?source=
+_SOURCE_FRAMES = {
+    "robot": [Path("/tmp/roborun_robot_frame.jpg")],
+    "webcam": [Path("/tmp/roborun_frame.jpg"), Path("/tmp/roborun_camera.jpg")],
+}
+
+
+def _stream_paths(source: str) -> list:
+    if source in _SOURCE_FRAMES:
+        return _SOURCE_FRAMES[source]
+    # auto: a robot camera producing fresh frames outranks the webcam
+    robot = _SOURCE_FRAMES["robot"][0]
+    try:
+        if time.time() - robot.stat().st_mtime < 2.0:
+            return [robot]
+    except OSError:
+        pass
+    return _SOURCE_FRAMES["webcam"]
 
 # Import route modules — registering all @get/@post handlers
 import roborun.routes.dashboard  # noqa: F401
+import roborun.routes.sources  # noqa: F401
 import roborun.routes.fleet  # noqa: F401
 import roborun.routes.tasks  # noqa: F401
 import roborun.routes.webcam  # noqa: F401
@@ -75,7 +90,9 @@ class Handler(SimpleHTTPRequestHandler):
 
         # MJPEG camera stream
         if path_only == "/api/camera/stream":
-            self._mjpeg_stream()
+            from urllib.parse import parse_qs, urlparse
+            q = parse_qs(urlparse(self.path).query)
+            self._mjpeg_stream((q.get("source") or ["auto"])[0])
             return
 
         # Route registry
@@ -155,7 +172,7 @@ class Handler(SimpleHTTPRequestHandler):
         finally:
             unsubscribe(q)
 
-    def _mjpeg_stream(self) -> None:
+    def _mjpeg_stream(self, source: str = "auto") -> None:
         self.send_response(200)
         self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
         self.send_header("Cache-Control", "no-cache")
@@ -169,7 +186,7 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception:
                 pass
             while time.monotonic() - started < 300:
-                for p in _FRAME_PATHS:
+                for p in _stream_paths(source):
                     if p.exists():
                         mtime = p.stat().st_mtime
                         if mtime != last_mtime:

@@ -1292,11 +1292,55 @@ function enterRobotMode() {
     "position:fixed;right:12px;top:12px;z-index:999;width:320px;" +
     "border:1px solid #2a333d;border-radius:6px;overflow:hidden;background:#000;";
   eyes.innerHTML =
-    '<div style="font:10px/1.8 ui-monospace,Menlo,monospace;color:#00d47e;' +
-    'padding:0 8px;background:#11161b">EYES — live robot camera</div>' +
-    `<img src="${RT_BASE()}/api/camera/stream" style="display:block;width:100%">`;
+    '<div style="display:flex;justify-content:space-between;align-items:center;' +
+    'font:10px/1.8 ui-monospace,Menlo,monospace;color:#00d47e;' +
+    'padding:0 8px;background:#11161b">EYES' +
+    '<select id="eyesSrc" style="background:#11161b;color:#8a96a3;border:none;' +
+    'font:inherit;outline:none"><option value="robot">robot camera</option>' +
+    '<option value="webcam">webcam</option></select></div>' +
+    `<img id="eyesImg" src="${RT_BASE()}/api/camera/stream?source=robot" style="display:block;width:100%">`;
   document.body.appendChild(eyes);
+  document.getElementById("eyesSrc").addEventListener("change", (e) => {
+    document.getElementById("eyesImg").src =
+      `${RT_BASE()}/api/camera/stream?source=${e.target.value}&t=${Date.now()}`;
+  });
   pollRobot();
+}
+
+/* ── network robots: surface rosbridges found on the LAN ─────────────────
+   In sim modes the runtime scans the local /24 for :9090; anything found
+   appears as a chip — one click connects and the page reloads straight
+   into robot mode. A robot on your wifi is a source, not a config step. */
+async function pollNetworkRobots() {
+  if (MODE === "robot") return;
+  try {
+    const r = await (await fetch("/api/sources")).json();
+    const found = (r.network && r.network.found) || [];
+    let chip = document.getElementById("netRobots");
+    if (found.length && !r.robot.connected) {
+      if (!chip) {
+        chip = document.createElement("div");
+        chip.id = "netRobots";
+        chip.style.cssText =
+          "position:fixed;right:12px;top:12px;z-index:999;padding:5px 12px;" +
+          "border-radius:12px;font:11px/1.6 ui-monospace,Menlo,monospace;" +
+          "background:#11161bcc;border:1px solid #00d47e55;color:#00d47e;" +
+          "cursor:pointer;user-select:none;";
+        document.body.appendChild(chip);
+      }
+      const r0 = found.find((f) => f.local) || found[0];
+      chip.textContent = `◈ robot on network — ${r0.host}:${r0.port} · click to connect`;
+      chip.onclick = async () => {
+        chip.textContent = "connecting…";
+        const res = await api("/api/ros/connect", { host: r0.host, port: r0.port });
+        if (res.ok) location.reload();
+        else chip.textContent = `connect failed: ${res.error || "?"}`;
+      };
+    } else if (chip) {
+      chip.remove();
+    }
+  } catch {}
+  setTimeout(pollNetworkRobots, 10000);
 }
 async function pollRobot() {
   try {
@@ -2033,7 +2077,7 @@ function frame(now) {
 
 await initPhysics();                       // rapier WASM, once per page
 loadLevel(0);
-detectMode(); pollCmd(); pushState(); pollSightings(); renderRuns();
+detectMode().then(() => pollNetworkRobots()); pollCmd(); pushState(); pollSightings(); renderRuns();
 requestAnimationFrame(frame);
 
 /* harness hook — scripts/e2e_arena.mjs drives the page without the UI */
