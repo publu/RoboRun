@@ -53,6 +53,30 @@ curl -s "$ROBORUN_URL/api/run/events"
 
 Camera snapshot metadata: `curl -s $ROBORUN_URL/api/camera`
 
+## Onboard a new robot ("set up roborun on 192.168.1.42")
+
+RoboRun is a CLI — you can do the whole setup from this chat:
+
+```bash
+pip install ros-agent              # if `roborun` isn't on PATH yet
+roborun connect 192.168.1.42       # finds rosbridge, classifies the robot, remembers it
+roborun connect 192.168.1.42 --move  # proves control: clamped 0.5s nudge, then stop
+```
+
+If rosbridge isn't running on the robot, `connect` prints the exact two
+lines to run there — relay them to the user. **Ask before `--move`**: it
+physically moves the robot. Then start the server with `roborun` (it
+serves the dashboard, MCP, and this HTTP API).
+
+## Install behaviors/skills from GitHub
+
+```bash
+roborun skill add someuser/their-skill   # validated without executing, pinned to the commit SHA
+roborun skill list                       # installed skills + pin state
+```
+
+Only install repos the user explicitly names — never pick one yourself.
+
 ## Rules
 
 - Confirm a behavior actually flipped by reading the response `ok` field;

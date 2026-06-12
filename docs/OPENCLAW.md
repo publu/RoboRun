@@ -1,6 +1,10 @@
-# OpenClaw integration — texting with your robot
+# Make your robot OpenClaw-ready
 
-RoboRun has two AI-facing channels that complement each other:
+"OpenClaw-ready" means your robot is a contact in your chat app: it messages
+you when something needs a human, and you command it by replying. With
+RoboRun that is one env var and one skill install — no SDK to embed, no
+blockchain, no platform account. Concretely, RoboRun has two AI-facing
+channels that complement each other:
 
 ```
             commands (pull)                      commands (chat)

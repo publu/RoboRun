@@ -95,7 +95,7 @@ One flipped byte is caught instantly, with the exact chunk and byte range named.
 
 Tap mode (the `telemetry_stream` MCP tool) records ROS topics into the run at full rate with no LLM in the loop, over DDS direct (common message families, vendored in `roborun.transport`) or rosbridge.
 
-On run close, the MCAP is extracted into a local SQLite index (indexed label search, CLIP cosine, spatial queries) and optionally exported as Parquet to R2, where **embedded DuckDB queries the whole fleet** — `search_clip("red mug")` across every robot — and robots share Ed25519-signed beacons through the same bucket. Local files and R2 only: no brokers, no database servers, nothing to operate.
+On run close, the MCAP is extracted into a local SQLite index (indexed label search, CLIP cosine, spatial queries) and optionally exported as Parquet to R2, where **embedded DuckDB queries the whole fleet** — `search_clip("red mug")` across every robot — and robots share Ed25519-signed beacons through the same bucket. Local files and R2 only: no brokers, no database servers, nothing to operate. This is **machine identity** without a platform: each robot is its keypair, and its résumé is its sealed runs — any robot's claim about what it saw or did is checkable against proofs anyone can verify offline.
 
 What this proves: the recorded run — images, detections, and decisions included — hasn't been altered since a moment an external clock witnessed. What it doesn't prove: that the robot's sensors observed reality correctly. We're precise about this distinction on purpose.
 
@@ -127,9 +127,9 @@ Install validates the skill **without executing it** (AST check of the required 
 
 To write one: fork [roborun-skill-template](https://github.com/publu/roborun-skill-template), open it in Claude Code or Cursor, and describe what you want — the template's `AGENTS.md`/`CLAUDE.md` teach the agent the whole skill API. `roborun skill validate .`, push, done.
 
-## Text with your robot
+## Text with your robot — OpenClaw-ready
 
-MCP drives the robot; the [OpenClaw bridge](docs/OPENCLAW.md) lets the robot reach *you*. Point `OPENCLAW_HOOKS_URL` at an [OpenClaw](https://openclaw.ai) gateway and `robot.notify("person spotted near waypoint 4")` lands on your phone over WhatsApp/Telegram — then you reply "stop the patrol" and the bundled OpenClaw skill (`integrations/openclaw/`) drives the robot back over HTTP. `behaviors/sentry.py` is the demo: a patrol that texts you when it sees someone and after each quiet lap. Every notification also lands in the sealed run, so "the robot texted me" is a verifiable claim.
+MCP drives the robot; the [OpenClaw bridge](docs/OPENCLAW.md) lets the robot reach *you*. Point `OPENCLAW_HOOKS_URL` at an [OpenClaw](https://openclaw.ai) gateway and `robot.notify("person spotted near waypoint 4")` lands on your phone over WhatsApp/Telegram — then you reply "stop the patrol" and the bundled OpenClaw skill (`integrations/openclaw/`) drives the robot back over HTTP. From the same chat you can onboard a new robot ("set up roborun on 192.168.1.42") or install behaviors from GitHub — the skill drives the same CLI you would. `behaviors/sentry.py` is the demo: a patrol that texts you when it sees someone and after each quiet lap. Every notification also lands in the sealed run, so "the robot texted me" is a verifiable claim — one env var makes your robot [OpenClaw-ready](docs/OPENCLAW.md), no SDK, no platform account.
 
 ## Configuration
 
