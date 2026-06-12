@@ -1250,6 +1250,14 @@ async function api(path, body) {
 let MODE = "detect";                       // "server" | "wasm"
 let wasmRT = null, wasmLoading = false;
 async function detectMode() {
+  // a connected robot wins: the arena renders *its* reality, not the sim's
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 1500);
+    const r = await fetch("/api/ros/health", { signal: ctl.signal });
+    clearTimeout(t);
+    if (r.ok && (await r.json()).connected) { enterRobotMode(); return; }
+  } catch {}
   try {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 1500);
@@ -1260,6 +1268,76 @@ async function detectMode() {
   MODE = "wasm";
   document.body.classList.add("wasm-mode");
   bootWasm();
+}
+
+/* ── robot mode: same arena, the world is the robot's telemetry ─────────
+   Pose, lidar cloud, and detections come from the connected robot via the
+   runtime (SIM_SPEC handle contract: {x, z, heading} + 36-sector scan).
+   The level disappears, the accumulated point cloud *is* the map, the
+   EYES panel shows the camera frames robot.see() runs YOLO on, and WASD
+   publishes real cmd_vel. Sim → robot without changing pages. */
+const RT_BASE = () => (window.ROBORUN_RUNTIME && window.ROBORUN_RUNTIME.base) || "";
+let robotCloudSeen = 0, lastMoveSent = 0;
+function enterRobotMode() {
+  MODE = "robot";
+  document.body.classList.add("robot-mode");
+  if (levelGroup) levelGroup.visible = false;
+  cloudOn = true; cloud.visible = true;
+  const grid = new THREE.GridHelper(80, 80, 0x223344, 0x141d26);
+  grid.position.y = 0.01;
+  scene.add(grid);
+  const eyes = document.createElement("div");
+  eyes.id = "robotEyes";
+  eyes.style.cssText =
+    "position:fixed;right:12px;top:12px;z-index:999;width:320px;" +
+    "border:1px solid #2a333d;border-radius:6px;overflow:hidden;background:#000;";
+  eyes.innerHTML =
+    '<div style="font:10px/1.8 ui-monospace,Menlo,monospace;color:#00d47e;' +
+    'padding:0 8px;background:#11161b">EYES — live robot camera</div>' +
+    `<img src="${RT_BASE()}/api/camera/stream" style="display:block;width:100%">`;
+  document.body.appendChild(eyes);
+  pollRobot();
+}
+async function pollRobot() {
+  try {
+    const r = await (await fetch("/api/ros/cloud")).json();
+    if (r.pose) {
+      bot.pos.x = r.pose.x;
+      bot.pos.z = r.pose.z;
+      bot.heading = r.pose.heading || 0;
+      if (r.pose.y !== undefined && r.pose.y !== null) bot.alt = r.pose.y;
+      if (bot.group) {
+        bot.group.position.set(bot.pos.x, bot.type === "drone" ? bot.alt : 0, bot.pos.z);
+        bot.group.rotation.y = bot.heading;
+      }
+    }
+    if (r.robot_type === "drone" && bot.type !== "drone") {
+      bot.type = "drone";
+      buildBody("drone");
+    }
+    const pts = r.points || [];
+    if (pts.length < robotCloudSeen) robotCloudSeen = 0;   // server restarted
+    for (let i = robotCloudSeen; i < pts.length; i++)
+      cloudAdd(pts[i][0], 0.12, pts[i][1], pts[i][2]);
+    robotCloudSeen = pts.length;
+    cloudCommit();
+    if (r.lidar && r.lidar.length) {
+      lastLidar = r.lidar;
+      integrateLidar(lastLidar);
+    }
+    drawMap();
+    updateTelemetry();
+  } catch {}
+  setTimeout(pollRobot, 150);
+}
+function sendRobotMove(cmd) {
+  const now = performance.now();
+  if (now - lastMoveSent < 120) return;
+  lastMoveSent = now;
+  api("/api/ros/move", {
+    linear_x: cmd.forward || 0, linear_y: cmd.strafe || 0,
+    linear_z: cmd.climb || 0, angular_z: cmd.turn || 0,
+  }).catch(() => {});
 }
 async function bootWasm() {
   if (wasmRT || wasmLoading) return;
@@ -1284,7 +1362,7 @@ let serverSightings = [];
 async function pollSightings() {
   if (MODE === "wasm" && wasmRT) {
     try { serverSightings = wasmRT.sightings() || []; } catch {}
-  } else if (linked) {
+  } else if (linked || MODE === "robot") {
     try {
       const r = await (await fetch("/api/sightings")).json();
       serverSightings = r.sightings || [];
@@ -1294,6 +1372,12 @@ async function pollSightings() {
 }
 async function pollCmd() {
   const el = document.getElementById("link");
+  if (MODE === "robot") {
+    el.textContent = "robot: live — behaviors run on the runtime";
+    el.className = "link on";
+    setTimeout(pollCmd, 2000);
+    return;
+  }
   if (MODE === "wasm") {
     // cmd arrives synchronously from each tick in pushState
     el.textContent = wasmRT ? "policy: in-browser python"
@@ -1329,6 +1413,10 @@ function currentState() {
   };
 }
 async function pushState() {
+  if (MODE === "robot") {              // the robot is the source of truth;
+    setTimeout(pushState, 1000);       // feeding the arena backend would
+    return;                            // reroute see()/move() to the sim
+  }
   if (MODE === "wasm" && wasmRT) {
     try {
       const r = wasmRT.tick(currentState());
@@ -1888,15 +1976,21 @@ function frame(now) {
   adaptQuality(dt);
   renderer.shadowMap.needsUpdate = true;
   const cmd = keyboardCmd() || serverCmd;
-  updateMovers(dt);
-  updateBody(dt, cmd);
-  syncProps();
-  tickChamber(dt, serverAnswer);
+  if (MODE === "robot") {
+    const k = keyboardCmd();           // WASD drives the real robot
+    if (k) sendRobotMove(k);
+    // pose/cloud/lidar arrive from telemetry in pollRobot()
+  } else {
+    updateMovers(dt);
+    updateBody(dt, cmd);
+    syncProps();
+    tickChamber(dt, serverAnswer);
+  }
 
   odo += prevPos.distanceTo(bot.pos);
   prevPos.copy(bot.pos);
   senseTick += dt;
-  if (senseTick > 0.12) {
+  if (MODE !== "robot" && senseTick > 0.12) {
     senseTick = 0;
     lastLidar = senseLidar();
     integrateLidar(lastLidar);

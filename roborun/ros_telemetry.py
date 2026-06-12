@@ -148,17 +148,18 @@ class RosTelemetryBridge:
             except Exception:
                 pass
 
-        if not host:
-            return
-
-        client = get_client(host, auto_connect=False)
+        # no configured host: ride whatever connection `roborun connect` /
+        # boot already established rather than demanding a profile entry
+        client = (get_client(host, auto_connect=False) if host
+                  else get_client(auto_connect=False))
         if not client or not client.is_connected:
             self._subscribed_topics.clear()
             return
 
-        if self._last_host != host:
+        key = host or "active-client"
+        if self._last_host != key:
             self._subscribed_topics.clear()
-            self._last_host = host
+            self._last_host = key
 
         self._subscribe_client(bus, client)
 

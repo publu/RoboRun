@@ -6,10 +6,15 @@ from roborun.routes.dashboard import load_profile
 
 
 def _get_ros_client(host: str | None = None):
+    from roborun.rosbridge import get_client
     host = host or load_profile().get("robotIp", "")
     if not host:
+        # no profile entry, but `roborun connect` / boot may already hold a
+        # live connection — use it rather than demanding configuration
+        client = get_client(auto_connect=False)
+        if client and client.is_connected:
+            return client
         raise ApiError(400, "No robot IP configured")
-    from roborun.rosbridge import get_client
     client = get_client(host)
     if not client:
         raise ApiError(503, "Not connected to rosbridge")
@@ -26,6 +31,7 @@ def cloud(h):
         "ok": True,
         "points": b.cloud_points(),
         "pose": b.handle_pose(),
+        "lidar": b.handle_lidar(),
         "robot_type": b.robot_type.value if b.robot_type else None,
     })
 
@@ -230,11 +236,12 @@ def ros_depth(h, payload):
 def ros_move(h, payload):
     linear_x = float(payload.get("linear_x", 0.0))
     linear_y = float(payload.get("linear_y", 0.0))
+    linear_z = float(payload.get("linear_z", 0.0))  # climb, for drones
     angular_z = float(payload.get("angular_z", 0.0))
     topic = str(payload.get("topic", "/cmd_vel"))
     try:
         client = _get_ros_client()
-        client.move(linear_x, linear_y, angular_z, topic)
+        client.move(linear_x, linear_y, angular_z, topic, linear_z=linear_z)
         from roborun.events import emit
         emit("ros", "rosbridge",
              f"cmd_vel linear={linear_x:.2f} angular={angular_z:.2f}",
