@@ -55,6 +55,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def end_headers(self) -> None:
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        # the static site (GitHub Pages, python -m http.server -d site) probes
+        # this server cross-origin and upgrades itself to the live cockpit
+        self.send_header("Access-Control-Allow-Origin", "*")
         super().end_headers()
 
     def do_GET(self) -> None:
@@ -88,9 +91,13 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_OPTIONS(self) -> None:
         self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        # Allow-Origin comes from end_headers — sending it here too would
+        # duplicate the header, which browsers reject outright
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        # Chrome Private Network Access: lets a public https site (the hosted
+        # demo) reach this server on 127.0.0.1 once PNA enforcement lands
+        self.send_header("Access-Control-Allow-Private-Network", "true")
         self.end_headers()
 
     def do_POST(self) -> None:
