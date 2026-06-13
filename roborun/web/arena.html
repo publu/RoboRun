@@ -309,29 +309,70 @@ body.robot-mode #cockpit { display: flex; }
 #ck-policy .hd b { color: #00d47e; letter-spacing: .14em; font-size: 12px; }
 #ck-policy .hd .sub { color: #6b7b88; font-size: 11px; }
 #ck-policy .hd .cl { margin-left: auto; cursor: pointer; color: #6b7b88; font-size: 16px; }
-#ck-edhost { flex: 1; min-height: 0; overflow: auto; }
-#ck-edhost .cm-editor { height: 100%; font-size: 12.5px; }
-#ck-edhost textarea { width: 100%; height: 100%; box-sizing: border-box; resize: none;
-            background: #0a0f13; color: #d7e0e8; border: none; padding: 12px;
-            font: 12.5px/1.55 ui-monospace, Menlo, monospace; white-space: pre; }
-#ck-edhost textarea:focus { outline: none; }
+/* syntax-highlighted editor: a colored <pre> underlay behind a transparent
+   textarea, kept in perfect sync — looks like a real editor, stays editable */
+#ck-edhost { flex: 1; min-height: 0; position: relative; overflow: hidden; background: #0a0f13; }
+#ck-hl, #ck-code { position: absolute; inset: 0; margin: 0; box-sizing: border-box;
+            padding: 14px 16px; border: 0; width: 100%; height: 100%;
+            font: 12.5px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
+            white-space: pre; tab-size: 4; overflow: auto; }
+#ck-hl { z-index: 1; pointer-events: none; color: #d7e0e8; }
+#ck-hl code { font: inherit; }
+#ck-code { z-index: 2; background: transparent; color: transparent;
+           caret-color: #00d47e; resize: none; }
+#ck-code:focus { outline: none; }
+/* python token colors */
+.tk-kw { color: #c678dd; } .tk-def { color: #61afef; } .tk-str { color: #98c379; }
+.tk-com { color: #5a6b78; font-style: italic; } .tk-num { color: #d19a66; }
+.tk-dec { color: #e0a030; } .tk-bn { color: #56b6c2; }
 #ck-bar { display: flex; gap: 9px; align-items: center; padding: 11px 16px;
           border-top: 1px solid #1f2a33; }
 #ck-bar .stat { color: #6b7b88; font-size: 11px; flex: 1; text-align: right;
                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #ck-bar .stat.ok { color: #00d47e; } #ck-bar .stat.err { color: #d84a4a; }
 
-/* bottom event ticker */
-#ck-ticker { position: relative; z-index: 30; margin: auto 16px 14px; padding: 8px 16px;
-             display: flex; align-items: center; gap: 12px;
-             background: rgba(8,12,15,.72); backdrop-filter: blur(14px);
-             -webkit-backdrop-filter: blur(14px); border: 1px solid rgba(42,58,70,.5);
-             border-radius: 13px; box-shadow: 0 8px 30px rgba(0,0,0,.45);
-             font-size: 12px; color: #9fb0bd; min-height: 19px; }
-#ck-ticker .src { color: #00d47e; letter-spacing: .1em; font-size: 10px; flex: none; }
-#ck-ticker .msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#ck-ticker .deck { margin-left: auto; flex: none; }
-#ck-ticker .deck a { color: #3a8a6a; }
+/* bottom-left timeline — the event stream the robot generates from what it
+   sees and decides; mirrors the tactical map on the right */
+#ck-timeline { position: absolute; left: 16px; bottom: 16px; z-index: 26; width: 360px;
+               max-width: 40vw; background: rgba(8,12,15,.74); backdrop-filter: blur(14px);
+               -webkit-backdrop-filter: blur(14px); border: 1px solid rgba(42,58,70,.5);
+               border-radius: 13px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,.45); }
+#ck-timeline .hd { display: flex; justify-content: space-between; padding: 8px 13px;
+                   font-size: 9.5px; letter-spacing: .16em; color: #6b7b88;
+                   border-bottom: 1px solid rgba(31,42,51,.7); }
+#ck-timeline .hd b { color: #00d47e; font-weight: 400; }
+#ck-tl-list { max-height: 168px; overflow: hidden; display: flex; flex-direction: column; }
+.ck-tl-row { display: flex; align-items: baseline; gap: 9px; padding: 5px 13px;
+             font-size: 11.5px; border-bottom: 1px solid rgba(31,42,51,.32);
+             animation: ckRowIn .2s ease-out; }
+@keyframes ckRowIn { from { opacity: 0; transform: translateY(-4px); } }
+.ck-tl-row .t { color: #4a5a66; font-size: 10px; flex: none; font-variant-numeric: tabular-nums; }
+.ck-tl-row .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; align-self: center; }
+.ck-tl-row .m { color: #9fb0bd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* source picker dropdown */
+#ck-sources { position: absolute; z-index: 40; right: 16px; top: 60px; width: 320px;
+              display: none; background: rgba(10,14,18,.96); backdrop-filter: blur(16px);
+              -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(42,58,70,.6);
+              border-radius: 13px; box-shadow: 0 14px 44px rgba(0,0,0,.55); overflow: hidden; }
+#ck-sources.open { display: block; }
+#ck-sources .hd { padding: 11px 15px 7px; font-size: 9.5px; letter-spacing: .16em;
+                  color: #6b7b88; border-bottom: 1px solid rgba(31,42,51,.7); }
+#ck-sources .ft { padding: 9px 15px; font-size: 10.5px; color: #5a6b78;
+                  border-top: 1px solid rgba(31,42,51,.6); }
+.ck-source { display: flex; align-items: center; gap: 11px; padding: 11px 15px; cursor: pointer;
+             border-bottom: 1px solid rgba(31,42,51,.45); transition: background .12s; }
+.ck-source:hover { background: rgba(0,212,126,.07); }
+.ck-source .ic { font-size: 16px; width: 20px; text-align: center; color: #6b7b88; }
+.ck-source.active .ic, .ck-source.active .nm { color: #00d47e; }
+.ck-source .meta { flex: 1; min-width: 0; }
+.ck-source .nm { font-size: 12.5px; color: #d7e0e8; letter-spacing: .04em; }
+.ck-source .sub { font-size: 10.5px; color: #6b7b88; white-space: nowrap;
+                  overflow: hidden; text-overflow: ellipsis; }
+.ck-source .badge { font-size: 9px; letter-spacing: .12em; padding: 2px 7px; border-radius: 6px;
+                    flex: none; }
+.ck-source .badge.live { color: #00d47e; border: 1px solid rgba(0,212,126,.4); }
+.ck-source .badge.go { color: #06080a; background: #00d47e; }
 
 /* network-robot chip (sim modes): a robot on the wifi appears as a source */
 #ck-net { position: fixed; right: 16px; top: 16px; z-index: 80; padding: 8px 14px;
@@ -364,13 +405,22 @@ body.robot-mode #cockpit { display: flex; }
       <div class="ck-chip"><span class="k">HDG</span><span class="v" id="ck-hdg">—</span></div>
     </div>
     <div id="ck-actions">
+      <button class="ck-btn" id="ck-source-btn" title="choose what to control">⊞ SOURCE</button>
       <select id="ck-src" title="camera source">
         <option value="robot">robot cam</option>
         <option value="webcam">webcam</option>
       </select>
       <button class="ck-btn" id="ck-policy-btn" title="edit the running behavior">⌨ POLICY</button>
       <button class="ck-btn danger" id="ck-hold" title="stop the behavior; robot holds">⏸ HOLD</button>
+      <a class="ck-btn" id="ck-deck" href="/" title="full flight deck" style="text-decoration:none">⊟ DECK</a>
     </div>
+  </div>
+
+  <!-- source picker: every robot/sim/camera this runtime can reach -->
+  <div id="ck-sources">
+    <div class="hd">SOURCE — what you're controlling</div>
+    <div id="ck-src-list"></div>
+    <div class="ft">a robot on your wifi appears here automatically</div>
   </div>
 
   <div id="ck-map">
@@ -380,7 +430,7 @@ body.robot-mode #cockpit { display: flex; }
 
   <div id="ck-policy">
     <div class="hd"><b>BEHAVIOR</b><span class="sub" id="ck-pname">—</span><span class="cl" id="ck-policy-close">✕</span></div>
-    <div id="ck-edhost"><textarea id="ck-code" spellcheck="false"></textarea></div>
+    <div id="ck-edhost"><pre id="ck-hl"><code></code></pre><textarea id="ck-code" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea></div>
     <div id="ck-bar">
       <button class="ck-btn hot" id="ck-deploy">▶ DEPLOY</button>
       <button class="ck-btn" id="ck-stop">■ STOP</button>
@@ -388,10 +438,9 @@ body.robot-mode #cockpit { display: flex; }
     </div>
   </div>
 
-  <div id="ck-ticker">
-    <span class="src" id="ck-tick-src">●</span>
-    <span class="msg" id="ck-tick-msg">connecting to robot…</span>
-    <span class="deck"><a href="/">flight deck →</a></span>
+  <div id="ck-timeline">
+    <div class="hd"><span>TIMELINE</span><b id="ck-tl-sub">live decisions &amp; sightings</b></div>
+    <div id="ck-tl-list"></div>
   </div>
 </div>
 

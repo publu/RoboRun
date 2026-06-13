@@ -1251,14 +1251,18 @@ async function api(path, body) {
 let MODE = "detect";                       // "server" | "wasm"
 let wasmRT = null, wasmLoading = false;
 async function detectMode() {
-  // a connected robot wins: the arena renders *its* reality, not the sim's
-  try {
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), 1500);
-    const r = await fetch("/api/ros/health", { signal: ctl.signal });
-    clearTimeout(t);
-    if (r.ok && (await r.json()).connected) { enterRobotMode(); return; }
-  } catch {}
+  // a connected robot wins by default — but the user can pin a source (the
+  // SOURCE picker), e.g. to work in the sim while a robot stays connected
+  const pinned = localStorage.getItem("roborun.source");
+  if (pinned !== "sim") {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 1500);
+      const r = await fetch("/api/ros/health", { signal: ctl.signal });
+      clearTimeout(t);
+      if (r.ok && (await r.json()).connected) { enterRobotMode(); return; }
+    } catch {}
+  }
   try {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 1500);
@@ -1282,6 +1286,14 @@ let lastMoveSent = 0;
 let robotPolicyName = "";
 const TYPE_GLYPH = { drone: "✈", quadruped: "◈", humanoid: "⬡", arm: "⚙", webcam_only: "◉" };
 const ckTrail = [];          // recent poses, world frame, for the tactical map
+let ckPose = null;           // latest robot pose, shared across pollers
+const ckObjects = new Map(); // track_id → world-tracked object (moving vs stationary)
+const CK_HFOV = 1.0472;      // camera horizontal FOV (rad) — matches the X3 cam
+const CLASS_H = { person: 1.7, car: 1.5, truck: 2.6, bus: 3.0, bicycle: 1.1,
+                  motorcycle: 1.2, "dog": 0.6, "cat": 0.3, "chair": 0.9 };
+const CLASS_COLOR = { person: "#00d47e", car: "#e0a030", truck: "#e0a030",
+                      bus: "#e0a030", bicycle: "#40a0e0", motorcycle: "#40a0e0" };
+const ckColor = (label) => CLASS_COLOR[label] || "#9fb0bd";
 
 /* ── robot cockpit: the camera is the hero, everything else is a HUD ───── */
 function enterRobotMode() {
@@ -1301,6 +1313,20 @@ function enterRobotMode() {
     img.src = `${RT_BASE()}/api/camera/frame?source=${camSource}&t=${Date.now()}`;
   })();
 
+  // syntax-highlighted policy editor: keep the underlay in sync on edit/scroll
+  const code = $("ck-code"), hl = $("ck-hl");
+  const sync = () => { hl.firstChild.innerHTML = ckHighlight(code.value);
+                       hl.scrollTop = code.scrollTop; hl.scrollLeft = code.scrollLeft; };
+  code.addEventListener("input", sync);
+  code.addEventListener("scroll", () => { hl.scrollTop = code.scrollTop; hl.scrollLeft = code.scrollLeft; });
+  code.addEventListener("keydown", (e) => {           // tab inserts spaces
+    if (e.key === "Tab") { e.preventDefault();
+      const s = code.selectionStart, en = code.selectionEnd;
+      code.value = code.value.slice(0, s) + "    " + code.value.slice(en);
+      code.selectionStart = code.selectionEnd = s + 4; sync(); }
+  });
+  window.__ckSyncCode = sync;
+
   // policy slide-in toggles
   const pol = $("ck-policy");
   $("ck-policy-btn").addEventListener("click", () => pol.classList.toggle("open"));
@@ -1308,6 +1334,17 @@ function enterRobotMode() {
   $("ck-hold").addEventListener("click", ckStop);
   $("ck-deploy").addEventListener("click", ckDeploy);
   $("ck-stop").addEventListener("click", ckStop);
+
+  // source picker
+  const srcBtn = $("ck-source-btn"), srcMenu = $("ck-sources");
+  srcBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    srcMenu.classList.toggle("open");
+    if (srcMenu.classList.contains("open")) buildSourceMenu();
+  });
+  document.addEventListener("click", (e) => {
+    if (!srcMenu.contains(e.target) && e.target !== srcBtn) srcMenu.classList.remove("open");
+  });
 
   // identify where this robot lives (host + transport)
   fetch("/api/sources").then((r) => r.json()).then((s) => {
@@ -1319,9 +1356,88 @@ function enterRobotMode() {
   loadRobotBehavior();
   pollRobot();
   pollRobotDetections();
-  ckTicker();
+  ckTimeline();
 }
 function $(id) { return document.getElementById(id); }
+
+/* lightweight Python highlighter for the policy underlay. Tokenizes in one
+   pass so strings/comments swallow keywords inside them. */
+const CK_KW = new Set(("def return if elif else for while in and or not is None True False " +
+  "import from as with try except finally class lambda yield break continue pass global " +
+  "nonlocal raise assert del await async").split(" "));
+const CK_BUILTIN = new Set("robot self range len min max abs int float str print round sum".split(" "));
+function ckEsc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function ckHighlight(src) {
+  let out = "", i = 0, n = src.length;
+  while (i < n) {
+    const c = src[i];
+    if (c === "#") { let j = i; while (j < n && src[j] !== "\n") j++;
+      out += `<span class="tk-com">${ckEsc(src.slice(i, j))}</span>`; i = j; continue; }
+    if (c === '"' || c === "'") {
+      const triple = src.slice(i, i + 3);
+      if (triple === '"""' || triple === "'''") {       // docstring / block string
+        let j = i + 3; while (j < n && src.slice(j, j + 3) !== triple) j++;
+        out += `<span class="tk-str">${ckEsc(src.slice(i, j + 3))}</span>`; i = j + 3; continue;
+      }
+      const q = c; let j = i + 1;
+      while (j < n && src[j] !== q && src[j] !== "\n") { if (src[j] === "\\") j++; j++; }
+      out += `<span class="tk-str">${ckEsc(src.slice(i, j + 1))}</span>`; i = j + 1; continue; }
+    if (c === "@") { let j = i + 1; while (j < n && /[\w.]/.test(src[j])) j++;
+      out += `<span class="tk-dec">${ckEsc(src.slice(i, j))}</span>`; i = j; continue; }
+    if (/[A-Za-z_]/.test(c)) { let j = i; while (j < n && /[\w]/.test(src[j])) j++;
+      const w = src.slice(i, j);
+      const prev = src.slice(0, i).trimEnd();
+      const cls = CK_KW.has(w) ? "tk-kw"
+        : (prev.endsWith("def") || prev.endsWith("class")) ? "tk-def"
+        : CK_BUILTIN.has(w) ? "tk-bn" : null;
+      out += cls ? `<span class="${cls}">${w}</span>` : ckEsc(w); i = j; continue; }
+    if (/[0-9]/.test(c)) { let j = i; while (j < n && /[\d.]/.test(src[j])) j++;
+      out += `<span class="tk-num">${ckEsc(src.slice(i, j))}</span>`; i = j; continue; }
+    out += ckEsc(c); i++;
+  }
+  return out;
+}
+
+/* the source picker: every robot / sim this runtime can reach, in one menu.
+   A connected robot, a sim arena, and any rosbridge discovered on the LAN —
+   pick one and the page switches to it. Answers "I don't want the drone,
+   give me something else even though ROS is connected." */
+async function buildSourceMenu() {
+  const list = $("ck-src-list");
+  list.innerHTML = '<div class="ck-source"><span class="ic">…</span>' +
+    '<div class="meta"><div class="nm">scanning…</div></div></div>';
+  let s = {};
+  try { s = await (await fetch("/api/sources")).json(); } catch {}
+  const rows = [];
+  // the connected robot (active)
+  if (s.robot && s.robot.connected) {
+    rows.push({ ic: TYPE_GLYPH[s.robot.type] || "◈",
+      nm: (s.robot.type || "robot").replace("_", " ").toUpperCase(),
+      sub: `rosbridge ${s.robot.host}`, badge: "live", active: true,
+      onPick: () => $("ck-sources").classList.remove("open") });
+  }
+  // other rosbridges on the network
+  for (const f of ((s.network && s.network.found) || [])) {
+    if (s.robot && s.robot.connected && f.host === s.robot.host) continue;
+    rows.push({ ic: "◈", nm: "ROBOT", sub: `rosbridge ${f.host}:${f.port}`, badge: "go",
+      onPick: async () => { await api("/api/ros/connect", { host: f.host, port: f.port });
+        localStorage.removeItem("roborun.source"); location.reload(); } });
+  }
+  // the browser sim arena — leave the robot without disconnecting it
+  rows.push({ ic: "◐", nm: "SIM ARENA", sub: "browser physics · code & test policies",
+    onPick: () => { localStorage.setItem("roborun.source", "sim"); location.reload(); } });
+
+  list.innerHTML = "";
+  for (const r of rows) {
+    const el = document.createElement("div");
+    el.className = "ck-source" + (r.active ? " active" : "");
+    el.innerHTML = `<span class="ic">${r.ic}</span><div class="meta">` +
+      `<div class="nm">${r.nm}</div><div class="sub">${r.sub}</div></div>` +
+      (r.badge ? `<span class="badge ${r.badge}">${r.badge === "go" ? "CONNECT" : "LIVE"}</span>` : "");
+    el.addEventListener("click", r.onPick);
+    list.appendChild(el);
+  }
+}
 
 async function loadRobotBehavior() {
   try {
@@ -1332,7 +1448,9 @@ async function loadRobotBehavior() {
     robotPolicyName = live.name;
     $("ck-pname").textContent = live.name;
     const src = await api("/api/behaviors/read", { name: live.name });
-    if (src.ok) { $("ck-code").value = src.source; ckPStat(`live: ${live.name}`, "ok"); }
+    if (src.ok) { $("ck-code").value = src.source;
+      if (window.__ckSyncCode) window.__ckSyncCode();
+      ckPStat(`live: ${live.name}`, "ok"); }
   } catch {}
 }
 function ckPStat(msg, cls) {
@@ -1362,6 +1480,7 @@ async function pollRobot() {
   try {
     const r = await (await fetch("/api/ros/cloud")).json();
     const p = r.pose;
+    ckPose = p || ckPose;
     if (p) {
       const now = performance.now();
       if (ckTrail.length) {
@@ -1397,75 +1516,177 @@ async function pollRobot() {
   setTimeout(pollRobot, 150);
 }
 
+/* range + bearing of a detection, projected to a world (x,z) point using
+   the drone's pose. Distance comes from how tall the object stands in the
+   frame against its real-world height — the same monocular cue the follow
+   behavior leans on, good to roughly ±20%. */
+function projectDetection(d, pose, aspect) {
+  const realH = CLASS_H[d.label] || 1.4;
+  const vfov = 2 * Math.atan(Math.tan(CK_HFOV / 2) * aspect);
+  const dist = Math.max(0.6, Math.min(60, realH / (2 * Math.tan(vfov / 2) * Math.max(0.02, d.h))));
+  const cxn = d.x + d.w / 2;
+  const bearing = (pose.heading || 0) + (0.5 - cxn) * CK_HFOV;
+  return { dist, bearing,
+           wx: pose.x + Math.cos(bearing) * dist,
+           wz: pose.z - Math.sin(bearing) * dist };
+}
+
 function drawTacticalMap(r) {
   const cv = $("ck-mapcv"); if (!cv) return;
   const ctx = cv.getContext("2d"); const W = cv.width, H = cv.height;
+  const cx = W / 2, cy = H / 2, R = Math.min(W, H) / 2 - 10;
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = "#070b0e"; ctx.fillRect(0, 0, W, H);
-  const cx = W / 2, cy = H / 2;
-  // world auto-scale around the robot's recent travel
-  let span = 8;
-  for (const t of ckTrail) span = Math.max(span, Math.abs(t.x - (r.pose?.x || 0)),
-                                                  Math.abs(t.z - (r.pose?.z || 0)));
-  const sc = (Math.min(W, H) / 2 - 10) / span;
-  // range rings
-  ctx.strokeStyle = "rgba(42,58,70,.5)"; ctx.lineWidth = 1;
-  for (let i = 1; i <= 3; i++) { ctx.beginPath();
-    ctx.arc(cx, cy, (Math.min(W, H) / 2 - 10) * i / 3, 0, 7); ctx.stroke(); }
   const rx = r.pose?.x || 0, rz = r.pose?.z || 0;
-  // accumulated point cloud (lidar / spatial memory)
-  ctx.fillStyle = "rgba(0,212,126,.5)";
+  // auto-scale to hold the trail and every tracked object in view
+  let span = 6;
+  for (const t of ckTrail) span = Math.max(span, Math.abs(t.x - rx), Math.abs(t.z - rz));
+  for (const o of ckObjects.values()) span = Math.max(span, Math.abs(o.wx - rx) + 1, Math.abs(o.wz - rz) + 1);
+  const sc = R / span;
+  // range rings + their real distance, so the map reads in meters
+  ctx.font = "8px ui-monospace, Menlo, monospace";
+  for (let i = 1; i <= 3; i++) {
+    ctx.strokeStyle = "rgba(42,58,70,.5)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, R * i / 3, 0, 7); ctx.stroke();
+    ctx.fillStyle = "rgba(90,107,120,.7)";
+    ctx.fillText((span * i / 3).toFixed(0) + "m", cx + 2, cy - R * i / 3 + 9);
+  }
+  // lidar / accumulated cloud (ground robots; drone has none)
+  ctx.fillStyle = "rgba(0,212,126,.4)";
   for (const pt of (r.points || [])) {
     const px = cx + (pt[0] - rx) * sc, py = cy + (pt[1] - rz) * sc;
     if (px >= 0 && px < W && py >= 0 && py < H) ctx.fillRect(px, py, 1.5, 1.5);
   }
-  // trail
-  ctx.strokeStyle = "rgba(0,212,126,.55)"; ctx.lineWidth = 1.5; ctx.beginPath();
+  // travel trail
+  ctx.strokeStyle = "rgba(0,212,126,.5)"; ctx.lineWidth = 1.5; ctx.beginPath();
   ckTrail.forEach((t, i) => { const px = cx + (t.x - rx) * sc, py = cy + (t.z - rz) * sc;
     i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
   ctx.stroke();
-  // robot + heading wedge
+  // tracked objects — stationary as hollow squares, movers filled with a
+  // heading tail, the followed target ringed
+  const now = performance.now();
+  for (const o of ckObjects.values()) {
+    const px = cx + (o.wx - rx) * sc, py = cy + (o.wz - rz) * sc;
+    if (px < 2 || px > W - 2 || py < 2 || py > H - 2) continue;
+    const col = ckColor(o.label);
+    if (o.followed) {
+      const pulse = 0.5 + 0.5 * Math.sin(now / 240);
+      ctx.strokeStyle = col; ctx.globalAlpha = 0.4 + 0.6 * pulse; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(px, py, 6 + pulse * 2, 0, 7); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    if (o.moving) {
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(px, py, 2.6, 0, 7); ctx.fill();
+      if (o.vx !== undefined) { ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.beginPath();
+        ctx.moveTo(px, py); ctx.lineTo(px + o.vx * sc * 1.2, py + o.vz * sc * 1.2); ctx.stroke(); }
+    } else {
+      ctx.strokeStyle = col; ctx.globalAlpha = 0.8; ctx.lineWidth = 1.2;
+      ctx.strokeRect(px - 2.5, py - 2.5, 5, 5); ctx.globalAlpha = 1;
+    }
+  }
+  // robot + heading wedge, always on top
   const hd = r.pose?.heading || 0;
-  ctx.fillStyle = "#00d47e";
-  ctx.beginPath(); ctx.arc(cx, cy, 3.5, 0, 7); ctx.fill();
-  ctx.strokeStyle = "rgba(0,212,126,.8)"; ctx.beginPath();
-  ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(hd) * 14, cy - Math.sin(hd) * 14); ctx.stroke();
+  ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(cx, cy, 3.5, 0, 7); ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,.85)"; ctx.lineWidth = 1.5; ctx.beginPath();
+  ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(hd) * 15, cy - Math.sin(hd) * 15); ctx.stroke();
 }
 
 async function pollRobotDetections() {
   try {
     const r = await (await fetch("/api/robot/detections")).json();
     const ov = $("ck-overlay"); ov.innerHTML = "";
-    // the feed is object-fit:cover — replicate that crop so boxes line up
     const iw = r.w || 16, ih = r.h || 9, vw = innerWidth, vh = innerHeight;
     const scale = Math.max(vw / iw, vh / ih);
     const dw = iw * scale, dh = ih * scale, ox = (vw - dw) / 2, oy = (vh - dh) / 2;
-    for (const d of (r.detections || [])) {
+    const pose = ckPose, aspect = ih / iw, now = performance.now();
+    const dets = r.detections || [];
+    // pick the followed target the way follow_person_drone does: the
+    // highest-confidence person
+    let followed = null;
+    for (const d of dets) if (d.label === "person" &&
+        (!followed || d.conf > followed.conf)) followed = d;
+
+    const seen = new Set();
+    for (const d of dets) {
+      const proj = pose ? projectDetection(d, pose, aspect) : null;
+      // draw the camera box, with live distance when we can estimate it
       const box = document.createElement("div"); box.className = "ck-det";
-      box.style.left = (ox + d.x * dw) + "px";
-      box.style.top = (oy + d.y * dh) + "px";
-      box.style.width = (d.w * dw) + "px";
-      box.style.height = (d.h * dh) + "px";
-      box.innerHTML = `<span class="tag">${d.label} ${(d.conf * 100).toFixed(0)}%</span>`;
+      box.style.left = (ox + d.x * dw) + "px"; box.style.top = (oy + d.y * dh) + "px";
+      box.style.width = (d.w * dw) + "px"; box.style.height = (d.h * dh) + "px";
+      box.style.borderColor = ckColor(d.label);
+      const tag = box.appendChild(document.createElement("span"));
+      tag.className = "tag"; tag.style.background = ckColor(d.label);
+      tag.textContent = `${d.label} ${(d.conf * 100).toFixed(0)}%` +
+        (proj ? ` · ${proj.dist.toFixed(1)}m` : "");
       ov.appendChild(box);
+
+      // world-track it: id by track_id when present, else by class+bearing
+      if (proj && pose) {
+        const id = d.track_id != null ? "t" + d.track_id
+                 : d.label + Math.round((d.x + d.w / 2) * 8);
+        seen.add(id);
+        let o = ckObjects.get(id);
+        if (!o) { o = { label: d.label, hist: [] }; ckObjects.set(id, o); }
+        o.wx = proj.wx; o.wz = proj.wz; o.dist = proj.dist; o.last = now;
+        o.followed = (d === followed);
+        o.hist.push({ x: proj.wx, z: proj.wz, t: now });
+        if (o.hist.length > 14) o.hist.shift();
+        // moving vs stationary: displacement across the history window
+        if (o.hist.length >= 6) {
+          const a = o.hist[0], b = o.hist[o.hist.length - 1];
+          const dt = Math.max(0.001, (b.t - a.t) / 1000);
+          const sp = Math.hypot(b.x - a.x, b.z - a.z) / dt;
+          o.moving = sp > 0.35;
+          o.vx = (b.x - a.x) / dt; o.vz = (b.z - a.z) / dt;
+        }
+      }
+    }
+    // age out objects we haven't seen for ~1.5s
+    for (const [id, o] of ckObjects) if (now - o.last > 1500) ckObjects.delete(id);
+
+    // followed-target readout in the lower-left OSD
+    if (followed && pose) {
+      const proj = projectDetection(followed, pose, aspect);
+      const o = [...ckObjects.values()].find((x) => x.followed);
+      const motion = o && o.moving ? "MOVING" : "STATIONARY";
+      $("ck-osd-bl").innerHTML =
+        `<span class="lbl">TRACK</span> person · ${proj.dist.toFixed(1)} m · ${motion}`;
+    } else {
+      $("ck-osd-bl").innerHTML = `<span class="lbl">SCANNING</span>`;
     }
   } catch {}
-  setTimeout(pollRobotDetections, 250);
+  setTimeout(pollRobotDetections, 200);
 }
 
-async function ckTicker() {
+/* the timeline: the robot's stream of decisions and sightings, rendered as
+   it happens. Same idea as the sim arena's event feed — one consistent
+   "what is happening" surface, whatever the source is. */
+const CK_SRC_COLOR = { follow_person_drone: "#00d47e", fix_camera: "#40a0e0",
+  ros: "#e0a030", frame: "#9fb0bd", camera: "#9fb0bd", system: "#6b7b88" };
+let ckTLSeen = 0;
+async function ckTimeline() {
   try {
     const evs = (await (await fetch("/api/run/events")).json()).events || [];
-    const interesting = evs.filter((e) =>
-      ["follow_person_drone", "fix_camera", "ros", "frame"].includes(e.source) ||
-      (e.title && /follow|move|person|cmd/i.test(e.title)));
-    const last = interesting[interesting.length - 1] || evs[evs.length - 1];
-    if (last) {
-      $("ck-tick-src").textContent = "● " + (last.source || "robot");
-      $("ck-tick-msg").textContent = last.title || "";
+    const list = $("ck-tl-list");
+    // keep only the meaningful stream: decisions, perception, robot I/O
+    const rows = evs.filter((e) =>
+      e.source !== "arena" && (e.title || "").trim() &&
+      !/level loaded|behaviors:/.test(e.title));
+    // append only what's new (events carry incrementing ids/ts)
+    const fresh = rows.slice(Math.max(0, rows.length - 7));
+    list.innerHTML = "";
+    for (const e of fresh) {
+      const row = document.createElement("div"); row.className = "ck-tl-row";
+      const t = e.ts ? new Date(e.ts * 1000) : new Date();
+      const hhmmss = t.toTimeString().slice(0, 8);
+      const col = CK_SRC_COLOR[e.source] || "#6b7b88";
+      row.innerHTML = `<span class="t">${hhmmss}</span>` +
+        `<span class="dot" style="background:${col}"></span>` +
+        `<span class="m">${(e.title || "").replace(/</g, "&lt;")}</span>`;
+      list.appendChild(row);
     }
   } catch {}
-  setTimeout(ckTicker, 700);
+  setTimeout(ckTimeline, 600);
 }
 
 /* ── network robots (sim modes): a rosbridge on the wifi is a source ───── */
@@ -1475,19 +1696,25 @@ async function pollNetworkRobots() {
     const r = await (await fetch("/api/sources")).json();
     const found = (r.network && r.network.found) || [];
     const chip = $("ck-net");
-    if (found.length && !r.robot.connected) {
+    if (r.robot && r.robot.connected) {
+      // a robot IS connected but we're in the sim (pinned) — offer the way back
+      chip.textContent = "✈ robot connected · enter cockpit →";
+      chip.style.display = "block";
+      chip.onclick = () => { localStorage.removeItem("roborun.source"); location.reload(); };
+    } else if (found.length) {
       const r0 = found.find((f) => f.local) || found[0];
       chip.textContent = `◈ robot on network — ${r0.host}:${r0.port} · click to connect`;
       chip.style.display = "block";
       chip.onclick = async () => {
         chip.textContent = "connecting…";
         const res = await api("/api/ros/connect", { host: r0.host, port: r0.port });
+        localStorage.removeItem("roborun.source");
         if (res.ok) location.reload();
         else chip.textContent = `connect failed: ${res.error || "?"}`;
       };
     } else { chip.style.display = "none"; }
   } catch {}
-  setTimeout(pollNetworkRobots, 10000);
+  setTimeout(pollNetworkRobots, 8000);
 }
 
 function sendRobotMove(cmd) {
