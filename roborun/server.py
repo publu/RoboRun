@@ -106,10 +106,11 @@ class Handler(SimpleHTTPRequestHandler):
         if dispatch_get(self.path, self):
             return
 
-        # Static files — the flight deck IS the UI; the arena is the sim
-        if path_only in ("/", "/deck"):
-            self.path = "/deck.html"
-        elif path_only == "/arena":
+        # One view: the cockpit. Every entry point lands on it — a connected
+        # robot shows its camera/map/timeline, no robot shows the sim, and
+        # the SOURCE picker switches between them. (/deck kept as an alias so
+        # old links don't 404; the legacy flight deck is retired.)
+        if path_only in ("/", "/deck", "/arena"):
             self.path = "/arena.html"
         super().do_GET()
 
@@ -345,7 +346,7 @@ def main() -> None:
             # what didn't start and point at the path that needs no installs.
             emit("system", "server",
                  "no camera or sim started — " + "; ".join(why) +
-                 ". Open /arena: browser sim, nothing to install.")
+                 ". Open the cockpit: browser sim, nothing to install.")
         threading.Thread(target=_autostart, daemon=True, name="Autostart").start()
 
     server = ThreadingHTTPServer((HOST, PORT), Handler)
