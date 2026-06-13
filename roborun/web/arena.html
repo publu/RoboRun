@@ -403,6 +403,24 @@ body.cockpit #cockpit { display: flex; }
 .ck-source .badge.live { color: #00d47e; border: 1px solid rgba(0,212,126,.4); }
 .ck-source .badge.go { color: #06080a; background: #00d47e; font-weight: 700; }
 
+/* in-app confirmation modal — replaces the native browser confirm() */
+#ck-confirm { position: fixed; inset: 0; z-index: 95; display: none;
+              align-items: center; justify-content: center;
+              background: rgba(4,6,8,.66); backdrop-filter: blur(6px); }
+#ck-confirm.open { display: flex; }
+#ck-confirm .box { width: 440px; max-width: 92vw; padding: 24px 26px;
+                   background: rgba(11,15,19,.99); border: 1px solid rgba(224,160,48,.4);
+                   border-radius: 16px; box-shadow: 0 30px 80px rgba(0,0,0,.7); }
+#ck-confirm .ttl { font-size: 15px; color: #e0a030; letter-spacing: .04em; margin-bottom: 10px; }
+#ck-confirm .msg { font-size: 13px; line-height: 1.6; color: #9fb0bd; margin-bottom: 22px; }
+#ck-confirm .row { display: flex; gap: 11px; justify-content: flex-end; }
+.ck-cbtn { background: rgba(16,22,28,.9); color: #9fb0bd; border: 1px solid #2a3a46;
+           border-radius: 9px; font: inherit; font-size: 12.5px; letter-spacing: .06em;
+           padding: 9px 20px; cursor: pointer; transition: all .14s; }
+.ck-cbtn:hover { color: #d7e0e8; border-color: #3a4d5a; }
+.ck-cbtn.yes { color: #06080a; background: #00d47e; border-color: #00d47e; font-weight: 700; }
+.ck-cbtn.yes:hover { background: #1ee08c; }
+
 /* network-robot chip — BELOW the top bar so it never blocks the actions */
 #ck-net { position: fixed; right: 16px; top: 76px; z-index: 29; padding: 8px 14px;
           border-radius: 11px; font-size: 11px; letter-spacing: .04em; cursor: pointer;
@@ -472,6 +490,18 @@ body.cockpit #cockpit { display: flex; }
   <div id="ck-timeline">
     <div class="hd"><span>TIMELINE</span><b id="ck-tl-sub">live decisions &amp; sightings</b></div>
     <div id="ck-tl-list"></div>
+  </div>
+
+  <!-- styled confirmation (replaces the native browser confirm) -->
+  <div id="ck-confirm">
+    <div class="box">
+      <div class="ttl" id="ck-confirm-ttl">⚠ Deploy to the connected robot?</div>
+      <div class="msg" id="ck-confirm-msg"></div>
+      <div class="row">
+        <button class="ck-cbtn" id="ck-confirm-no">Cancel</button>
+        <button class="ck-cbtn yes" id="ck-confirm-yes">▶ DEPLOY</button>
+      </div>
+    </div>
   </div>
 </div>
 

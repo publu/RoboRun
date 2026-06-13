@@ -1521,6 +1521,22 @@ async function loadRobotBehavior() {
 function ckPStat(msg, cls) {
   const el = $("ck-pstat"); el.textContent = msg; el.className = "stat " + (cls || "");
 }
+// styled confirm — a cockpit modal instead of the native browser popup
+function ckConfirm(title, msg) {
+  return new Promise((resolve) => {
+    const m = $("ck-confirm");
+    $("ck-confirm-ttl").textContent = title;
+    $("ck-confirm-msg").textContent = msg;
+    m.classList.add("open");
+    const done = (v) => { m.classList.remove("open");
+      $("ck-confirm-yes").onclick = null; $("ck-confirm-no").onclick = null;
+      m.onclick = null; resolve(v); };
+    $("ck-confirm-yes").onclick = () => done(true);
+    $("ck-confirm-no").onclick = () => done(false);
+    m.onclick = (e) => { if (e.target === m) done(false); };
+  });
+}
+
 async function ckDeploy() {
   const source = $("ck-code").value;
   if (COCKPIT === "sim") {
@@ -1533,9 +1549,9 @@ async function ckDeploy() {
   }
   const name = robotPolicyName || "robot_policy";
   if (!source.includes("@behavior")) { ckPStat("needs an @behavior function", "err"); return; }
-  if (!confirm(`Deploy "${name}" to the CONNECTED ROBOT?\nIt hot-reloads and moves hardware immediately.`)) {
-    ckPStat("deploy cancelled", ""); return;
-  }
+  const ok = await ckConfirm(`⚠ Deploy "${name}" to the CONNECTED ROBOT?`,
+    "It hot-reloads and starts moving real hardware immediately.");
+  if (!ok) { ckPStat("deploy cancelled", ""); return; }
   ckPStat("saving…", "");
   const w = await api("/api/behaviors/write", { name, source });
   if (!w.ok) { ckPStat(w.error || "write failed", "err"); return; }
