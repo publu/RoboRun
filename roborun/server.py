@@ -321,6 +321,16 @@ def main() -> None:
         def _autostart() -> None:
             from roborun.events import emit
             time.sleep(2.0)  # let a previous instance release the camera
+            # a connected/saved robot IS the camera source — never grab the
+            # laptop webcam (and its privacy light) out from under the user
+            try:
+                from roborun.connect import saved_robot
+                if saved_robot():
+                    emit("system", "server",
+                         "autostart: a robot is the source — webcam left off")
+                    return
+            except Exception:
+                pass
             why: list[str] = []
             try:
                 from roborun.routes._singletons import get_webcam
