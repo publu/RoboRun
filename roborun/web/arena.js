@@ -2158,10 +2158,11 @@ async function refreshRosCard() {
       `policy file drives them all.</div>`;
     return;
   }
-  if (s.robot && s.robot.connected) {     // a robot is live
+  if (s.robot && s.robot.connected) {     // a source is live on rosbridge
+    const ty = s.robot.type;
+    const label = (ty && ty !== "webcam_only") ? ty.toUpperCase() : "ROSBRIDGE";
     const btn = document.createElement("button");
-    btn.innerHTML = `▶ ${(s.robot.type || "robot").toUpperCase()} · ${s.robot.host}` +
-      `<span class="live">LIVE</span>`;
+    btn.innerHTML = `▶ ${label} · ${s.robot.host}<span class="live">LIVE</span>`;
     btn.addEventListener("click", enterRobot);
     tasks.appendChild(btn);
   }

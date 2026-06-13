@@ -33,9 +33,21 @@ def _local_subnet() -> list[str]:
 
 
 def _probe(host: str, port: int = ROSBRIDGE_PORT, timeout: float = 0.6) -> bool:
+    """True only if :port speaks the rosbridge websocket protocol — not just
+    any service that happens to listen on 9090. A plain TCP open lets through
+    every unrelated :9090 service (the source of confusing false positives);
+    the websocket handshake only completes against a real websocket server,
+    which is what rosbridge is."""
     try:
         with socket.create_connection((host, port), timeout=timeout):
-            return True
+            pass
+    except Exception:
+        return False
+    try:
+        from websocket import create_connection
+        ws = create_connection(f"ws://{host}:{port}", timeout=timeout)
+        ws.close()
+        return True
     except Exception:
         return False
 
