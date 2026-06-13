@@ -210,7 +210,10 @@
    camera and a sim's 3D render are both just "the stream"; the map,
    timeline and telemetry are derived from inputs both sources provide. */
 body.cockpit #toolbar, body.cockpit #keys, body.cockpit #toasts,
-body.cockpit .panel, body.cockpit #start, body.cockpit #win { display: none !important; }
+body.cockpit .panel, body.cockpit #win { display: none !important; }
+/* the robot+task picker (LEVELS) must still open in cockpit mode */
+body.cockpit #start { display: none !important; }
+body.cockpit #start.show { display: grid !important; }
 body.cockpit { background: #06080a; }
 /* robot source: camera feed is the hero, the 3D arena canvas is unused */
 body.cockpit.src-robot canvas.webgl { display: none !important; }

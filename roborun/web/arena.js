@@ -1294,6 +1294,7 @@ const ckObjects = new Map(); // track_id → world-tracked object (moving vs sta
 // own perception and decisions, never the server log (which, on a
 // robot-connected runtime, is dominated by the real robot)
 const simLog = [];
+const simCloud = [];   // accumulated sim-lidar world points (the generated map)
 function simEvent(source, title) {
   simLog.push({ source, title, ts: Date.now() / 1000 });
   if (simLog.length > 40) simLog.shift();
@@ -1341,7 +1342,7 @@ function enterCockpit(src) {
   $("ck-policy-btn").addEventListener("click", () => pol.classList.toggle("open"));
   $("ck-policy-close").addEventListener("click", () => pol.classList.remove("open"));
   $("ck-policy-expand").addEventListener("click", () => pol.classList.toggle("wide"));
-  $("ck-hold").addEventListener("click", ckStop);
+  $("ck-hold").addEventListener("click", () => ckSetPaused(!ckPaused));
   $("ck-deploy").addEventListener("click", ckDeploy);
   $("ck-stop").addEventListener("click", ckStop);
   const srcBtn = $("ck-source-btn"), srcMenu = $("ck-sources");
@@ -1369,6 +1370,7 @@ function enterCockpit(src) {
       $("ck-where").textContent = `${h === "127.0.0.1" ? "local" : "network"} · rosbridge ${h}`;
     }).catch(() => {});
     loadRobotBehavior(); pollRobot(); pollRobotDetections();
+    ckSetPaused(false, true);   // the robot's behavior is running; label reads PAUSE
   } else {
     // stream = the sim's 3D render. POV is "what the robot sees"; the game
     // loop keeps rendering it full-screen behind the cockpit chrome.
@@ -1381,6 +1383,8 @@ function enterCockpit(src) {
     $("ck-glyph").textContent = TYPE_GLYPH[bot.type] || "◈";
     $("ck-code").value = getCode(); sync();
     $("ck-pname").textContent = "player_policy";
+    cloudOn = false; cloud.visible = false;   // lidar lives in the 2D map, not sprayed on the scene
+    ckSetPaused(true, true);                   // start calm; label reads RESUME
     ckPStat("paused — edit the policy, then DEPLOY to run", "");
     $("ck-levels").addEventListener("click", () => showStart());
     pollSimCockpit();
@@ -1420,9 +1424,18 @@ function pollSimCockpit() {
   $("ck-osd-bl").innerHTML = ckObjects.size
     ? `<span class="lbl">SENSING</span> ${ckObjects.size} object(s) in view`
     : `<span class="lbl">SCANNING</span>`;
+  // accumulate the sim lidar into a world-frame map (the dog has a 36-ray
+  // scanner; [0] is dead ahead, CCW) — this is the generated map building up
+  for (let i = 0; i < lastLidar.length; i++) {
+    const r = lastLidar[i];
+    if (r == null || r >= 7.9) continue;             // 8m = no return
+    const a = bot.heading + (i / lastLidar.length) * Math.PI * 2;
+    simCloud.push([bot.pos.x + Math.cos(a) * r, bot.pos.z - Math.sin(a) * r, r]);
+  }
+  if (simCloud.length > 4000) simCloud.splice(0, simCloud.length - 4000);
   drawTacticalMap({ pose: { x: bot.pos.x, z: bot.pos.z, y: bot.alt, heading: bot.heading },
-                    points: [], robot_type: bot.type });
-  setTimeout(pollSimCockpit, 150);
+                    points: simCloud, lidar: lastLidar, robot_type: bot.type });
+  setTimeout(pollSimCockpit, 120);
 }
 
 /* lightweight Python highlighter for the policy underlay. Tokenizes in one
@@ -1521,6 +1534,27 @@ async function loadRobotBehavior() {
 function ckPStat(msg, cls) {
   const el = $("ck-pstat"); el.textContent = msg; el.className = "stat " + (cls || "");
 }
+// the HOLD button is a clear pause/resume toggle: PAUSE stops the policy
+// (the robot/sim holds), RESUME runs it again. Label reflects current state.
+let ckPaused = false;
+function ckSetPaused(paused, silent) {
+  ckPaused = paused;
+  const btn = $("ck-hold");
+  if (btn) { btn.innerHTML = paused ? "▶ RESUME" : "⏸ PAUSE";
+             btn.classList.toggle("danger", !paused); }
+  if (silent) return;
+  if (COCKPIT === "sim") {
+    simArmed = !paused;
+    if (!paused) setCode($("ck-code").value);
+    try { document.getElementById(paused ? "btnStop" : "btnRun").click(); } catch {}
+    ckPStat(paused ? "paused — DEPLOY or RESUME to run" : "running in the sim", paused ? "" : "ok");
+  } else {
+    const name = robotPolicyName || "robot_policy";
+    api(paused ? "/api/behaviors/disable" : "/api/behaviors/enable", { name }).catch(() => {});
+    ckPStat(paused ? `${name} paused — robot holds` : `${name} running`, paused ? "" : "ok");
+  }
+}
+
 // styled confirm — a cockpit modal instead of the native browser popup
 function ckConfirm(title, msg) {
   return new Promise((resolve) => {
@@ -1544,6 +1578,7 @@ async function ckDeploy() {
     setCode(source);
     document.getElementById("btnRun").click();
     simArmed = true;
+    ckSetPaused(false, true);
     ckPStat("running in the sim — edit & DEPLOY to iterate", "ok");
     return;
   }
@@ -1561,10 +1596,10 @@ async function ckDeploy() {
 }
 async function ckStop() {
   if (COCKPIT === "sim") { simArmed = false; document.getElementById("btnStop").click();
-    ckPStat("paused — robot holds; DEPLOY to run", ""); return; }
+    ckSetPaused(true, true); ckPStat("paused — DEPLOY to run", ""); return; }
   const name = robotPolicyName || "robot_policy";
   await api("/api/behaviors/disable", { name }).catch(() => {});
-  ckPStat(`${name} stopped — robot holds`, "");
+  ckSetPaused(true, true); ckPStat(`${name} stopped — robot holds`, "");
 }
 
 async function pollRobot() {
