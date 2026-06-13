@@ -1847,27 +1847,17 @@ async function ckTimeline() {
 
 /* ── network robots (sim modes): a rosbridge on the wifi is a source ───── */
 async function pollNetworkRobots() {
-  if (MODE === "robot") return;
+  const chip = $("ck-net");
+  // this chip exists for ONE job: in the sim cockpit, offer to jump to a
+  // connected robot. The menu has the ROS card; the robot cockpit is already
+  // there. Anywhere but the sim cockpit, it must stay hidden.
+  if (COCKPIT !== "sim") { chip.style.display = "none"; setTimeout(pollNetworkRobots, 8000); return; }
   try {
     const r = await (await fetch("/api/sources")).json();
-    const found = (r.network && r.network.found) || [];
-    const chip = $("ck-net");
     if (r.robot && r.robot.connected) {
-      // a robot IS connected but we're in the sim (pinned) — offer the way back
       chip.textContent = "✈ robot connected · enter cockpit →";
       chip.style.display = "block";
       chip.onclick = () => { localStorage.removeItem("roborun.source"); location.reload(); };
-    } else if (found.length) {
-      const r0 = found.find((f) => f.local) || found[0];
-      chip.textContent = `◈ robot on network — ${r0.host}:${r0.port} · click to connect`;
-      chip.style.display = "block";
-      chip.onclick = async () => {
-        chip.textContent = "connecting…";
-        const res = await api("/api/ros/connect", { host: r0.host, port: r0.port });
-        localStorage.removeItem("roborun.source");
-        if (res.ok) location.reload();
-        else chip.textContent = `connect failed: ${res.error || "?"}`;
-      };
     } else { chip.style.display = "none"; }
   } catch {}
   setTimeout(pollNetworkRobots, 8000);
