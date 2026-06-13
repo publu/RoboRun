@@ -177,6 +177,23 @@
   .start-foot { color: #4a5a66; margin-top: 18px; }
   .start-foot b { color: #6b7b88; }
 
+  /* the ROS / real-robot card — the complete system, connected or not */
+  .ros-card { display: flex; flex-direction: column; border-color: #1f4434 !important; }
+  .ros-card .ros-ic { width: 165px; height: 140px; margin: 0 auto; display: flex;
+        align-items: center; justify-content: center; font-size: 54px; color: #00d47e; opacity: .85; }
+  .ros-card .ros-sub { color: #00d47e; font-size: 10px; letter-spacing: .14em; margin-top: 2px; }
+  .ros-hint { color: #6b7b88; font-size: 11px; line-height: 1.5; padding: 6px 2px; }
+  .ros-hint b { color: #9fb0bd; }
+  .ros-card .tasks button .live { color: #00d47e; font-size: 9px; letter-spacing: .12em;
+        border: 1px solid #1f6e4c; border-radius: 5px; padding: 1px 6px; margin-left: 6px; }
+  .ros-connect { display: flex; gap: 6px; margin-top: 6px; }
+  .ros-connect input { flex: 1; min-width: 0; background: #0a0f13; color: #d7e0e8;
+        border: 1px solid #2a3a46; border-radius: 5px; font: inherit; font-size: 11px; padding: 6px 8px; }
+  .ros-connect input:focus { outline: none; border-color: #1f6e4c; }
+  .ros-connect button { background: #0d3325; color: #00d47e; border: 1px solid #1f6e4c;
+        border-radius: 5px; font: inherit; font-size: 11px; padding: 6px 12px; cursor: pointer; }
+  .ros-connect button:hover { background: #14241c; }
+
   /* RUN is the one button a first-time visitor must find */
   #btnRun { background: #0d3325 !important; color: #00d47e !important;
             border-color: #1f6e4c !important; font-weight: 700; padding: 3px 16px; }

@@ -1252,10 +1252,16 @@ async function api(path, body) {
 let MODE = "detect";                       // "server" | "wasm"
 let wasmRT = null, wasmLoading = false;
 async function detectMode() {
-  // a connected robot wins by default — but the user can pin a source (the
-  // SOURCE picker), e.g. to work in the sim while a robot stays connected
+  // resolve runtime discovery (sets window.ROBORUN_RUNTIME) before deciding
+  try { await fetch("/api/health"); } catch {}
+  const rt = window.ROBORUN_RUNTIME || {};
+  const iAmRuntime = rt.live && !rt.remote;   // this page IS the roborun server
   const pinned = localStorage.getItem("roborun.source");
-  if (pinned !== "sim") {
+
+  // a robot wired directly into THIS runtime boots straight to its cockpit;
+  // a static launcher (e.g. :8000) always opens the menu, even if a robot is
+  // reachable — the menu is the front door to the whole system.
+  if (iAmRuntime && pinned !== "sim") {
     try {
       const ctl = new AbortController();
       const t = setTimeout(() => ctl.abort(), 1500);
@@ -1264,17 +1270,21 @@ async function detectMode() {
       if (r.ok && (await r.json()).connected) { enterRobotMode(); return; }
     } catch {}
   }
+
+  // otherwise: determine the sim backend now (server vs in-browser wasm) so a
+  // menu pick enters instantly, then show the ROBORUN ARENA menu (the launcher)
   try {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 1500);
     const r = await fetch("/api/arena/cmd", { signal: ctl.signal });
     clearTimeout(t);
-    if (r.ok) { MODE = "server"; enterSimCockpit(); return; }
+    if (r.ok) MODE = "server";
   } catch {}
-  MODE = "wasm";
-  document.body.classList.add("wasm-mode");
-  bootWasm();
-  enterSimCockpit();
+  if (MODE !== "server") {
+    MODE = "wasm"; document.body.classList.add("wasm-mode"); bootWasm();
+  }
+  if (pinned === "sim") { enterSimCockpit(); return; }   // user pinned the sim
+  showStart();
 }
 
 /* ── robot mode: same arena, the world is the robot's telemetry ─────────
@@ -2118,6 +2128,65 @@ function buildStartScreen() {
     card.addEventListener("pointerleave", () => { p.hoverTarget = 0; });
     previews.push(p);
   }
+  buildRosCard();   // the real-robot path sits alongside the sim robots
+}
+
+/* the ROS card: a complete system shows the real-robot path whether or not a
+   robot is connected right now. Connected → enter its cockpit; on the network
+   → connect; otherwise → type an IP. */
+function buildRosCard() {
+  const grid = document.getElementById("startGrid");
+  const card = document.createElement("div");
+  card.className = "bot-card ros-card";
+  card.innerHTML = `<div class="ros-ic">◈</div>
+    <h3>ROS ROBOT<div class="ros-sub">REAL HARDWARE</div></h3>
+    <div class="tag">a Go2, a drone, anything ROS — over rosbridge, the same policy file</div>
+    <div class="tasks" id="ros-tasks"><div class="ros-hint">looking for robots…</div></div>`;
+  grid.appendChild(card);
+  refreshRosCard();
+}
+async function refreshRosCard() {
+  const tasks = document.getElementById("ros-tasks");
+  if (!tasks) return;
+  let s = null;
+  try { s = await (await fetch("/api/sources")).json(); } catch {}
+  tasks.innerHTML = "";
+  const enterRobot = () => { startEl.classList.remove("show"); enterRobotMode(); };
+  if (!s) {                               // no runtime reachable at all
+    tasks.innerHTML = `<div class="ros-hint">start <b>roborun</b> on your robot's ` +
+      `network — a connected robot shows up here. The same code that drives the ` +
+      `sim drives it.</div>`;
+    return;
+  }
+  if (s.robot && s.robot.connected) {     // a robot is live
+    const btn = document.createElement("button");
+    btn.innerHTML = `▶ ${(s.robot.type || "robot").toUpperCase()} · ${s.robot.host}` +
+      `<span class="live">LIVE</span>`;
+    btn.addEventListener("click", enterRobot);
+    tasks.appendChild(btn);
+  }
+  for (const f of ((s.network && s.network.found) || [])) {   // others on the LAN
+    if (s.robot && s.robot.connected && f.host === s.robot.host) continue;
+    const btn = document.createElement("button");
+    btn.textContent = `connect ${f.host}:${f.port}`;
+    btn.addEventListener("click", async () => {
+      await api("/api/ros/connect", { host: f.host, port: f.port }); enterRobot(); });
+    tasks.appendChild(btn);
+  }
+  if (!(s.robot && s.robot.connected)) {
+    const hint = document.createElement("div"); hint.className = "ros-hint";
+    hint.innerHTML = "no robot connected — enter its IP (rosbridge :9090):";
+    tasks.appendChild(hint);
+  }
+  const row = document.createElement("div"); row.className = "ros-connect";
+  row.innerHTML = `<input id="ros-ip" placeholder="robot ip" value="127.0.0.1">` +
+    `<button id="ros-go">CONNECT</button>`;
+  tasks.appendChild(row);
+  document.getElementById("ros-go").addEventListener("click", async () => {
+    const ip = document.getElementById("ros-ip").value.trim(); if (!ip) return;
+    const r = await api("/api/ros/connect", { host: ip, port: 9090 });
+    if (r.ok) enterRobot();
+  });
 }
 let startRaf = 0, startLastT = 0;
 function animateStart(t) {
@@ -2136,15 +2205,17 @@ function animateStart(t) {
   if (startEl.classList.contains("show")) startRaf = requestAnimationFrame(animateStart);
 }
 function showStart() {
-  if (MODE === "robot") return;    // sim onboarding — never over a live robot
+  if (COCKPIT === "robot") return;   // never over a live robot cockpit
   startEl.classList.add("show");
+  refreshRosCard();                  // keep the real-robot options current
   cancelAnimationFrame(startRaf);
   startRaf = requestAnimationFrame(animateStart);
 }
 function enterLevel(i) {
   startEl.classList.remove("show");
   loadLevel(i);
-  policyStatus("starter policy loaded — edit it (or don't), then press ▶ RUN · WASD grabs the wheel anytime", "ok");
+  if (COCKPIT !== "sim") enterSimCockpit();   // a sim pick enters the cockpit
+  policyStatus("starter loaded — edit it, then DEPLOY · WASD grabs the wheel anytime", "ok");
 }
 buildStartScreen();
 // splash shows after mode detection — a connected robot boots into its
