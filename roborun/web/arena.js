@@ -1369,6 +1369,9 @@ function enterCockpit(src) {
       const h = (s.robot && s.robot.host) || "127.0.0.1";
       $("ck-where").textContent = `${h === "127.0.0.1" ? "local" : "network"} · rosbridge ${h}`;
     }).catch(() => {});
+    // a leftover sim sandbox policy (player_policy) would fall through to the
+    // real robot once no arena browser is feeding state — disable it on entry
+    api("/api/behaviors/disable", { name: "player_policy" }).catch(() => {});
     loadRobotBehavior(); pollRobot(); pollRobotDetections();
     ckSetPaused(false, true);   // the robot's behavior is running; label reads PAUSE
   } else {
@@ -1385,6 +1388,15 @@ function enterCockpit(src) {
     $("ck-pname").textContent = "player_policy";
     cloudOn = false; cloud.visible = false;   // lidar lives in the 2D map, not sprayed on the scene
     ckSetPaused(true, true);                   // start calm; label reads RESUME
+    // if this tab closes, make sure the sim's policy can't be left enabled
+    // and fall through to drive a real robot once the arena goes inactive
+    addEventListener("beforeunload", () => {
+      try {
+        fetch("/api/behaviors/disable", { method: "POST", keepalive: true,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "player_policy" }) });
+      } catch {}
+    });
     ckPStat("paused — edit the policy, then DEPLOY to run", "");
     $("ck-levels").addEventListener("click", () => showStart());
     pollSimCockpit();
@@ -1909,13 +1921,14 @@ async function pollCmd() {
     return;
   }
   if (MODE === "server") {
-    if (COCKPIT === "sim" && !simArmed) {
-      serverCmd = { forward: 0, strafe: 0, turn: 0, climb: 0, grip: 0 };  // holds until DEPLOY
-    } else try {
+    try {
       const r = await (await fetch("/api/arena/cmd")).json();
-      serverCmd = r.cmd;
-      serverAnswer = r.answer;
-      serverIntent = r.intent || null;
+      // keep the arena link warm even while paused; just hold the cmd at zero
+      if (COCKPIT === "sim" && !simArmed) {
+        serverCmd = { forward: 0, strafe: 0, turn: 0, climb: 0, grip: 0 };
+      } else {
+        serverCmd = r.cmd; serverAnswer = r.answer; serverIntent = r.intent || null;
+      }
       if (!linked) { linked = true; startAttemptRecording(); }
     } catch { linked = false; }
   }

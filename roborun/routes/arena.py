@@ -39,17 +39,17 @@ def arena_state(h, payload):
         if rec is not None:
             pose = payload.get("pose") or {}
             fx, fy = pose.get("x", 0.0), -pose.get("z", 0.0)
-            h = pose.get("heading", 0.0)
+            hd = pose.get("heading", 0.0)   # not `h` — that's the HTTP handler
             alt = (pose.get("y", 0.0)
                    if (payload.get("level") or {}).get("robot") == "drone" else 0.0)
-            rec.write_pose(fx, fy, alt, heading=h)
+            rec.write_pose(fx, fy, alt, heading=hd)
             dets = payload.get("detections") or []
             if dets:
                 rec.write_detections(dets, name="arena")
-                rec.write_detection_scene(dets, fx, fy, h)
+                rec.write_detection_scene(dets, fx, fy, hd)
             lidar = payload.get("lidar") or []
             if lidar:
-                rec.write_scan(lidar, fx, fy, h)
+                rec.write_scan(lidar, fx, fy, hd)
     except Exception:
         pass
     send_json(h, 200, {"ok": True})
