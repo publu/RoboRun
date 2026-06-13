@@ -535,6 +535,7 @@ body.cockpit #cockpit { display: flex; }
   <button data-panel="p-map">MAP</button>
   <button data-panel="p-view1">VIEW 1</button>
   <button data-panel="p-view2">VIEW 2</button>
+  <button data-panel="p-eyes" id="btnEyes" style="display:none">EYES</button>
   <button data-panel="p-runs">RUNS</button>
   <div class="sep"></div>
   <select id="mainCamSel" class="camSel" title="main view camera — C cycles">
@@ -613,6 +614,17 @@ body.cockpit #cockpit { display: flex; }
 <div class="panel" id="p-runs">
   <div class="p-head"><b>RUNS</b><span style="color:#4a5a66">— recorded attempts, stored in this browser</span><span class="x">✕</span></div>
   <div class="p-body"><div id="runsList"></div></div>
+</div>
+
+<!-- robot camera panel (deck robot mode): the real camera feed + YOLO -->
+<div class="panel" id="p-eyes" style="display:none">
+  <div class="p-head"><b>EYES</b><span>— live robot camera</span>
+    <select id="eyesSrc" class="camSel"><option value="robot">robot cam</option><option value="webcam">webcam</option></select>
+    <span class="x">✕</span></div>
+  <div class="p-body" style="padding:0;background:#000;position:relative">
+    <img id="robotEyesImg" style="display:block;width:100%;height:100%;object-fit:cover">
+    <div id="robotEyesOv" style="position:absolute;inset:0;pointer-events:none"></div>
+  </div>
 </div>
 
 <div id="start"><div class="start-card">

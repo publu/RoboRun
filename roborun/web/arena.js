@@ -1321,10 +1321,131 @@ const ckColor = (label) => CLASS_COLOR[label] || "#9fb0bd";
    tactical map, timeline and telemetry are derived from inputs (camera,
    point cloud, pose) that BOTH sources provide. src = "robot" | "sim". */
 let COCKPIT = null;
+
+/* ── robot DECK mode: the connected robot drives the same multi-panel deck
+   the sim uses. Its pose places the bot, its lidar builds the ROBOT MAP and
+   the 3D world (VIEW panels render it from any angle), its camera fills the
+   EYES panel, its behavior lives in POLICY. Same deck, real telemetry. */
+let robotCloudSeen = 0, robotDeckOn = false;
+async function enterRobotDeck() {
+  MODE = "robot"; robotDeckOn = true;
+  if (levelGroup) levelGroup.visible = false;     // no sim walls
+  cloudOn = true; cloud.visible = true;
+  cloudReset(); occ.fill(0);
+  if (!scene.getObjectByName("robotGrid")) {
+    const grid = new THREE.GridHelper(120, 120, 0x1a2a38, 0x0f1820);
+    grid.name = "robotGrid"; grid.position.y = 0.01; scene.add(grid);
+  }
+  // sim-only toolbar bits off; robot panels on
+  for (const id of ["btnLevels"]) { const e = $(id); if (e) e.style.display = "none"; }
+  for (const sel of ['button[data-panel="p-runs"]', 'button[data-panel="p-brief"]']) {
+    const b = document.querySelector(sel); if (b) b.style.display = "none";
+  }
+  const eyesBtn = $("btnEyes"); if (eyesBtn) eyesBtn.style.display = "";
+  $("p-runs").classList.add("hidden");
+  // repurpose MISSION → robot identity / connection
+  const brief = $("p-brief");
+  if (brief) {
+    brief.querySelector(".p-head b").textContent = "ROBOT";
+    const sel = brief.querySelector("#levelSel"); if (sel) sel.style.display = "none";
+    $("briefTitle").textContent = "CONNECTED ROBOT";
+    $("briefText").innerHTML = "live over rosbridge — its pose, lidar map, camera and " +
+      "behavior fill this deck. The same policy file drives the sim and this robot.";
+    const rooms = $("rooms"); if (rooms) rooms.innerHTML = "";
+  }
+  // EYES camera feed (frame-polled, deterministic)
+  $("p-eyes").style.display = "";
+  let camSrc = "robot";
+  $("eyesSrc").addEventListener("change", (e) => { camSrc = e.target.value; });
+  (function pump() {
+    const img = new Image();
+    img.onload = () => { $("robotEyesImg").src = img.src; setTimeout(pump, 90); };
+    img.onerror = () => setTimeout(pump, 400);
+    img.src = `${RT_BASE()}/api/camera/frame?source=${camSrc}&t=${Date.now()}`;
+  })();
+  // POLICY edits the robot's running behavior
+  wireRobotPolicy();
+  // robot type → body, then start telemetry
+  try {
+    const r = await (await fetch("/api/ros/cloud")).json();
+    const ty = r.robot_type === "drone" ? "drone"
+             : r.robot_type === "humanoid" ? "biped" : "dog";
+    if (bot.type !== ty) { bot.type = ty; buildBody(ty); }
+  } catch {}
+  if (mainCamSel) mainCamSel.value = "chase";
+  pollRobotDeck();
+  pollRobotEyesDets();
+}
+
+async function wireRobotPolicy() {
+  // load the running behavior into the deck's POLICY editor; RUN deploys it
+  try {
+    const r = await (await fetch("/api/behaviors")).json();
+    const live = (r.behaviors || []).find((b) => b.enabled &&
+      !["fix_camera", "heartbeat", "player_policy"].includes(b.name));
+    if (live) {
+      robotPolicyName = live.name;
+      const src = await api("/api/behaviors/read", { name: live.name });
+      if (src.ok) setCode(src.source);
+      policyStatus(`editing ${live.name} — live on the robot · RUN deploys`, "ok");
+    } else policyStatus("no behavior running — write one and RUN", "");
+  } catch {}
+}
+
+async function pollRobotDeck() {
+  if (!robotDeckOn) return;
+  try {
+    const r = await (await fetch("/api/ros/cloud")).json();
+    const p = r.pose;
+    if (p) {
+      bot.pos.x = p.x; bot.pos.z = p.z; bot.alt = (p.y ?? 0);
+      bot.heading = p.heading || 0;
+      if (bot.group) {
+        bot.group.position.set(bot.pos.x, bot.type === "drone" ? bot.alt : (bodySpec?.standH || 0.4), bot.pos.z);
+        bot.group.rotation.y = bot.heading;
+      }
+    }
+    // lidar → occupancy map + 3D cloud (the deck's ROBOT MAP + scene)
+    if (r.lidar && r.lidar.length) { lastLidar = r.lidar; integrateLidar(lastLidar); }
+    cloudCommit(); drawMap();
+    // status panel
+    $("teleOdo") && ($("teleOdo").textContent = `odometer ${odo.toFixed(1)} m`);
+    if ($("telePose")) $("telePose").textContent = bot.type === "drone"
+      ? `x ${bot.pos.x.toFixed(1)} · z ${bot.pos.z.toFixed(1)} · alt ${bot.alt.toFixed(1)}`
+      : `x ${bot.pos.x.toFixed(1)} · z ${bot.pos.z.toFixed(1)} · θ ${bot.heading.toFixed(2)}`;
+    const link = $("link"); if (link) { link.textContent = `robot: ${r.robot_type || "live"}`; link.className = "link on"; }
+  } catch {}
+  setTimeout(pollRobotDeck, 120);
+}
+
+async function pollRobotEyesDets() {
+  if (!robotDeckOn) return;
+  try {
+    const r = await (await fetch("/api/robot/detections")).json();
+    const ov = $("robotEyesOv"); if (ov) {
+      ov.innerHTML = "";
+      const host = ov.parentElement.getBoundingClientRect();
+      const iw = r.w || 16, ih = r.h || 9;
+      const scale = Math.max(host.width / iw, host.height / ih);
+      const dw = iw * scale, dh = ih * scale, ox = (host.width - dw) / 2, oy = (host.height - dh) / 2;
+      for (const d of (r.detections || [])) {
+        const box = document.createElement("div");
+        box.style.cssText = `position:absolute;border:1.5px solid #00d47e;border-radius:2px;` +
+          `left:${ox + d.x * dw}px;top:${oy + d.y * dh}px;width:${d.w * dw}px;height:${d.h * dh}px`;
+        box.innerHTML = `<span style="position:absolute;top:-15px;left:-1px;font-size:9px;` +
+          `background:#00d47e;color:#06080a;padding:0 4px;border-radius:2px;white-space:nowrap">` +
+          `${d.label} ${(d.conf * 100).toFixed(0)}%</span>`;
+        ov.appendChild(box);
+      }
+    }
+  } catch {}
+  setTimeout(pollRobotEyesDets, 250);
+}
+
 let simArmed = false;   // the sim policy only drives after you DEPLOY — no
                         // surprise dog spinning in circles on arrival
-function enterRobotMode() { enterCockpit("robot"); }
-function enterSimCockpit() { enterCockpit("sim"); }
+function enterRobotMode() { enterRobotDeck(); }   // robot drives the deck
+function enterSimCockpit() { /* sim uses the deck directly; nothing to enter */ }
 
 function enterCockpit(src) {
   COCKPIT = src;
@@ -2219,9 +2340,8 @@ function showStart() {
 }
 function enterLevel(i) {
   startEl.classList.remove("show");
-  loadLevel(i);
-  if (COCKPIT !== "sim") enterSimCockpit();   // a sim pick enters the cockpit
-  policyStatus("starter loaded — edit it, then DEPLOY · WASD grabs the wheel anytime", "ok");
+  loadLevel(i);   // the sim runs in the deck directly (3D scene + panels)
+  policyStatus("starter loaded — edit it, then RUN · WASD grabs the wheel anytime", "ok");
 }
 buildStartScreen();
 // splash shows after mode detection — a connected robot boots into its
