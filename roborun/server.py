@@ -95,6 +95,13 @@ class Handler(SimpleHTTPRequestHandler):
             self._mjpeg_stream((q.get("source") or ["auto"])[0])
             return
 
+        # single JPEG frame — robust feed for clients that poll img.src
+        if path_only == "/api/camera/frame":
+            from urllib.parse import parse_qs, urlparse
+            q = parse_qs(urlparse(self.path).query)
+            self._camera_frame((q.get("source") or ["auto"])[0])
+            return
+
         # Route registry
         if dispatch_get(self.path, self):
             return
@@ -171,6 +178,24 @@ class Handler(SimpleHTTPRequestHandler):
             pass
         finally:
             unsubscribe(q)
+
+    def _camera_frame(self, source: str = "auto") -> None:
+        for p in _stream_paths(source):
+            try:
+                data = p.read_bytes()
+            except OSError:
+                continue
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        self.send_response(503)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
 
     def _mjpeg_stream(self, source: str = "auto") -> None:
         self.send_response(200)

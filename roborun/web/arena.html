@@ -200,15 +200,202 @@
   .vstate.good { color: #00d47e; }
   .vstate.bad { color: #d84a4a; }
   .run-row video { width: 100%; margin-top: 6px; border-radius: 4px; }
-/* robot mode: sims are sims, robots are robots — hide arena-game UI */
-body.robot-mode #p-brief, body.robot-mode #p-runs,
-body.robot-mode #btnLevels,
-body.robot-mode button[data-panel="p-brief"],
-body.robot-mode button[data-panel="p-runs"],
-body.robot-mode #teleRoom { display: none !important; }
+/* ════════════════════════════════════════════════════════════════════
+   ROBOT COCKPIT — a connected robot gets a ground-control station, not a
+   game with a robot in it. The camera is the hero; everything else is a
+   glass HUD over it. Shown only in robot mode; the game panels + 3D arena
+   are fully suppressed.
+   ════════════════════════════════════════════════════════════════════ */
+body.robot-mode #toolbar, body.robot-mode #keys, body.robot-mode #toasts,
+body.robot-mode .panel, body.robot-mode canvas.webgl,
+body.robot-mode #start, body.robot-mode #win { display: none !important; }
+body.robot-mode { background: #06080a; }
+
+#cockpit { position: fixed; inset: 0; z-index: 20; display: none;
+           flex-direction: column; }
+body.robot-mode #cockpit { display: flex; }
+
+/* hero camera fills the stage */
+#ck-stage { position: absolute; inset: 0; overflow: hidden; background:
+            radial-gradient(120% 120% at 50% 0%, #0c1116 0%, #06080a 70%); }
+#ck-cam { position: absolute; inset: 0; width: 100%; height: 100%;
+          object-fit: cover; filter: saturate(1.05) contrast(1.03); }
+#ck-overlay { position: absolute; inset: 0; pointer-events: none; }
+/* cinematic vignette so a flat sim render reads as a feed */
+#ck-stage::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+   background: radial-gradient(130% 100% at 50% 50%, transparent 58%, rgba(0,0,0,.55) 100%);
+   mix-blend-mode: multiply; }
+
+/* top identity bar */
+#ck-top { position: relative; z-index: 30; display: flex; align-items: center;
+          gap: 14px; margin: 14px 16px 0; padding: 9px 16px;
+          background: rgba(8,12,15,.72); backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
+          border: 1px solid rgba(42,58,70,.5); border-radius: 13px;
+          box-shadow: 0 8px 30px rgba(0,0,0,.45); }
+#ck-id { display: flex; align-items: center; gap: 9px; font-size: 13px;
+         letter-spacing: .12em; color: #d7e0e8; font-weight: 700; }
+#ck-id .glyph { font-size: 15px; color: #00d47e; }
+#ck-live { display: flex; align-items: center; gap: 6px; font-size: 10px;
+           letter-spacing: .16em; color: #00d47e; }
+#ck-live .dot { width: 7px; height: 7px; border-radius: 50%; background: #00d47e;
+                box-shadow: 0 0 0 0 rgba(0,212,126,.6); animation: ckPulse 1.8s infinite; }
+@keyframes ckPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(0,212,126,.55);}
+                     50% { box-shadow: 0 0 0 7px rgba(0,212,126,0);} }
+#ck-where { color: #6b7b88; font-size: 11px; letter-spacing: .06em; }
+#ck-tele { display: flex; gap: 7px; margin-left: auto; }
+.ck-chip { display: flex; flex-direction: column; align-items: center;
+           min-width: 58px; padding: 3px 11px; border-radius: 8px;
+           background: rgba(16,22,28,.7); border: 1px solid rgba(42,58,70,.5); }
+.ck-chip .k { font-size: 8.5px; letter-spacing: .18em; color: #5a6b78; }
+.ck-chip .v { font-size: 15px; color: #00d47e; font-variant-numeric: tabular-nums;
+              line-height: 1.15; }
+.ck-chip.warn .v { color: #e0a030; }
+#ck-actions { display: flex; gap: 7px; align-items: center; }
+.ck-btn { background: rgba(16,22,28,.8); color: #9fb0bd; border: 1px solid #2a3a46;
+          border-radius: 8px; font: inherit; font-size: 11px; letter-spacing: .08em;
+          padding: 6px 12px; cursor: pointer; transition: all .15s; }
+.ck-btn:hover { color: #d7e0e8; border-color: #3a4d5a; }
+.ck-btn.hot { color: #06080a; background: #00d47e; border-color: #00d47e; font-weight: 700; }
+.ck-btn.hot:hover { background: #1ee08c; }
+.ck-btn.danger { color: #e0a030; border-color: #4a3f1f; }
+.ck-btn.danger:hover { color: #ffce5a; border-color: #6a5a2a; }
+#ck-src { background: rgba(16,22,28,.8); color: #9fb0bd; border: 1px solid #2a3a46;
+          border-radius: 8px; font: inherit; font-size: 11px; padding: 6px 8px; cursor: pointer; }
+
+/* OSD reticle + corner readouts over the feed */
+#ck-reticle { position: absolute; top: 50%; left: 50%; width: 46px; height: 46px;
+              transform: translate(-50%,-50%); z-index: 24; opacity: .5; }
+#ck-reticle::before, #ck-reticle::after { content: ""; position: absolute;
+   background: rgba(0,212,126,.7); }
+#ck-reticle::before { left: 50%; top: 0; width: 1px; height: 100%; transform: translateX(-.5px); }
+#ck-reticle::after { top: 50%; left: 0; height: 1px; width: 100%; transform: translateY(-.5px); }
+.ck-osd { position: absolute; z-index: 24; font-size: 11px; letter-spacing: .1em;
+          color: rgba(0,212,126,.85); text-shadow: 0 0 8px rgba(0,0,0,.9);
+          font-variant-numeric: tabular-nums; }
+#ck-osd-tl { top: 86px; left: 28px; }
+#ck-osd-tr { top: 86px; right: 28px; text-align: right; }
+#ck-osd-bl { bottom: 84px; left: 28px; }
+.ck-osd .lbl { color: rgba(159,176,189,.6); }
+
+/* detection boxes drawn over the feed */
+.ck-det { position: absolute; border: 1.5px solid #00d47e; border-radius: 3px;
+          box-shadow: 0 0 12px rgba(0,212,126,.3); }
+.ck-det .tag { position: absolute; top: -17px; left: -1px; font-size: 10px;
+               background: #00d47e; color: #06080a; padding: 0 5px; border-radius: 3px;
+               white-space: nowrap; font-weight: 700; letter-spacing: .04em; }
+
+/* bottom-right minimap */
+#ck-map { position: absolute; right: 16px; bottom: 64px; z-index: 26; width: 200px;
+          background: rgba(8,12,15,.74); backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px); border: 1px solid rgba(42,58,70,.5);
+          border-radius: 13px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,.45); }
+#ck-map .hd { display: flex; justify-content: space-between; padding: 6px 11px;
+              font-size: 9.5px; letter-spacing: .16em; color: #6b7b88;
+              border-bottom: 1px solid rgba(31,42,51,.7); }
+#ck-map .hd b { color: #00d47e; }
+#ck-map canvas { display: block; width: 100%; height: 168px; }
+
+/* policy slide-in (the live behavior, edited in place) */
+#ck-policy { position: absolute; left: 0; top: 0; bottom: 0; z-index: 28; width: 460px;
+             max-width: 86vw; transform: translateX(-100%); transition: transform .25s ease;
+             display: flex; flex-direction: column;
+             background: rgba(8,11,14,.93); backdrop-filter: blur(16px);
+             -webkit-backdrop-filter: blur(16px); border-right: 1px solid rgba(42,58,70,.55);
+             box-shadow: 14px 0 40px rgba(0,0,0,.5); }
+#ck-policy.open { transform: translateX(0); }
+#ck-policy .hd { display: flex; align-items: center; gap: 10px; padding: 13px 16px;
+                 border-bottom: 1px solid #1f2a33; }
+#ck-policy .hd b { color: #00d47e; letter-spacing: .14em; font-size: 12px; }
+#ck-policy .hd .sub { color: #6b7b88; font-size: 11px; }
+#ck-policy .hd .cl { margin-left: auto; cursor: pointer; color: #6b7b88; font-size: 16px; }
+#ck-edhost { flex: 1; min-height: 0; overflow: auto; }
+#ck-edhost .cm-editor { height: 100%; font-size: 12.5px; }
+#ck-edhost textarea { width: 100%; height: 100%; box-sizing: border-box; resize: none;
+            background: #0a0f13; color: #d7e0e8; border: none; padding: 12px;
+            font: 12.5px/1.55 ui-monospace, Menlo, monospace; white-space: pre; }
+#ck-edhost textarea:focus { outline: none; }
+#ck-bar { display: flex; gap: 9px; align-items: center; padding: 11px 16px;
+          border-top: 1px solid #1f2a33; }
+#ck-bar .stat { color: #6b7b88; font-size: 11px; flex: 1; text-align: right;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#ck-bar .stat.ok { color: #00d47e; } #ck-bar .stat.err { color: #d84a4a; }
+
+/* bottom event ticker */
+#ck-ticker { position: relative; z-index: 30; margin: auto 16px 14px; padding: 8px 16px;
+             display: flex; align-items: center; gap: 12px;
+             background: rgba(8,12,15,.72); backdrop-filter: blur(14px);
+             -webkit-backdrop-filter: blur(14px); border: 1px solid rgba(42,58,70,.5);
+             border-radius: 13px; box-shadow: 0 8px 30px rgba(0,0,0,.45);
+             font-size: 12px; color: #9fb0bd; min-height: 19px; }
+#ck-ticker .src { color: #00d47e; letter-spacing: .1em; font-size: 10px; flex: none; }
+#ck-ticker .msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#ck-ticker .deck { margin-left: auto; flex: none; }
+#ck-ticker .deck a { color: #3a8a6a; }
+
+/* network-robot chip (sim modes): a robot on the wifi appears as a source */
+#ck-net { position: fixed; right: 16px; top: 16px; z-index: 80; padding: 8px 14px;
+          border-radius: 11px; font-size: 11px; letter-spacing: .04em; cursor: pointer;
+          background: rgba(8,12,15,.85); backdrop-filter: blur(12px); color: #00d47e;
+          border: 1px solid rgba(0,212,126,.4); box-shadow: 0 6px 22px rgba(0,0,0,.4);
+          display: none; }
 </style>
 </head>
 <body>
+
+<!-- ROBOT COCKPIT — ground-control station, shown only in robot mode -->
+<div id="cockpit">
+  <div id="ck-stage">
+    <img id="ck-cam" alt="robot camera">
+    <div id="ck-overlay"></div>
+    <div id="ck-reticle"></div>
+    <div class="ck-osd" id="ck-osd-tl"></div>
+    <div class="ck-osd" id="ck-osd-tr"></div>
+    <div class="ck-osd" id="ck-osd-bl"></div>
+  </div>
+
+  <div id="ck-top">
+    <div id="ck-id"><span class="glyph" id="ck-glyph">◈</span><span id="ck-type">ROBOT</span></div>
+    <div id="ck-live"><span class="dot"></span><span>LIVE</span></div>
+    <div id="ck-where">—</div>
+    <div id="ck-tele">
+      <div class="ck-chip"><span class="k">ALT</span><span class="v" id="ck-alt">—</span></div>
+      <div class="ck-chip"><span class="k">SPEED</span><span class="v" id="ck-spd">—</span></div>
+      <div class="ck-chip"><span class="k">HDG</span><span class="v" id="ck-hdg">—</span></div>
+    </div>
+    <div id="ck-actions">
+      <select id="ck-src" title="camera source">
+        <option value="robot">robot cam</option>
+        <option value="webcam">webcam</option>
+      </select>
+      <button class="ck-btn" id="ck-policy-btn" title="edit the running behavior">⌨ POLICY</button>
+      <button class="ck-btn danger" id="ck-hold" title="stop the behavior; robot holds">⏸ HOLD</button>
+    </div>
+  </div>
+
+  <div id="ck-map">
+    <div class="hd"><span>TACTICAL</span><b id="ck-map-tag">lidar · trail</b></div>
+    <canvas id="ck-mapcv" width="200" height="168"></canvas>
+  </div>
+
+  <div id="ck-policy">
+    <div class="hd"><b>BEHAVIOR</b><span class="sub" id="ck-pname">—</span><span class="cl" id="ck-policy-close">✕</span></div>
+    <div id="ck-edhost"><textarea id="ck-code" spellcheck="false"></textarea></div>
+    <div id="ck-bar">
+      <button class="ck-btn hot" id="ck-deploy">▶ DEPLOY</button>
+      <button class="ck-btn" id="ck-stop">■ STOP</button>
+      <span class="stat" id="ck-pstat">—</span>
+    </div>
+  </div>
+
+  <div id="ck-ticker">
+    <span class="src" id="ck-tick-src">●</span>
+    <span class="msg" id="ck-tick-msg">connecting to robot…</span>
+    <span class="deck"><a href="/">flight deck →</a></span>
+  </div>
+</div>
+
+<div id="ck-net"></div>
 
 <div id="toolbar">
   <button id="btnLevels" title="pick a robot + task">⊞ LEVELS</button>

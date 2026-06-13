@@ -1278,128 +1278,218 @@ async function detectMode() {
    EYES panel shows the camera frames robot.see() runs YOLO on, and WASD
    publishes real cmd_vel. Sim → robot without changing pages. */
 const RT_BASE = () => (window.ROBORUN_RUNTIME && window.ROBORUN_RUNTIME.base) || "";
-let robotCloudSeen = 0, lastMoveSent = 0;
+let lastMoveSent = 0;
+let robotPolicyName = "";
+const TYPE_GLYPH = { drone: "✈", quadruped: "◈", humanoid: "⬡", arm: "⚙", webcam_only: "◉" };
+const ckTrail = [];          // recent poses, world frame, for the tactical map
+
+/* ── robot cockpit: the camera is the hero, everything else is a HUD ───── */
 function enterRobotMode() {
   MODE = "robot";
   document.body.classList.add("robot-mode");
-  if (levelGroup) levelGroup.visible = false;
-  cloudOn = true; cloud.visible = true;
-  const grid = new THREE.GridHelper(80, 80, 0x223344, 0x141d26);
-  grid.position.y = 0.01;
-  scene.add(grid);
-  const eyes = document.createElement("div");
-  eyes.id = "robotEyes";
-  eyes.style.cssText =
-    "position:fixed;right:12px;top:12px;z-index:999;width:320px;" +
-    "border:1px solid #2a333d;border-radius:6px;overflow:hidden;background:#000;";
-  eyes.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center;' +
-    'font:10px/1.8 ui-monospace,Menlo,monospace;color:#00d47e;' +
-    'padding:0 8px;background:#11161b">EYES' +
-    '<select id="eyesSrc" style="background:#11161b;color:#8a96a3;border:none;' +
-    'font:inherit;outline:none"><option value="robot">robot camera</option>' +
-    '<option value="webcam">webcam</option></select></div>' +
-    `<img id="eyesImg" src="${RT_BASE()}/api/camera/stream?source=robot" style="display:block;width:100%">`;
-  document.body.appendChild(eyes);
-  document.getElementById("eyesSrc").addEventListener("change", (e) => {
-    document.getElementById("eyesImg").src =
-      `${RT_BASE()}/api/camera/stream?source=${e.target.value}&t=${Date.now()}`;
-  });
-  // the policy panel edits what is actually running on the robot — no
-  // sandbox starter, no silent deploys
-  const phead = document.querySelector("#p-policy .p-head span");
-  if (phead) phead.textContent = "— live on the connected robot · RUN hot-reloads it";
-  const keysEl = document.getElementById("keys");
-  if (keysEl) keysEl.innerHTML = "drag headers · resize corners · ⌘⏎ deploy · " +
-    '<b style="color:#d4a030">WASD drives the real robot</b>' +
-    '<span class="server-only"> · <a href="/">deck</a></span>';
-  if (mainCamSel) mainCamSel.value = "chase";
+  const st = document.getElementById("start");
+  if (st) st.classList.remove("show");
+
+  // poll single frames rather than an MJPEG <img> stream — deterministic,
+  // never half-paints, and lets us swap source instantly
+  let camSource = "robot";
+  $("ck-src").addEventListener("change", (e) => { camSource = e.target.value; });
+  (function pumpCam() {
+    const img = new Image();
+    img.onload = () => { $("ck-cam").src = img.src; setTimeout(pumpCam, 90); };
+    img.onerror = () => setTimeout(pumpCam, 400);
+    img.src = `${RT_BASE()}/api/camera/frame?source=${camSource}&t=${Date.now()}`;
+  })();
+
+  // policy slide-in toggles
+  const pol = $("ck-policy");
+  $("ck-policy-btn").addEventListener("click", () => pol.classList.toggle("open"));
+  $("ck-policy-close").addEventListener("click", () => pol.classList.remove("open"));
+  $("ck-hold").addEventListener("click", ckStop);
+  $("ck-deploy").addEventListener("click", ckDeploy);
+  $("ck-stop").addEventListener("click", ckStop);
+
+  // identify where this robot lives (host + transport)
+  fetch("/api/sources").then((r) => r.json()).then((s) => {
+    const h = (s.robot && s.robot.host) || "127.0.0.1";
+    const local = h === "127.0.0.1" || h === "localhost";
+    $("ck-where").textContent = `${local ? "local sim" : "network"} · rosbridge ${h}`;
+  }).catch(() => {});
+
   loadRobotBehavior();
   pollRobot();
+  pollRobotDetections();
+  ckTicker();
 }
-let robotPolicyName = "robot_policy";
+function $(id) { return document.getElementById(id); }
+
 async function loadRobotBehavior() {
   try {
     const r = await (await fetch("/api/behaviors")).json();
     const live = (r.behaviors || []).find((b) =>
       b.enabled && !["fix_camera", "heartbeat", "player_policy"].includes(b.name));
-    if (!live) { policyStatus("no behavior running — write one and RUN", ""); return; }
+    if (!live) { ckPStat("no behavior running — write one and DEPLOY", ""); return; }
     robotPolicyName = live.name;
+    $("ck-pname").textContent = live.name;
     const src = await api("/api/behaviors/read", { name: live.name });
-    if (src.ok) {
-      setCode(src.source);
-      policyStatus(`editing ${live.name} — live on the robot, RUN applies`, "ok");
-    }
+    if (src.ok) { $("ck-code").value = src.source; ckPStat(`live: ${live.name}`, "ok"); }
   } catch {}
 }
+function ckPStat(msg, cls) {
+  const el = $("ck-pstat"); el.textContent = msg; el.className = "stat " + (cls || "");
+}
+async function ckDeploy() {
+  const source = $("ck-code").value;
+  const name = robotPolicyName || "robot_policy";
+  if (!source.includes("@behavior")) { ckPStat("needs an @behavior function", "err"); return; }
+  if (!confirm(`Deploy "${name}" to the CONNECTED ROBOT?\nIt hot-reloads and moves hardware immediately.`)) {
+    ckPStat("deploy cancelled", ""); return;
+  }
+  ckPStat("saving…", "");
+  const w = await api("/api/behaviors/write", { name, source });
+  if (!w.ok) { ckPStat(w.error || "write failed", "err"); return; }
+  await api("/api/behaviors/enable", { name });
+  robotPolicyName = name; $("ck-pname").textContent = name;
+  ckPStat(`live on the robot — DEPLOY applies edits`, "ok");
+}
+async function ckStop() {
+  const name = robotPolicyName || "robot_policy";
+  await api("/api/behaviors/disable", { name }).catch(() => {});
+  ckPStat(`${name} stopped — robot holds`, "");
+}
 
-/* ── network robots: surface rosbridges found on the LAN ─────────────────
-   In sim modes the runtime scans the local /24 for :9090; anything found
-   appears as a chip — one click connects and the page reloads straight
-   into robot mode. A robot on your wifi is a source, not a config step. */
+async function pollRobot() {
+  try {
+    const r = await (await fetch("/api/ros/cloud")).json();
+    const p = r.pose;
+    if (p) {
+      const now = performance.now();
+      if (ckTrail.length) {
+        const prev = ckTrail[ckTrail.length - 1];
+        const d = Math.hypot(p.x - prev.x, p.z - prev.z);
+        const dtspeed = d / Math.max(0.001, (now - (prev.t || now)) / 1000);
+        $("ck-spd").textContent = (isFinite(dtspeed) ? dtspeed : 0).toFixed(1);
+      }
+      ckTrail.push({ x: p.x, z: p.z, t: now });
+      if (ckTrail.length > 240) ckTrail.shift();
+      const isDrone = r.robot_type === "drone";
+      const altChip = $("ck-alt").parentElement;
+      if (isDrone) {
+        $("ck-alt").textContent = (p.y ?? 0).toFixed(1) + "m";
+        altChip.style.display = "";
+        altChip.classList.toggle("warn", (p.y ?? 0) > 8);
+      } else { altChip.style.display = "none"; }
+      const hdg = ((p.heading || 0) * 180 / Math.PI + 360) % 360;
+      $("ck-hdg").textContent = hdg.toFixed(0) + "°";
+      $("ck-osd-tl").innerHTML =
+        `<span class="lbl">POS</span> ${p.x.toFixed(1)}, ${p.z.toFixed(1)}` +
+        (isDrone ? `<br><span class="lbl">ALT</span> ${(p.y ?? 0).toFixed(2)} m` : "");
+      $("ck-osd-tr").innerHTML = `<span class="lbl">HDG</span> ${hdg.toFixed(0)}°`;
+    }
+    if (r.robot_type) {
+      $("ck-type").textContent = r.robot_type.replace("_", " ").toUpperCase();
+      $("ck-glyph").textContent = TYPE_GLYPH[r.robot_type] || "◈";
+      // the map shows what the robot actually senses
+      $("ck-map-tag").textContent = (r.lidar && r.lidar.length) ? "lidar · trail" : "trail";
+    }
+    drawTacticalMap(r);
+  } catch {}
+  setTimeout(pollRobot, 150);
+}
+
+function drawTacticalMap(r) {
+  const cv = $("ck-mapcv"); if (!cv) return;
+  const ctx = cv.getContext("2d"); const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "#070b0e"; ctx.fillRect(0, 0, W, H);
+  const cx = W / 2, cy = H / 2;
+  // world auto-scale around the robot's recent travel
+  let span = 8;
+  for (const t of ckTrail) span = Math.max(span, Math.abs(t.x - (r.pose?.x || 0)),
+                                                  Math.abs(t.z - (r.pose?.z || 0)));
+  const sc = (Math.min(W, H) / 2 - 10) / span;
+  // range rings
+  ctx.strokeStyle = "rgba(42,58,70,.5)"; ctx.lineWidth = 1;
+  for (let i = 1; i <= 3; i++) { ctx.beginPath();
+    ctx.arc(cx, cy, (Math.min(W, H) / 2 - 10) * i / 3, 0, 7); ctx.stroke(); }
+  const rx = r.pose?.x || 0, rz = r.pose?.z || 0;
+  // accumulated point cloud (lidar / spatial memory)
+  ctx.fillStyle = "rgba(0,212,126,.5)";
+  for (const pt of (r.points || [])) {
+    const px = cx + (pt[0] - rx) * sc, py = cy + (pt[1] - rz) * sc;
+    if (px >= 0 && px < W && py >= 0 && py < H) ctx.fillRect(px, py, 1.5, 1.5);
+  }
+  // trail
+  ctx.strokeStyle = "rgba(0,212,126,.55)"; ctx.lineWidth = 1.5; ctx.beginPath();
+  ckTrail.forEach((t, i) => { const px = cx + (t.x - rx) * sc, py = cy + (t.z - rz) * sc;
+    i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+  ctx.stroke();
+  // robot + heading wedge
+  const hd = r.pose?.heading || 0;
+  ctx.fillStyle = "#00d47e";
+  ctx.beginPath(); ctx.arc(cx, cy, 3.5, 0, 7); ctx.fill();
+  ctx.strokeStyle = "rgba(0,212,126,.8)"; ctx.beginPath();
+  ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(hd) * 14, cy - Math.sin(hd) * 14); ctx.stroke();
+}
+
+async function pollRobotDetections() {
+  try {
+    const r = await (await fetch("/api/robot/detections")).json();
+    const ov = $("ck-overlay"); ov.innerHTML = "";
+    // the feed is object-fit:cover — replicate that crop so boxes line up
+    const iw = r.w || 16, ih = r.h || 9, vw = innerWidth, vh = innerHeight;
+    const scale = Math.max(vw / iw, vh / ih);
+    const dw = iw * scale, dh = ih * scale, ox = (vw - dw) / 2, oy = (vh - dh) / 2;
+    for (const d of (r.detections || [])) {
+      const box = document.createElement("div"); box.className = "ck-det";
+      box.style.left = (ox + d.x * dw) + "px";
+      box.style.top = (oy + d.y * dh) + "px";
+      box.style.width = (d.w * dw) + "px";
+      box.style.height = (d.h * dh) + "px";
+      box.innerHTML = `<span class="tag">${d.label} ${(d.conf * 100).toFixed(0)}%</span>`;
+      ov.appendChild(box);
+    }
+  } catch {}
+  setTimeout(pollRobotDetections, 250);
+}
+
+async function ckTicker() {
+  try {
+    const evs = (await (await fetch("/api/run/events")).json()).events || [];
+    const interesting = evs.filter((e) =>
+      ["follow_person_drone", "fix_camera", "ros", "frame"].includes(e.source) ||
+      (e.title && /follow|move|person|cmd/i.test(e.title)));
+    const last = interesting[interesting.length - 1] || evs[evs.length - 1];
+    if (last) {
+      $("ck-tick-src").textContent = "● " + (last.source || "robot");
+      $("ck-tick-msg").textContent = last.title || "";
+    }
+  } catch {}
+  setTimeout(ckTicker, 700);
+}
+
+/* ── network robots (sim modes): a rosbridge on the wifi is a source ───── */
 async function pollNetworkRobots() {
   if (MODE === "robot") return;
   try {
     const r = await (await fetch("/api/sources")).json();
     const found = (r.network && r.network.found) || [];
-    let chip = document.getElementById("netRobots");
+    const chip = $("ck-net");
     if (found.length && !r.robot.connected) {
-      if (!chip) {
-        chip = document.createElement("div");
-        chip.id = "netRobots";
-        chip.style.cssText =
-          "position:fixed;right:12px;top:12px;z-index:999;padding:5px 12px;" +
-          "border-radius:12px;font:11px/1.6 ui-monospace,Menlo,monospace;" +
-          "background:#11161bcc;border:1px solid #00d47e55;color:#00d47e;" +
-          "cursor:pointer;user-select:none;";
-        document.body.appendChild(chip);
-      }
       const r0 = found.find((f) => f.local) || found[0];
       chip.textContent = `◈ robot on network — ${r0.host}:${r0.port} · click to connect`;
+      chip.style.display = "block";
       chip.onclick = async () => {
         chip.textContent = "connecting…";
         const res = await api("/api/ros/connect", { host: r0.host, port: r0.port });
         if (res.ok) location.reload();
         else chip.textContent = `connect failed: ${res.error || "?"}`;
       };
-    } else if (chip) {
-      chip.remove();
-    }
+    } else { chip.style.display = "none"; }
   } catch {}
   setTimeout(pollNetworkRobots, 10000);
 }
-async function pollRobot() {
-  try {
-    const r = await (await fetch("/api/ros/cloud")).json();
-    if (r.pose) {
-      bot.pos.x = r.pose.x;
-      bot.pos.z = r.pose.z;
-      bot.heading = r.pose.heading || 0;
-      if (r.pose.y !== undefined && r.pose.y !== null) bot.alt = r.pose.y;
-      if (bot.group) {
-        bot.group.position.set(bot.pos.x, bot.type === "drone" ? bot.alt : 0, bot.pos.z);
-        bot.group.rotation.y = bot.heading;
-      }
-    }
-    if (r.robot_type === "drone" && bot.type !== "drone") {
-      bot.type = "drone";
-      buildBody("drone");
-    }
-    const pts = r.points || [];
-    if (pts.length < robotCloudSeen) robotCloudSeen = 0;   // server restarted
-    for (let i = robotCloudSeen; i < pts.length; i++)
-      cloudAdd(pts[i][0], 0.12, pts[i][1], pts[i][2]);
-    robotCloudSeen = pts.length;
-    cloudCommit();
-    if (r.lidar && r.lidar.length) {
-      lastLidar = r.lidar;
-      integrateLidar(lastLidar);
-    }
-    drawMap();
-    updateTelemetry();
-  } catch {}
-  setTimeout(pollRobot, 150);
-}
+
 function sendRobotMove(cmd) {
   const now = performance.now();
   if (now - lastMoveSent < 120) return;
@@ -1668,6 +1758,7 @@ function animateStart(t) {
   if (startEl.classList.contains("show")) startRaf = requestAnimationFrame(animateStart);
 }
 function showStart() {
+  if (MODE === "robot") return;    // sim onboarding — never over a live robot
   startEl.classList.add("show");
   cancelAnimationFrame(startRaf);
   startRaf = requestAnimationFrame(animateStart);
@@ -1678,7 +1769,8 @@ function enterLevel(i) {
   policyStatus("starter policy loaded — edit it (or don't), then press ▶ RUN · WASD grabs the wheel anytime", "ok");
 }
 buildStartScreen();
-showStart();
+// splash shows after mode detection — a connected robot boots into its
+// cockpit, not into "pick a robot, pick a task"
 document.getElementById("startClose").addEventListener("click", () => startEl.classList.remove("show"));
 startEl.addEventListener("click", (e) => { if (e.target === startEl) startEl.classList.remove("show"); });
 document.getElementById("btnLevels").addEventListener("click", showStart);
@@ -2116,7 +2208,7 @@ function frame(now) {
 
 await initPhysics();                       // rapier WASM, once per page
 loadLevel(0);
-detectMode().then(() => pollNetworkRobots()); pollCmd(); pushState(); pollSightings(); renderRuns();
+detectMode().then(() => { pollNetworkRobots(); if (MODE !== "robot") showStart(); }); pollCmd(); pushState(); pollSightings(); renderRuns();
 requestAnimationFrame(frame);
 
 /* harness hook — scripts/e2e_arena.mjs drives the page without the UI */

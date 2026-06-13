@@ -14,3 +14,10 @@ def sources(h):
 def sources_scan(h, payload):
     from roborun.sources import network_scan
     send_json(h, 200, {"ok": True, **network_scan(force=True)})
+
+
+@get("/api/robot/detections")
+def robot_detections(h):
+    """Normalized YOLO boxes from the robot camera, for the cockpit overlay."""
+    from roborun.ros_camera import get_ros_camera
+    send_json(h, 200, {"ok": True, **get_ros_camera().detections_normalized()})

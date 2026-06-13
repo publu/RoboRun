@@ -27,6 +27,16 @@ STANDARD_TOPICS = [
     ("/tf", "tf2_msgs/TFMessage"),
 ]
 
+
+def _saved_robot_type() -> str | None:
+    """Type `roborun connect` wrote to ~/.roborun/robot.json, if any."""
+    import json
+    from pathlib import Path
+    try:
+        return json.loads((Path.home() / ".roborun" / "robot.json").read_text()).get("type")
+    except Exception:
+        return None
+
 _instance: RosTelemetryBridge | None = None
 _lock = threading.Lock()
 
@@ -171,14 +181,32 @@ class RosTelemetryBridge:
         try:
             available = client.list_topics(timeout=3.0)
         except Exception:
-            return
+            available = []
 
         available_names = {t["topic"] for t in available}
 
-        # the robot's own topic map (mavros drones, etc.) extends the
-        # standard table — same handlers, the robot's topic names
-        from roborun.robot_types import detect_type, get_profile
-        self.robot_type = detect_type(ros_topics=sorted(available_names))
+        # rosapi topic discovery is flaky over rosbridge (the /rosapi/topics
+        # service times out on some setups). When it comes back empty, don't
+        # go dark: trust the type `roborun connect` saved and subscribe to the
+        # candidate topics blind — a subscribe to a not-yet-seen topic is
+        # harmless and starts flowing the moment the topic appears.
+        discovery_ok = bool(available_names)
+
+        from roborun.robot_types import detect_type, get_profile, RobotType
+        if discovery_ok:
+            self.robot_type = detect_type(ros_topics=sorted(available_names))
+        elif self.robot_type is None:
+            saved = None
+            try:
+                from roborun.routes.dashboard import load_profile
+                saved = (load_profile().get("robotType")
+                         or _saved_robot_type())
+            except Exception:
+                pass
+            try:
+                self.robot_type = RobotType(saved) if saved else None
+            except Exception:
+                self.robot_type = None
         type_topics = (get_profile(self.robot_type) or {}).get("ros_topics", {})
         self.cmd_vel_topic = type_topics.get("cmd_vel", "/cmd_vel")
         _TYPE_MSG = {"odom": "nav_msgs/Odometry",
@@ -193,7 +221,8 @@ class RosTelemetryBridge:
         for topic, msg_type in table:
             if topic in self._subscribed_topics:
                 continue
-            if topic not in available_names:
+            # gate on availability only when discovery actually worked
+            if discovery_ok and topic not in available_names:
                 continue
 
             handler = self._make_handler(topic, msg_type, bus)
