@@ -1702,11 +1702,26 @@ function drawTacticalMap(r) {
     ctx.fillStyle = "rgba(90,107,120,.7)";
     ctx.fillText((span * i / 3).toFixed(0) + "m", cx + 2, cy - R * i / 3 + 9);
   }
-  // lidar / accumulated cloud (ground robots; drone has none)
-  ctx.fillStyle = "rgba(0,212,126,.4)";
-  for (const pt of (r.points || [])) {
-    const px = cx + (pt[0] - rx) * sc, py = cy + (pt[1] - rz) * sc;
-    if (px >= 0 && px < W && py >= 0 && py < H) ctx.fillRect(px, py, 1.5, 1.5);
+  // occupancy map: bin accumulated lidar into world cells so nearby returns
+  // merge into solid walls — a built-up map, not a scatter of dots (the more
+  // hits land in a cell, the more confidently it's a wall, so the brighter)
+  const pts = r.points || [];
+  if (pts.length) {
+    const CELL = 0.3;                          // metres per cell
+    const cells = new Map();
+    for (const pt of pts) {
+      const k = Math.round(pt[0] / CELL) + "," + Math.round(pt[1] / CELL);
+      cells.set(k, (cells.get(k) || 0) + 1);
+    }
+    const s = Math.max(2, CELL * sc);
+    for (const [k, n] of cells) {
+      const c = k.indexOf(",");
+      const gx = +k.slice(0, c) * CELL, gz = +k.slice(c + 1) * CELL;
+      const px = cx + (gx - rx) * sc, py = cy + (gz - rz) * sc;
+      if (px < 0 || px >= W || py < 0 || py >= H) continue;
+      ctx.fillStyle = `rgba(0,212,126,${Math.min(0.9, 0.3 + n * 0.14)})`;
+      ctx.fillRect(px - s / 2, py - s / 2, s, s);
+    }
   }
   // travel trail
   ctx.strokeStyle = "rgba(0,212,126,.5)"; ctx.lineWidth = 1.5; ctx.beginPath();
