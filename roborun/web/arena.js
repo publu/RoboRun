@@ -1310,6 +1310,8 @@ const ckColor = (label) => CLASS_COLOR[label] || "#9fb0bd";
    tactical map, timeline and telemetry are derived from inputs (camera,
    point cloud, pose) that BOTH sources provide. src = "robot" | "sim". */
 let COCKPIT = null;
+let simArmed = false;   // the sim policy only drives after you DEPLOY — no
+                        // surprise dog spinning in circles on arrival
 function enterRobotMode() { enterCockpit("robot"); }
 function enterSimCockpit() { enterCockpit("sim"); }
 
@@ -1338,14 +1340,17 @@ function enterCockpit(src) {
   const pol = $("ck-policy");
   $("ck-policy-btn").addEventListener("click", () => pol.classList.toggle("open"));
   $("ck-policy-close").addEventListener("click", () => pol.classList.remove("open"));
+  $("ck-policy-expand").addEventListener("click", () => pol.classList.toggle("wide"));
   $("ck-hold").addEventListener("click", ckStop);
   $("ck-deploy").addEventListener("click", ckDeploy);
   $("ck-stop").addEventListener("click", ckStop);
   const srcBtn = $("ck-source-btn"), srcMenu = $("ck-sources");
-  srcBtn.addEventListener("click", (e) => { e.stopPropagation();
-    srcMenu.classList.toggle("open"); if (srcMenu.classList.contains("open")) buildSourceMenu(); });
-  document.addEventListener("click", (e) => {
-    if (!srcMenu.contains(e.target) && e.target !== srcBtn) srcMenu.classList.remove("open"); });
+  srcBtn.addEventListener("click", () => { srcMenu.classList.add("open"); buildSourceMenu(); });
+  $("ck-src-close").addEventListener("click", () => srcMenu.classList.remove("open"));
+  srcMenu.addEventListener("click", (e) => {           // click backdrop to close
+    if (e.target === srcMenu) srcMenu.classList.remove("open"); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") srcMenu.classList.remove("open"); });
 
   ckTimeline();
 
@@ -1376,6 +1381,7 @@ function enterCockpit(src) {
     $("ck-glyph").textContent = TYPE_GLYPH[bot.type] || "◈";
     $("ck-code").value = getCode(); sync();
     $("ck-pname").textContent = "player_policy";
+    ckPStat("paused — edit the policy, then DEPLOY to run", "");
     $("ck-levels").addEventListener("click", () => showStart());
     pollSimCockpit();
   }
@@ -1521,6 +1527,7 @@ async function ckDeploy() {
     // the sim runs the same policy format; hand it to the game's run path
     setCode(source);
     document.getElementById("btnRun").click();
+    simArmed = true;
     ckPStat("running in the sim — edit & DEPLOY to iterate", "ok");
     return;
   }
@@ -1537,8 +1544,8 @@ async function ckDeploy() {
   ckPStat(`live on the robot — DEPLOY applies edits`, "ok");
 }
 async function ckStop() {
-  if (COCKPIT === "sim") { document.getElementById("btnStop").click();
-    ckPStat("stopped", ""); return; }
+  if (COCKPIT === "sim") { simArmed = false; document.getElementById("btnStop").click();
+    ckPStat("paused — robot holds; DEPLOY to run", ""); return; }
   const name = robotPolicyName || "robot_policy";
   await api("/api/behaviors/disable", { name }).catch(() => {});
   ckPStat(`${name} stopped — robot holds`, "");
@@ -1848,7 +1855,9 @@ async function pollCmd() {
     return;
   }
   if (MODE === "server") {
-    try {
+    if (COCKPIT === "sim" && !simArmed) {
+      serverCmd = { forward: 0, strafe: 0, turn: 0, climb: 0, grip: 0 };  // holds until DEPLOY
+    } else try {
       const r = await (await fetch("/api/arena/cmd")).json();
       serverCmd = r.cmd;
       serverAnswer = r.answer;
@@ -1878,7 +1887,9 @@ async function pushState() {
     return;                            // reroute see()/move() to the sim
   }
   if (MODE === "wasm" && wasmRT) {
-    try {
+    if (COCKPIT === "sim" && !simArmed) {
+      serverCmd = { forward: 0, strafe: 0, turn: 0, climb: 0, grip: 0 };  // holds until DEPLOY
+    } else try {
       const r = wasmRT.tick(currentState());
       serverCmd = r.cmd;
       serverAnswer = r.answer;

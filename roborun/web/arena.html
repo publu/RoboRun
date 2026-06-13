@@ -320,6 +320,9 @@ body.cockpit #cockpit { display: flex; }
              -webkit-backdrop-filter: blur(18px); border: 1px solid rgba(42,58,70,.6);
              border-radius: 14px; overflow: hidden; box-shadow: 0 18px 50px rgba(0,0,0,.6); }
 #ck-policy.open { transform: translateX(0); }
+/* expand: a roomy editor that's actually comfortable to code in */
+#ck-policy.wide { width: min(1000px, 80vw); }
+#ck-policy.wide #ck-hl, #ck-policy.wide #ck-code { font-size: 13.5px; line-height: 1.7; }
 #ck-policy .hd { display: flex; align-items: center; gap: 10px; padding: 13px 16px; flex: none;
                  background: rgba(16,22,28,.7); border-bottom: 1px solid #1f2a33; }
 #ck-policy .hd b { color: #00d47e; letter-spacing: .14em; font-size: 12px; }
@@ -370,32 +373,38 @@ body.cockpit #cockpit { display: flex; }
 .ck-tl-row .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; align-self: center; }
 .ck-tl-row .m { color: #9fb0bd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* source picker dropdown */
-#ck-sources { position: absolute; z-index: 40; right: 16px; top: 60px; width: 320px;
-              display: none; background: rgba(10,14,18,.96); backdrop-filter: blur(16px);
-              -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(42,58,70,.6);
-              border-radius: 13px; box-shadow: 0 14px 44px rgba(0,0,0,.55); overflow: hidden; }
-#ck-sources.open { display: block; }
-#ck-sources .hd { padding: 11px 15px 7px; font-size: 9.5px; letter-spacing: .16em;
-                  color: #6b7b88; border-bottom: 1px solid rgba(31,42,51,.7); }
-#ck-sources .ft { padding: 9px 15px; font-size: 10.5px; color: #5a6b78;
+/* source picker — a centered modal, not a cramped dropdown */
+#ck-sources { position: fixed; inset: 0; z-index: 90; display: none;
+              align-items: center; justify-content: center;
+              background: rgba(4,6,8,.62); backdrop-filter: blur(5px); }
+#ck-sources.open { display: flex; }
+#ck-sources .box { width: 480px; max-width: 92vw; background: rgba(11,15,19,.98);
+                   border: 1px solid rgba(42,58,70,.6); border-radius: 16px; overflow: hidden;
+                   box-shadow: 0 30px 80px rgba(0,0,0,.7); }
+#ck-sources .hd { display: flex; justify-content: space-between; align-items: center;
+                  padding: 16px 20px; font-size: 11px; letter-spacing: .16em; color: #6b7b88;
+                  border-bottom: 1px solid rgba(31,42,51,.7); }
+#ck-sources .hd .cl { cursor: pointer; color: #8a96a3; font-size: 15px; width: 24px; height: 24px;
+                      line-height: 24px; text-align: center; border-radius: 7px; border: 1px solid #2a3a46; }
+#ck-sources .hd .cl:hover { color: #fff; border-color: #d84a4a; }
+#ck-sources .ft { padding: 13px 20px; font-size: 11px; color: #5a6b78;
                   border-top: 1px solid rgba(31,42,51,.6); }
-.ck-source { display: flex; align-items: center; gap: 11px; padding: 11px 15px; cursor: pointer;
+.ck-source { display: flex; align-items: center; gap: 15px; padding: 17px 20px; cursor: pointer;
              border-bottom: 1px solid rgba(31,42,51,.45); transition: background .12s; }
-.ck-source:hover { background: rgba(0,212,126,.07); }
-.ck-source .ic { font-size: 16px; width: 20px; text-align: center; color: #6b7b88; }
+.ck-source:hover { background: rgba(0,212,126,.08); }
+.ck-source .ic { font-size: 22px; width: 28px; text-align: center; color: #6b7b88; }
 .ck-source.active .ic, .ck-source.active .nm { color: #00d47e; }
 .ck-source .meta { flex: 1; min-width: 0; }
-.ck-source .nm { font-size: 12.5px; color: #d7e0e8; letter-spacing: .04em; }
-.ck-source .sub { font-size: 10.5px; color: #6b7b88; white-space: nowrap;
+.ck-source .nm { font-size: 15px; color: #d7e0e8; letter-spacing: .06em; }
+.ck-source .sub { font-size: 12px; color: #6b7b88; margin-top: 2px; white-space: nowrap;
                   overflow: hidden; text-overflow: ellipsis; }
-.ck-source .badge { font-size: 9px; letter-spacing: .12em; padding: 2px 7px; border-radius: 6px;
+.ck-source .badge { font-size: 9.5px; letter-spacing: .12em; padding: 3px 9px; border-radius: 7px;
                     flex: none; }
 .ck-source .badge.live { color: #00d47e; border: 1px solid rgba(0,212,126,.4); }
-.ck-source .badge.go { color: #06080a; background: #00d47e; }
+.ck-source .badge.go { color: #06080a; background: #00d47e; font-weight: 700; }
 
-/* network-robot chip (sim modes): a robot on the wifi appears as a source */
-#ck-net { position: fixed; right: 16px; top: 16px; z-index: 80; padding: 8px 14px;
+/* network-robot chip — BELOW the top bar so it never blocks the actions */
+#ck-net { position: fixed; right: 16px; top: 76px; z-index: 29; padding: 8px 14px;
           border-radius: 11px; font-size: 11px; letter-spacing: .04em; cursor: pointer;
           background: rgba(8,12,15,.85); backdrop-filter: blur(12px); color: #00d47e;
           border: 1px solid rgba(0,212,126,.4); box-shadow: 0 6px 22px rgba(0,0,0,.4);
@@ -438,9 +447,11 @@ body.cockpit #cockpit { display: flex; }
 
   <!-- source picker: every robot/sim/camera this runtime can reach -->
   <div id="ck-sources">
-    <div class="hd">SOURCE — what you're controlling</div>
-    <div id="ck-src-list"></div>
-    <div class="ft">a robot on your wifi appears here automatically</div>
+    <div class="box">
+      <div class="hd"><span>SOURCE — WHAT YOU'RE CONTROLLING</span><span class="cl" id="ck-src-close">✕</span></div>
+      <div id="ck-src-list"></div>
+      <div class="ft">a robot on your wifi appears here automatically</div>
+    </div>
   </div>
 
   <div id="ck-map">
@@ -449,7 +460,7 @@ body.cockpit #cockpit { display: flex; }
   </div>
 
   <div id="ck-policy">
-    <div class="hd"><b>BEHAVIOR</b><span class="sub" id="ck-pname">—</span><span class="cl" id="ck-policy-close">✕</span></div>
+    <div class="hd"><b>BEHAVIOR</b><span class="sub" id="ck-pname">—</span><span class="cl" id="ck-policy-expand" title="expand / collapse">⤢</span><span class="cl" id="ck-policy-close">✕</span></div>
     <div id="ck-edhost"><pre id="ck-hl"><code></code></pre><textarea id="ck-code" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea></div>
     <div id="ck-bar">
       <button class="ck-btn hot" id="ck-deploy">▶ DEPLOY</button>
