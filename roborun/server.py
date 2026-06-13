@@ -106,11 +106,14 @@ class Handler(SimpleHTTPRequestHandler):
         if dispatch_get(self.path, self):
             return
 
-        # One view: the cockpit. Every entry point lands on it — a connected
-        # robot shows its camera/map/timeline, no robot shows the sim, and
-        # the SOURCE picker switches between them. (/deck kept as an alias so
-        # old links don't 404; the legacy flight deck is retired.)
-        if path_only in ("/", "/deck", "/arena"):
+        # One canonical view at one URL: "/". The old paths just redirect
+        # there so nothing 404s, but there's a single route, not three.
+        if path_only in ("/deck", "/arena"):
+            self.send_response(301)
+            self.send_header("Location", "/")
+            self.end_headers()
+            return
+        if path_only == "/":
             self.path = "/arena.html"
         super().do_GET()
 
