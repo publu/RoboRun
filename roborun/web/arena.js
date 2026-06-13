@@ -2139,9 +2139,9 @@ function buildRosCard() {
   const card = document.createElement("div");
   card.className = "bot-card ros-card";
   card.innerHTML = `<div class="ros-ic">◈</div>
-    <h3>ROS ROBOT<div class="ros-sub">REAL HARDWARE</div></h3>
-    <div class="tag">a Go2, a drone, anything ROS — over rosbridge, the same policy file</div>
-    <div class="tasks" id="ros-tasks"><div class="ros-hint">looking for robots…</div></div>`;
+    <h3>ROS<div class="ros-sub">GAZEBO · ISAAC · HARDWARE</div></h3>
+    <div class="tag">connect anything on rosbridge — a Gazebo or Isaac sim, or a real robot</div>
+    <div class="tasks" id="ros-tasks"><div class="ros-hint">looking for sources…</div></div>`;
   grid.appendChild(card);
   refreshRosCard();
 }
@@ -2153,9 +2153,9 @@ async function refreshRosCard() {
   tasks.innerHTML = "";
   const enterRobot = () => { startEl.classList.remove("show"); enterRobotMode(); };
   if (!s) {                               // no runtime reachable at all
-    tasks.innerHTML = `<div class="ros-hint">start <b>roborun</b> on your robot's ` +
-      `network — a connected robot shows up here. The same code that drives the ` +
-      `sim drives it.</div>`;
+    tasks.innerHTML = `<div class="ros-hint">start <b>roborun</b>, then point a ` +
+      `Gazebo or Isaac sim — or a real robot — at it over rosbridge. The same ` +
+      `policy file drives them all.</div>`;
     return;
   }
   if (s.robot && s.robot.connected) {     // a robot is live
@@ -2175,7 +2175,7 @@ async function refreshRosCard() {
   }
   if (!(s.robot && s.robot.connected)) {
     const hint = document.createElement("div"); hint.className = "ros-hint";
-    hint.innerHTML = "no robot connected — enter its IP (rosbridge :9090):";
+    hint.innerHTML = "nothing connected — enter a rosbridge IP (sim or robot, :9090):";
     tasks.appendChild(hint);
   }
   const row = document.createElement("div"); row.className = "ros-connect";
