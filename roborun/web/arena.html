@@ -206,14 +206,25 @@
    glass HUD over it. Shown only in robot mode; the game panels + 3D arena
    are fully suppressed.
    ════════════════════════════════════════════════════════════════════ */
-body.robot-mode #toolbar, body.robot-mode #keys, body.robot-mode #toasts,
-body.robot-mode .panel, body.robot-mode canvas.webgl,
-body.robot-mode #start, body.robot-mode #win { display: none !important; }
-body.robot-mode { background: #06080a; }
+/* the cockpit is the only view: one shell for every source. A robot's
+   camera and a sim's 3D render are both just "the stream"; the map,
+   timeline and telemetry are derived from inputs both sources provide. */
+body.cockpit #toolbar, body.cockpit #keys, body.cockpit #toasts,
+body.cockpit .panel, body.cockpit #start, body.cockpit #win { display: none !important; }
+body.cockpit { background: #06080a; }
+/* robot source: camera feed is the hero, the 3D arena canvas is unused */
+body.cockpit.src-robot canvas.webgl { display: none !important; }
+/* sim source: the 3D arena render IS the stream — show it behind the chrome */
+body.cockpit.src-sim #ck-cam { display: none !important; }
+body.cockpit.src-sim #ck-stage { background: transparent !important; }
+body.cockpit.src-sim #ck-mapcv { } /* sim feeds the same map */
+#ck-levels { display: none; } body.cockpit.src-sim #ck-levels { display: inline-block; }
 
 #cockpit { position: fixed; inset: 0; z-index: 20; display: none;
-           flex-direction: column; }
-body.robot-mode #cockpit { display: flex; }
+           flex-direction: column; pointer-events: none; }
+#cockpit > * { pointer-events: auto; }
+#ck-stage { pointer-events: none; }
+body.cockpit #cockpit { display: flex; }
 
 /* hero camera fills the stage */
 #ck-stage { position: absolute; inset: 0; overflow: hidden; background:
@@ -405,6 +416,7 @@ body.robot-mode #cockpit { display: flex; }
       <div class="ck-chip"><span class="k">HDG</span><span class="v" id="ck-hdg">—</span></div>
     </div>
     <div id="ck-actions">
+      <button class="ck-btn" id="ck-levels" title="pick a sim robot + task">⊞ LEVELS</button>
       <button class="ck-btn" id="ck-source-btn" title="choose what to control">⊞ SOURCE</button>
       <select id="ck-src" title="camera source">
         <option value="robot">robot cam</option>

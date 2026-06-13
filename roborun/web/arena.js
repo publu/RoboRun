@@ -1268,11 +1268,12 @@ async function detectMode() {
     const t = setTimeout(() => ctl.abort(), 1500);
     const r = await fetch("/api/arena/cmd", { signal: ctl.signal });
     clearTimeout(t);
-    if (r.ok) { MODE = "server"; return; }
+    if (r.ok) { MODE = "server"; enterSimCockpit(); return; }
   } catch {}
   MODE = "wasm";
   document.body.classList.add("wasm-mode");
   bootWasm();
+  enterSimCockpit();
 }
 
 /* ── robot mode: same arena, the world is the robot's telemetry ─────────
@@ -1295,25 +1296,22 @@ const CLASS_COLOR = { person: "#00d47e", car: "#e0a030", truck: "#e0a030",
                       bus: "#e0a030", bicycle: "#40a0e0", motorcycle: "#40a0e0" };
 const ckColor = (label) => CLASS_COLOR[label] || "#9fb0bd";
 
-/* ── robot cockpit: the camera is the hero, everything else is a HUD ───── */
-function enterRobotMode() {
-  MODE = "robot";
-  document.body.classList.add("robot-mode");
+/* ── the cockpit: one view for every source ────────────────────────────
+   A robot's camera and the sim's 3D render are both just "the stream"; the
+   tactical map, timeline and telemetry are derived from inputs (camera,
+   point cloud, pose) that BOTH sources provide. src = "robot" | "sim". */
+let COCKPIT = null;
+function enterRobotMode() { enterCockpit("robot"); }
+function enterSimCockpit() { enterCockpit("sim"); }
+
+function enterCockpit(src) {
+  COCKPIT = src;
+  if (src === "robot") MODE = "robot";
+  document.body.classList.add("cockpit", "src-" + src);
   const st = document.getElementById("start");
   if (st) st.classList.remove("show");
 
-  // poll single frames rather than an MJPEG <img> stream — deterministic,
-  // never half-paints, and lets us swap source instantly
-  let camSource = "robot";
-  $("ck-src").addEventListener("change", (e) => { camSource = e.target.value; });
-  (function pumpCam() {
-    const img = new Image();
-    img.onload = () => { $("ck-cam").src = img.src; setTimeout(pumpCam, 90); };
-    img.onerror = () => setTimeout(pumpCam, 400);
-    img.src = `${RT_BASE()}/api/camera/frame?source=${camSource}&t=${Date.now()}`;
-  })();
-
-  // syntax-highlighted policy editor: keep the underlay in sync on edit/scroll
+  // shared: syntax-highlighted policy editor
   const code = $("ck-code"), hl = $("ck-hl");
   const sync = () => { hl.firstChild.innerHTML = ckHighlight(code.value);
                        hl.scrollTop = code.scrollTop; hl.scrollLeft = code.scrollLeft; };
@@ -1327,38 +1325,89 @@ function enterRobotMode() {
   });
   window.__ckSyncCode = sync;
 
-  // policy slide-in toggles
+  // shared: policy slide-in + source picker
   const pol = $("ck-policy");
   $("ck-policy-btn").addEventListener("click", () => pol.classList.toggle("open"));
   $("ck-policy-close").addEventListener("click", () => pol.classList.remove("open"));
   $("ck-hold").addEventListener("click", ckStop);
   $("ck-deploy").addEventListener("click", ckDeploy);
   $("ck-stop").addEventListener("click", ckStop);
-
-  // source picker
   const srcBtn = $("ck-source-btn"), srcMenu = $("ck-sources");
-  srcBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    srcMenu.classList.toggle("open");
-    if (srcMenu.classList.contains("open")) buildSourceMenu();
-  });
+  srcBtn.addEventListener("click", (e) => { e.stopPropagation();
+    srcMenu.classList.toggle("open"); if (srcMenu.classList.contains("open")) buildSourceMenu(); });
   document.addEventListener("click", (e) => {
-    if (!srcMenu.contains(e.target) && e.target !== srcBtn) srcMenu.classList.remove("open");
-  });
+    if (!srcMenu.contains(e.target) && e.target !== srcBtn) srcMenu.classList.remove("open"); });
 
-  // identify where this robot lives (host + transport)
-  fetch("/api/sources").then((r) => r.json()).then((s) => {
-    const h = (s.robot && s.robot.host) || "127.0.0.1";
-    const local = h === "127.0.0.1" || h === "localhost";
-    $("ck-where").textContent = `${local ? "local sim" : "network"} · rosbridge ${h}`;
-  }).catch(() => {});
-
-  loadRobotBehavior();
-  pollRobot();
-  pollRobotDetections();
   ckTimeline();
+
+  if (src === "robot") {
+    // stream = the robot camera, polled one frame at a time (deterministic)
+    let camSource = "robot";
+    $("ck-src").addEventListener("change", (e) => { camSource = e.target.value; });
+    (function pumpCam() {
+      const img = new Image();
+      img.onload = () => { $("ck-cam").src = img.src; setTimeout(pumpCam, 90); };
+      img.onerror = () => setTimeout(pumpCam, 400);
+      img.src = `${RT_BASE()}/api/camera/frame?source=${camSource}&t=${Date.now()}`;
+    })();
+    fetch("/api/sources").then((r) => r.json()).then((s) => {
+      const h = (s.robot && s.robot.host) || "127.0.0.1";
+      $("ck-where").textContent = `${h === "127.0.0.1" ? "local" : "network"} · rosbridge ${h}`;
+    }).catch(() => {});
+    loadRobotBehavior(); pollRobot(); pollRobotDetections();
+  } else {
+    // stream = the sim's 3D render. POV is "what the robot sees"; the game
+    // loop keeps rendering it full-screen behind the cockpit chrome.
+    $("ck-src").style.display = "none";
+    if (mainCamSel) mainCamSel.value = "pov";
+    $("ck-where").textContent = "browser sim · rapier physics";
+    $("ck-type").textContent = (LV?.robot || bot.type || "robot").toUpperCase();
+    $("ck-glyph").textContent = TYPE_GLYPH[bot.type] || "◈";
+    $("ck-code").value = getCode(); sync();
+    $("ck-pname").textContent = "player_policy";
+    $("ck-levels").addEventListener("click", () => showStart());
+    pollSimCockpit();
+  }
 }
 function $(id) { return document.getElementById(id); }
+
+/* sim cockpit data: the same panels the robot fills, fed from sim state.
+   Telemetry from the sim body, the tactical map from sightings + trail. */
+function pollSimCockpit() {
+  const now = performance.now();
+  // trail + speed
+  if (ckTrail.length) { const prev = ckTrail[ckTrail.length - 1];
+    const sp = Math.hypot(bot.pos.x - prev.x, bot.pos.z - prev.z) /
+               Math.max(0.001, (now - (prev.t || now)) / 1000);
+    $("ck-spd").textContent = (isFinite(sp) ? sp : 0).toFixed(1); }
+  ckTrail.push({ x: bot.pos.x, z: bot.pos.z, t: now });
+  if (ckTrail.length > 240) ckTrail.shift();
+  const hdg = ((bot.heading * 180 / Math.PI) % 360 + 360) % 360;
+  $("ck-hdg").textContent = hdg.toFixed(0) + "°";
+  const altChip = $("ck-alt").parentElement;
+  if (bot.type === "drone") { $("ck-alt").textContent = bot.alt.toFixed(1) + "m"; altChip.style.display = ""; }
+  else altChip.style.display = "none";
+  $("ck-osd-tl").innerHTML = `<span class="lbl">POS</span> ${bot.pos.x.toFixed(1)}, ${bot.pos.z.toFixed(1)}` +
+    (bot.type === "drone" ? `<br><span class="lbl">ALT</span> ${bot.alt.toFixed(2)} m` : "");
+  $("ck-osd-tr").innerHTML = `<span class="lbl">HDG</span> ${hdg.toFixed(0)}°`;
+  // objects from the sim's world-located sightings (ground truth)
+  ckObjects.clear();
+  for (const s of serverSightings) {
+    const word = (s.label || "").split(" ")[0];
+    (s.locations || []).forEach((loc, i) => {
+      ckObjects.set((s.label || "?") + "_" + i, { label: word, wx: loc[0], wz: loc[1],
+        dist: Math.hypot(loc[0] - bot.pos.x, loc[1] - bot.pos.z), moving: false,
+        followed: false, last: now }); });
+  }
+  const nearestPerson = [...ckObjects.values()].filter((o) => o.label === "person")
+    .sort((a, b) => a.dist - b.dist)[0];
+  $("ck-osd-bl").innerHTML = nearestPerson
+    ? `<span class="lbl">TRACK</span> person · ${nearestPerson.dist.toFixed(1)} m`
+    : `<span class="lbl">${serverSightings.length} object(s) mapped</span>`;
+  drawTacticalMap({ pose: { x: bot.pos.x, z: bot.pos.z, y: bot.alt, heading: bot.heading },
+                    points: [], robot_type: bot.type });
+  setTimeout(pollSimCockpit, 150);
+}
 
 /* lightweight Python highlighter for the policy underlay. Tokenizes in one
    pass so strings/comments swallow keywords inside them. */
@@ -1458,6 +1507,13 @@ function ckPStat(msg, cls) {
 }
 async function ckDeploy() {
   const source = $("ck-code").value;
+  if (COCKPIT === "sim") {
+    // the sim runs the same policy format; hand it to the game's run path
+    setCode(source);
+    document.getElementById("btnRun").click();
+    ckPStat("running in the sim — edit & DEPLOY to iterate", "ok");
+    return;
+  }
   const name = robotPolicyName || "robot_policy";
   if (!source.includes("@behavior")) { ckPStat("needs an @behavior function", "err"); return; }
   if (!confirm(`Deploy "${name}" to the CONNECTED ROBOT?\nIt hot-reloads and moves hardware immediately.`)) {
@@ -1471,6 +1527,8 @@ async function ckDeploy() {
   ckPStat(`live on the robot — DEPLOY applies edits`, "ok");
 }
 async function ckStop() {
+  if (COCKPIT === "sim") { document.getElementById("btnStop").click();
+    ckPStat("stopped", ""); return; }
   const name = robotPolicyName || "robot_policy";
   await api("/api/behaviors/disable", { name }).catch(() => {});
   ckPStat(`${name} stopped — robot holds`, "");
@@ -2435,7 +2493,7 @@ function frame(now) {
 
 await initPhysics();                       // rapier WASM, once per page
 loadLevel(0);
-detectMode().then(() => { pollNetworkRobots(); if (MODE !== "robot") showStart(); }); pollCmd(); pushState(); pollSightings(); renderRuns();
+detectMode().then(() => pollNetworkRobots()); pollCmd(); pushState(); pollSightings(); renderRuns();
 requestAnimationFrame(frame);
 
 /* harness hook — scripts/e2e_arena.mjs drives the page without the UI */
