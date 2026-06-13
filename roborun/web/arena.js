@@ -723,7 +723,8 @@ function senseDetections() {
                bbox: [cx - size / 4, 360 - size / 2, cx + size / 4, 360 + size / 2],
                distance: +dist.toFixed(2) });
     dets.push({ p, dist, ppos });
-    if (!p.seen) { p.seen = true; postEvent("detection", `sighted: ${p.label}`, {}); }
+    if (!p.seen) { p.seen = true; postEvent("detection", `sighted: ${p.label}`, {});
+      simEvent("yolo", `sighted ${p.label} · ${dist.toFixed(1)}m`); }
   }
   currentDets = dets;
   if (bot.type === "dog" || bot.type === "biped") {
@@ -1289,6 +1290,14 @@ const TYPE_GLYPH = { drone: "✈", quadruped: "◈", humanoid: "⬡", arm: "⚙"
 const ckTrail = [];          // recent poses, world frame, for the tactical map
 let ckPose = null;           // latest robot pose, shared across pollers
 const ckObjects = new Map(); // track_id → world-tracked object (moving vs stationary)
+// sim cockpit runs fully client-side — its timeline must reflect the SIM's
+// own perception and decisions, never the server log (which, on a
+// robot-connected runtime, is dominated by the real robot)
+const simLog = [];
+function simEvent(source, title) {
+  simLog.push({ source, title, ts: Date.now() / 1000 });
+  if (simLog.length > 40) simLog.shift();
+}
 const CK_HFOV = 1.0472;      // camera horizontal FOV (rad) — matches the X3 cam
 const CLASS_H = { person: 1.7, car: 1.5, truck: 2.6, bus: 3.0, bicycle: 1.1,
                   motorcycle: 1.2, "dog": 0.6, "cat": 0.3, "chair": 0.9 };
@@ -1359,7 +1368,9 @@ function enterCockpit(src) {
     // stream = the sim's 3D render. POV is "what the robot sees"; the game
     // loop keeps rendering it full-screen behind the cockpit chrome.
     $("ck-src").style.display = "none";
-    if (mainCamSel) mainCamSel.value = "pov";
+    // chase cam: a stable 3rd-person view of the robot in its world, so a
+    // turning policy doesn't whip the whole screen around like POV does
+    if (mainCamSel) mainCamSel.value = "chase";
     $("ck-where").textContent = "browser sim · rapier physics";
     $("ck-type").textContent = (LV?.robot || bot.type || "robot").toUpperCase();
     $("ck-glyph").textContent = TYPE_GLYPH[bot.type] || "◈";
@@ -1390,20 +1401,19 @@ function pollSimCockpit() {
   $("ck-osd-tl").innerHTML = `<span class="lbl">POS</span> ${bot.pos.x.toFixed(1)}, ${bot.pos.z.toFixed(1)}` +
     (bot.type === "drone" ? `<br><span class="lbl">ALT</span> ${bot.alt.toFixed(2)} m` : "");
   $("ck-osd-tr").innerHTML = `<span class="lbl">HDG</span> ${hdg.toFixed(0)}°`;
-  // objects from the sim's world-located sightings (ground truth)
+  // objects from the sim robot's OWN client-side perception (currentDets:
+  // world-located raycast detections) — never the shared server sightings
   ckObjects.clear();
-  for (const s of serverSightings) {
-    const word = (s.label || "").split(" ")[0];
-    (s.locations || []).forEach((loc, i) => {
-      ckObjects.set((s.label || "?") + "_" + i, { label: word, wx: loc[0], wz: loc[1],
-        dist: Math.hypot(loc[0] - bot.pos.x, loc[1] - bot.pos.z), moving: false,
-        followed: false, last: now }); });
+  for (const d of currentDets) {
+    const pp = d.ppos || (d.p && (d.p.kind === "crate" ? d.p.mesh.position : d.p.pos));
+    if (!pp) continue;
+    const label = (d.p && d.p.label || "object").split(" ")[0];
+    ckObjects.set((d.p && d.p.id != null ? d.p.id : label) + "", {
+      label, wx: pp.x, wz: pp.z, dist: d.dist, moving: false, followed: false, last: now });
   }
-  const nearestPerson = [...ckObjects.values()].filter((o) => o.label === "person")
-    .sort((a, b) => a.dist - b.dist)[0];
-  $("ck-osd-bl").innerHTML = nearestPerson
-    ? `<span class="lbl">TRACK</span> person · ${nearestPerson.dist.toFixed(1)} m`
-    : `<span class="lbl">${serverSightings.length} object(s) mapped</span>`;
+  $("ck-osd-bl").innerHTML = ckObjects.size
+    ? `<span class="lbl">SENSING</span> ${ckObjects.size} object(s) in view`
+    : `<span class="lbl">SCANNING</span>`;
   drawTacticalMap({ pose: { x: bot.pos.x, z: bot.pos.z, y: bot.alt, heading: bot.heading },
                     points: [], robot_type: bot.type });
   setTimeout(pollSimCockpit, 150);
@@ -1720,17 +1730,22 @@ async function pollRobotDetections() {
    it happens. Same idea as the sim arena's event feed — one consistent
    "what is happening" surface, whatever the source is. */
 const CK_SRC_COLOR = { follow_person_drone: "#00d47e", fix_camera: "#40a0e0",
-  ros: "#e0a030", frame: "#9fb0bd", camera: "#9fb0bd", system: "#6b7b88" };
-let ckTLSeen = 0;
+  ros: "#e0a030", frame: "#9fb0bd", camera: "#9fb0bd", system: "#6b7b88",
+  yolo: "#00d47e", policy: "#40a0e0" };
+let _simMoveAcc = 0;
 async function ckTimeline() {
   try {
-    const evs = (await (await fetch("/api/run/events")).json()).events || [];
+    let rows;
+    if (COCKPIT === "sim") {
+      // the sim's OWN perception + decisions, isolated from any robot on
+      // this runtime — never the shared server log
+      rows = simLog.filter((e) => (e.title || "").trim());
+    } else {
+      const evs = (await (await fetch("/api/run/events")).json()).events || [];
+      rows = evs.filter((e) => e.source !== "arena" && (e.title || "").trim() &&
+        !/level loaded|behaviors:/.test(e.title));
+    }
     const list = $("ck-tl-list");
-    // keep only the meaningful stream: decisions, perception, robot I/O
-    const rows = evs.filter((e) =>
-      e.source !== "arena" && (e.title || "").trim() &&
-      !/level loaded|behaviors:/.test(e.title));
-    // append only what's new (events carry incrementing ids/ts)
     const fresh = rows.slice(Math.max(0, rows.length - 7));
     list.innerHTML = "";
     for (const e of fresh) {
@@ -2445,6 +2460,12 @@ function frame(now) {
     updateBody(dt, cmd);
     syncProps();
     tickChamber(dt, serverAnswer);
+    // log the sim policy's decisions into the sim-local timeline (~1/s)
+    if (COCKPIT === "sim") {
+      _simMoveAcc = (_simMoveAcc || 0) + dt;
+      if (_simMoveAcc > 1.0) { _simMoveAcc = 0;
+        simEvent("policy", `move fwd=${(cmd.forward || 0).toFixed(2)} turn=${(cmd.turn || 0).toFixed(2)}`); }
+    }
   }
 
   odo += prevPos.distanceTo(bot.pos);

@@ -286,7 +286,10 @@ body.cockpit #cockpit { display: flex; }
           font-variant-numeric: tabular-nums; }
 #ck-osd-tl { top: 86px; left: 28px; }
 #ck-osd-tr { top: 86px; right: 28px; text-align: right; }
-#ck-osd-bl { bottom: 84px; left: 28px; }
+/* bottom-center, clear of the timeline (left) and tactical map (right) */
+#ck-osd-bl { bottom: 26px; left: 50%; transform: translateX(-50%); text-align: center;
+             padding: 5px 14px; border-radius: 9px; background: rgba(8,12,15,.6);
+             border: 1px solid rgba(42,58,70,.4); backdrop-filter: blur(8px); }
 .ck-osd .lbl { color: rgba(159,176,189,.6); }
 
 /* detection boxes drawn over the feed */
@@ -308,18 +311,24 @@ body.cockpit #cockpit { display: flex; }
 #ck-map canvas { display: block; width: 100%; height: 168px; }
 
 /* policy slide-in (the live behavior, edited in place) */
-#ck-policy { position: absolute; left: 0; top: 0; bottom: 0; z-index: 28; width: 460px;
-             max-width: 86vw; transform: translateX(-100%); transition: transform .25s ease;
-             display: flex; flex-direction: column;
-             background: rgba(8,11,14,.93); backdrop-filter: blur(16px);
-             -webkit-backdrop-filter: blur(16px); border-right: 1px solid rgba(42,58,70,.55);
-             box-shadow: 14px 0 40px rgba(0,0,0,.5); }
+/* a framed floating panel that clears the top bar — header, editor and the
+   DEPLOY/STOP bar all visible, rounded, not a full-height code slab */
+#ck-policy { position: absolute; left: 16px; top: 76px; bottom: 16px; z-index: 28; width: 460px;
+             max-width: 86vw; transform: translateX(calc(-100% - 26px));
+             transition: transform .22s ease; display: flex; flex-direction: column;
+             background: rgba(8,11,14,.94); backdrop-filter: blur(18px);
+             -webkit-backdrop-filter: blur(18px); border: 1px solid rgba(42,58,70,.6);
+             border-radius: 14px; overflow: hidden; box-shadow: 0 18px 50px rgba(0,0,0,.6); }
 #ck-policy.open { transform: translateX(0); }
-#ck-policy .hd { display: flex; align-items: center; gap: 10px; padding: 13px 16px;
-                 border-bottom: 1px solid #1f2a33; }
+#ck-policy .hd { display: flex; align-items: center; gap: 10px; padding: 13px 16px; flex: none;
+                 background: rgba(16,22,28,.7); border-bottom: 1px solid #1f2a33; }
 #ck-policy .hd b { color: #00d47e; letter-spacing: .14em; font-size: 12px; }
-#ck-policy .hd .sub { color: #6b7b88; font-size: 11px; }
-#ck-policy .hd .cl { margin-left: auto; cursor: pointer; color: #6b7b88; font-size: 16px; }
+#ck-policy .hd .sub { color: #6b7b88; font-size: 11px; flex: 1; overflow: hidden;
+                      text-overflow: ellipsis; white-space: nowrap; }
+#ck-policy .hd .cl { cursor: pointer; color: #8a96a3; font-size: 14px; flex: none;
+                     width: 22px; height: 22px; line-height: 22px; text-align: center;
+                     border-radius: 6px; border: 1px solid #2a3a46; }
+#ck-policy .hd .cl:hover { color: #fff; border-color: #d84a4a; background: rgba(216,74,74,.12); }
 /* syntax-highlighted editor: a colored <pre> underlay behind a transparent
    textarea, kept in perfect sync — looks like a real editor, stays editable */
 #ck-edhost { flex: 1; min-height: 0; position: relative; overflow: hidden; background: #0a0f13; }
