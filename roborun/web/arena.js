@@ -1396,6 +1396,9 @@ function $(id) { return document.getElementById(id); }
    Telemetry from the sim body, the tactical map from sightings + trail. */
 function pollSimCockpit() {
   const now = performance.now();
+  // keep identity fresh — picking a new robot from LEVELS changes bot.type
+  $("ck-type").textContent = (LV?.robot || bot.type || "robot").toUpperCase();
+  $("ck-glyph").textContent = TYPE_GLYPH[bot.type] || "◈";
   // trail + speed
   if (ckTrail.length) { const prev = ckTrail[ckTrail.length - 1];
     const sp = Math.hypot(bot.pos.x - prev.x, bot.pos.z - prev.z) /
