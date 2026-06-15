@@ -115,6 +115,9 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if path_only == "/":
             self.path = "/arena.html"
+        # the fleet comms sandbox is its own page; "/fleet" is the clean URL
+        if path_only == "/fleet":
+            self.path = "/fleet.html"
         super().do_GET()
 
     def do_OPTIONS(self) -> None:

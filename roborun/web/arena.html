@@ -143,7 +143,7 @@
            background: rgba(5,8,10,.8); backdrop-filter: blur(6px);
            -webkit-backdrop-filter: blur(6px); overflow: auto; }
   #start.show { display: grid; }
-  .start-card { text-align: center; max-width: 1000px; padding: 18px;
+  .start-card { text-align: center; max-width: 1200px; padding: 18px;
                 position: relative; margin: 24px auto; }
   .start-card h1 { color: #00d47e; letter-spacing: .22em; font-size: 22px; margin: 0 0 8px; }
   .start-card .sub { color: #9fb0bd; margin: 0 auto 20px; max-width: 660px; line-height: 1.6; }
@@ -193,6 +193,33 @@
   .ros-connect button { background: #0d3325; color: #00d47e; border: 1px solid #1f6e4c;
         border-radius: 5px; font: inherit; font-size: 11px; padding: 6px 12px; cursor: pointer; }
   .ros-connect button:hover { background: #14241c; }
+  .ros-card .ros-scan { width: 100%; margin-top: 4px; background: #0d2633; color: #6ac0ff;
+        border: 1px solid #1f4a6e; border-radius: 5px; font: inherit; font-size: 11px;
+        padding: 7px; cursor: pointer; letter-spacing: .04em; }
+  .ros-card .ros-scan:hover { background: #123347; color: #9fd8ff; }
+  .ros-card .ros-scan:disabled { opacity: .7; cursor: default; }
+
+  /* the FLEET card — many quadrupeds + an imperfect radio, configured here */
+  .fleet-card { border-color: #1f4a6e !important; }
+  .fleet-card .fleet-ic { width: 165px; height: 92px; margin: 0 auto; display: flex;
+        align-items: center; justify-content: center; font-size: 38px; color: #40a0e0;
+        opacity: .9; letter-spacing: -.18em; }
+  .fleet-card h3 .fleet-sub { color: #40a0e0; font-size: 10px; letter-spacing: .14em; margin-top: 2px; }
+  .fleet-ctrls { display: flex; flex-direction: column; gap: 7px; margin: 6px 2px 2px; }
+  .fleet-ctrls .fc { display: flex; flex-direction: column; gap: 2px; }
+  .fleet-ctrls .fc .lbl { display: flex; justify-content: space-between; font-size: 10.5px; }
+  .fleet-ctrls .fc .lbl span:first-child { color: #9fb0bd; letter-spacing: .04em; }
+  .fleet-ctrls .fc .lbl b { color: #40a0e0; font-weight: 400; font-variant-numeric: tabular-nums; }
+  .fleet-ctrls input[type=range] { -webkit-appearance: none; appearance: none; height: 3px;
+        border-radius: 3px; background: #1f2a33; outline: none; }
+  .fleet-ctrls input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px;
+        height: 12px; border-radius: 50%; background: #40a0e0; cursor: pointer; }
+  .fleet-ctrls input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border: 0;
+        border-radius: 50%; background: #40a0e0; cursor: pointer; }
+  .fleet-card .fleet-go { background: #10283a; color: #40a0e0; border: 1px solid #1f4a6e;
+        border-radius: 5px; font: inherit; font-size: 11px; padding: 7px; cursor: pointer;
+        letter-spacing: .08em; margin-top: 8px; width: 100%; }
+  .fleet-card .fleet-go:hover { background: #16344c; color: #6ac0ff; }
 
   /* RUN is the one button a first-time visitor must find */
   #btnRun { background: #0d3325 !important; color: #00d47e !important;
@@ -512,15 +539,17 @@ body.cockpit #cockpit { display: flex; }
     <div id="ck-tl-list"></div>
   </div>
 
-  <!-- styled confirmation (replaces the native browser confirm) -->
-  <div id="ck-confirm">
-    <div class="box">
-      <div class="ttl" id="ck-confirm-ttl">⚠ Deploy to the connected robot?</div>
-      <div class="msg" id="ck-confirm-msg"></div>
-      <div class="row">
-        <button class="ck-cbtn" id="ck-confirm-no">Cancel</button>
-        <button class="ck-cbtn yes" id="ck-confirm-yes">▶ DEPLOY</button>
-      </div>
+</div>
+
+<!-- styled confirmation — body-level so the deck (not just the cockpit) can
+     use it; replaces the native browser confirm() everywhere -->
+<div id="ck-confirm">
+  <div class="box">
+    <div class="ttl" id="ck-confirm-ttl">⚠ Deploy to the connected robot?</div>
+    <div class="msg" id="ck-confirm-msg"></div>
+    <div class="row">
+      <button class="ck-cbtn" id="ck-confirm-no">Cancel</button>
+      <button class="ck-cbtn yes" id="ck-confirm-yes">▶ DEPLOY</button>
     </div>
   </div>
 </div>
@@ -617,7 +646,7 @@ body.cockpit #cockpit { display: flex; }
 </div>
 
 <!-- robot camera panel (deck robot mode): the real camera feed + YOLO -->
-<div class="panel" id="p-eyes" style="display:none">
+<div class="panel hidden" id="p-eyes">
   <div class="p-head"><b>EYES</b><span>— live robot camera</span>
     <select id="eyesSrc" class="camSel"><option value="robot">robot cam</option><option value="webcam">webcam</option></select>
     <span class="x">✕</span></div>

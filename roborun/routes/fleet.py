@@ -19,6 +19,55 @@ _fleet_lock = threading.Lock()
 _blueprints_lock = threading.Lock()
 
 
+# ── LLM-authored swarm strategy (for the /fleet sandbox) ─────────────────────
+
+_STRATEGY_SYSTEM = """You write coordination policies for a swarm of robots in a \
+2-D exploration sandbox. Output ONLY a JavaScript function body (no markdown, no \
+fences, no function wrapper). It runs ~5 times per second for EACH robot, with \
+two locals in scope:
+
+  r   — this robot. Fields: r.id, r.x, r.y (metres), r.payload (Set of data ids
+        it carries), r.inbox (queued messages).
+  H   — helpers (all take r first):
+        H.arrived(r)               -> true when the robot is free to pick a new goal
+        H.inbox(r)                 -> array of messages: {kind:'cells',cells:[...]} or
+                                      {kind:'claim',cell,by,dist}
+        H.learn(r, cells)          -> merge map cells you heard from a peer
+        H.reserve(r, cell, by, dist) -> record someone's claim on a cell
+        H.shareMapped(r)           -> broadcast cells you just sensed (costs 1 airtime)
+        H.broadcastClaim(r, cell)  -> announce you are taking `cell`
+        H.claimedByOther(r, cell)  -> true if a closer robot already claimed it
+        H.nearestUnknown(r, avoidClaims) -> nearest unmapped cell index, or -1
+        H.goto(r, cell)            -> commit to a cell (the robot does ONE goal at a time)
+        H.neighborCount(r)         -> how many robots are in radio range right now
+        H.knows(r, cell)           -> already mapped (sensed or heard)?
+
+Hard limits the policy must respect: a robot can only send a few messages per \
+second (airtime), only hears robots within radio range, has finite memory, and \
+moves to one goal at a time. Keep it short, defensive (handle cell === -1), and \
+fast. Return only the body.""".strip()
+
+
+@post("/api/fleet/strategy")
+def fleet_strategy(h, payload):
+    """Draft a swarm-coordination policy from a natural-language goal, using
+    whatever LLM the runtime has configured. Returns a JS function body the
+    /fleet sandbox compiles and runs."""
+    goal = str(payload.get("goal", "")).strip()
+    if not goal:
+        raise ApiError(400, "Describe the algorithm you want")
+    from roborun import llm
+    try:
+        code = llm.complete(goal, system=_STRATEGY_SYSTEM, tier="smart", max_tokens=600)
+    except Exception as exc:
+        keys = llm.capabilities().get("configured_keys") or []
+        hint = "" if keys else " — set ANTHROPIC_API_KEY (or OPENAI_API_KEY) and restart roborun"
+        raise ApiError(502, f"LLM unavailable: {exc}{hint}")
+    code = re.sub(r"^```[a-zA-Z]*\n?|```$", "", code.strip()).strip()
+    model = llm.resolve("smart")[1]
+    send_json(h, 200, {"ok": True, "code": code, "model": model})
+
+
 # ── Fleet ────────────────────────────────────────────────────────────────────
 
 def _load_fleet() -> list[dict]:

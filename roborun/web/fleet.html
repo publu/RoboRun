@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script src="./runtime-base.js"></script>
+<title>RoboRun · Fleet</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg:#0b0e11; --panel:rgba(8,12,15,.8); --line:rgba(42,58,70,.5);
+          --ink:#d7e0e8; --dim:#6b7b88; --dim2:#5a6b78; --green:#00d47e;
+          --blue:#40a0e0; --amber:#e0a030; --red:#d84a4a; }
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden;
+               font: 13px/1.45 ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink); }
+  #field { position: fixed; inset: 0; z-index: 0; display: block; }
+
+  /* top bar */
+  #top { position: fixed; top: 12px; left: 12px; right: 12px; z-index: 30; display: flex;
+         align-items: center; gap: 14px; padding: 9px 16px; box-sizing: border-box;
+         background: rgba(8,12,15,.72); backdrop-filter: blur(14px);
+         -webkit-backdrop-filter: blur(14px); border: 1px solid var(--line);
+         border-radius: 13px; box-shadow: 0 8px 30px rgba(0,0,0,.45); }
+  #ttl { display: flex; align-items: center; gap: 9px; font-size: 13px;
+         letter-spacing: .12em; color: var(--ink); font-weight: 700; }
+  #ttl .glyph { font-size: 15px; color: var(--green); letter-spacing: -.18em; }
+  #ttl .sub { color: var(--dim); font-weight: 400; letter-spacing: .06em; font-size: 11px; }
+  #top .spacer { flex: 1; }
+  .tbtn { background: rgba(16,22,28,.8); color: #9fb0bd; border: 1px solid #2a3a46;
+          border-radius: 8px; font: inherit; font-size: 11px; letter-spacing: .08em;
+          padding: 6px 12px; cursor: pointer; transition: all .15s; text-decoration: none; }
+  .tbtn:hover { color: var(--ink); border-color: #3a4d5a; }
+  .tbtn.hot { color: #06080a; background: var(--green); border-color: var(--green); font-weight: 700; }
+  .tbtn.hot:hover { background: #1ee08c; }
+
+  /* shared panel chrome */
+  .glass { background: var(--panel); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
+           border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+
+  /* left config rail */
+  #rail { position: fixed; left: 12px; top: 70px; bottom: 12px; z-index: 25; width: 286px;
+          max-width: 84vw; display: flex; flex-direction: column; gap: 10px; overflow: auto;
+          padding: 14px; box-sizing: border-box; }
+  #rail h4 { margin: 4px 0 0; font-size: 10px; letter-spacing: .18em; color: var(--dim2);
+             font-weight: 400; text-transform: uppercase; }
+  .ctrl { display: flex; flex-direction: column; gap: 3px; }
+  .ctrl .lbl { display: flex; justify-content: space-between; align-items: baseline; }
+  .ctrl .lbl b { color: var(--ink); font-weight: 400; font-size: 12px; letter-spacing: .04em; }
+  .ctrl .lbl .v { color: var(--green); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .ctrl .hint { color: var(--dim2); font-size: 10px; line-height: 1.4; }
+  select.sel { background: #10161c; color: var(--ink); border: 1px solid #2a3a46;
+               border-radius: 6px; font: inherit; font-size: 11.5px; padding: 5px 6px; }
+  input[type=range] { -webkit-appearance: none; appearance: none; height: 4px; border-radius: 3px;
+                      background: #1f2a33; outline: none; margin: 2px 0; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px;
+                      border-radius: 50%; background: var(--green); cursor: pointer;
+                      box-shadow: 0 0 0 3px rgba(0,212,126,.18); }
+  input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border: 0; border-radius: 50%;
+                      background: var(--green); cursor: pointer; }
+  .chk { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--ink); cursor: pointer; }
+  .chk input { accent-color: var(--green); }
+
+  #strats { display: flex; flex-direction: column; gap: 6px; }
+  .strat { text-align: left; background: rgba(16,22,28,.7); border: 1px solid #2a3a46;
+           border-radius: 8px; padding: 8px 10px; cursor: pointer; transition: all .14s; }
+  .strat:hover { border-color: #3a4d5a; }
+  .strat.on { border-color: #1f6e4c; background: rgba(0,212,126,.08); }
+  .strat .nm { color: var(--ink); font-size: 12px; letter-spacing: .06em; }
+  .strat.on .nm { color: var(--green); }
+  .strat .ds { color: var(--dim); font-size: 10.5px; line-height: 1.45; margin-top: 2px; }
+
+  /* right column: HUD chips + a big TEACH panel */
+  #right { position: fixed; right: 12px; top: 70px; bottom: 12px; z-index: 25; width: 344px;
+           max-width: 90vw; display: flex; flex-direction: column; gap: 10px; }
+  #hud { padding: 12px 13px 13px; flex: none; }
+  #hud h4 { margin: 0 0 8px; font-size: 10px; letter-spacing: .18em; color: var(--dim2); font-weight: 400; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  .stat { background: rgba(16,22,28,.55); border: 1px solid rgba(42,58,70,.4); border-radius: 9px;
+          padding: 6px 9px; cursor: help; position: relative; }
+  .stat .k { color: #8a96a3; font-size: 9.5px; letter-spacing: .06em; display: flex; gap: 4px; align-items: center; }
+  .stat .k .q { color: var(--dim2); border: 1px solid var(--dim2); border-radius: 50%; width: 11px; height: 11px;
+                font-size: 8px; line-height: 11px; text-align: center; flex: none; }
+  .stat .v { color: var(--green); font-variant-numeric: tabular-nums; font-size: 16px; margin-top: 1px; }
+  .stat .v.warn { color: var(--amber); } .stat .v.bad { color: var(--red); }
+  .stat.wide { grid-column: 1 / 3; }
+  #cover-bar { height: 6px; border-radius: 3px; background: #16202a; margin-top: 4px; overflow: hidden; }
+  #cover-fill { height: 100%; width: 0; background: linear-gradient(90deg,#1f6e4c,var(--green)); transition: width .2s; }
+  /* tooltip on hover of a stat */
+  .stat .tip { position: absolute; right: 0; top: calc(100% + 6px); width: 230px; z-index: 40;
+               background: rgba(10,14,18,.98); border: 1px solid var(--line); border-radius: 9px;
+               padding: 9px 11px; font-size: 10.5px; line-height: 1.5; color: #b9c4cd;
+               opacity: 0; pointer-events: none; transition: opacity .12s; box-shadow: 0 10px 30px rgba(0,0,0,.6); }
+  .stat .tip b { color: var(--ink); }
+  .stat:hover .tip { opacity: 1; }
+
+  /* TEACH panel — the big one, with tabs and an expand button */
+  #teach { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  #teach .hd { display: flex; align-items: center; gap: 6px; padding: 8px 10px; flex: none;
+               border-bottom: 1px solid rgba(31,42,51,.7); }
+  .tab { background: none; border: 1px solid transparent; color: var(--dim); font: inherit; font-size: 10.5px;
+         letter-spacing: .12em; padding: 4px 10px; border-radius: 7px; cursor: pointer; }
+  .tab:hover { color: var(--ink); }
+  .tab.on { color: var(--green); border-color: #1f4434; background: rgba(0,212,126,.08); }
+  #teach .hd .grow { flex: 1; }
+  #teach .hd .exp { color: #8a96a3; cursor: pointer; border: 1px solid #2a3a46; border-radius: 7px;
+                    width: 24px; height: 22px; line-height: 20px; text-align: center; font-size: 13px; }
+  #teach .hd .exp:hover { color: var(--ink); border-color: #3a4d5a; }
+  #teach .body { flex: 1; min-height: 0; overflow: auto; }
+  .pane { display: none; padding: 13px 15px; }
+  .pane.on { display: block; }
+  /* strategy pane */
+  #pane-strategy .sname { color: var(--green); font-size: 14px; letter-spacing: .08em; }
+  #pane-strategy .sprose { color: #b9c4cd; font-size: 12px; line-height: 1.6; margin: 7px 0 12px; }
+  #pane-strategy pre { margin: 0; padding: 12px 13px; overflow: auto; font-size: 11px; line-height: 1.6;
+              color: #c3ccd4; white-space: pre; background: rgba(6,9,12,.7);
+              border: 1px solid rgba(31,42,51,.7); border-radius: 9px; }
+  .tk-kw { color: #c678dd; } .tk-def { color: #61afef; } .tk-str { color: #98c379; }
+  .tk-com { color: var(--dim2); font-style: italic; } .tk-num { color: #d19a66; } .tk-dec { color: var(--amber); }
+  /* custom / LLM strategy editor */
+  #custom-ui .cgen { display: flex; gap: 6px; margin: 4px 0 9px; }
+  #custom-ui .cgen input { flex: 1; min-width: 0; background: #0a0f13; color: var(--ink);
+        border: 1px solid #2a3a46; border-radius: 7px; font: inherit; font-size: 11.5px; padding: 7px 9px; }
+  #custom-ui .cgen input:focus { outline: none; border-color: #1f6e4c; }
+  #custom-ui .cgen button { background: #2a1f3a; color: #c9a0ff; border: 1px solid #4a3f6e;
+        border-radius: 7px; font: inherit; font-size: 11px; padding: 7px 11px; cursor: pointer; white-space: nowrap; }
+  #custom-ui .cgen button:hover { background: #352a48; }
+  #custom-code { width: 100%; box-sizing: border-box; min-height: 190px; resize: vertical;
+        background: rgba(6,9,12,.7); color: #c3ccd4; border: 1px solid rgba(31,42,51,.8);
+        border-radius: 9px; font: 11px/1.6 ui-monospace, Menlo, monospace; padding: 11px 12px;
+        white-space: pre; tab-size: 2; }
+  #custom-code:focus { outline: none; border-color: #1f4434; }
+  #custom-ui .crow { display: flex; align-items: center; gap: 10px; margin-top: 9px; }
+  #custom-ui .crow button { background: #0d3325; color: var(--green); border: 1px solid #1f6e4c;
+        border-radius: 7px; font: inherit; font-size: 12px; letter-spacing: .04em; padding: 7px 14px; cursor: pointer; }
+  #custom-ui .crow button:hover { background: #14401d; }
+  #custom-stat { font-size: 10.5px; color: var(--dim); flex: 1; }
+  #custom-stat.ok { color: var(--green); } #custom-stat.err { color: var(--red); }
+  #custom-ui .capi { margin-top: 12px; }
+  #custom-ui .capi summary { cursor: pointer; color: var(--dim); font-size: 10.5px; letter-spacing: .04em; }
+  #custom-ui .capi pre { margin: 7px 0 0; padding: 10px 12px; background: rgba(6,9,12,.7);
+        border: 1px solid rgba(31,42,51,.7); border-radius: 9px; font-size: 10px; line-height: 1.55;
+        color: #9fb0bd; white-space: pre-wrap; }
+
+  /* concepts pane */
+  #pane-concepts h5 { margin: 16px 0 5px; color: var(--ink); font-size: 12.5px; letter-spacing: .03em; }
+  #pane-concepts h5:first-child { margin-top: 0; }
+  #pane-concepts p { margin: 0 0 8px; color: #aeb9c2; font-size: 11.5px; line-height: 1.6; }
+  #pane-concepts .key { color: var(--green); } #pane-concepts .bad { color: var(--red); }
+  #pane-concepts .warn { color: var(--amber); } #pane-concepts b { color: var(--ink); }
+  #pane-concepts code { background: rgba(0,212,126,.1); color: #8fe3bf; padding: 0 4px; border-radius: 4px; font-size: 11px; }
+
+  /* expanded TEACH overlay */
+  #teach.expanded { position: fixed; inset: 5vh 6vw; width: auto; z-index: 80;
+                    box-shadow: 0 40px 120px rgba(0,0,0,.7); }
+  #teach.expanded .pane.on { padding: 26px 32px; font-size: 13px; }
+  #teach.expanded #pane-strategy.on { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-content: start; }
+  #teach.expanded #pane-concepts.on { columns: 2; column-gap: 34px; }
+  #teach.expanded #pane-concepts p, #teach.expanded #pane-strategy .sprose { font-size: 13px; }
+  #scrim { position: fixed; inset: 0; z-index: 79; background: rgba(4,6,8,.55);
+           backdrop-filter: blur(3px); display: none; }
+  #scrim.on { display: block; }
+
+  /* robot inspector — follows the cursor when you hover a robot */
+  #inspect { position: fixed; z-index: 60; width: 232px; pointer-events: none; display: none;
+             padding: 11px 13px; }
+  #inspect.on { display: block; }
+  #inspect .ih { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+  #inspect .dot { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+  #inspect .nm { font-size: 12.5px; color: var(--ink); letter-spacing: .04em; }
+  #inspect .role { margin-left: auto; font-size: 9px; letter-spacing: .12em; color: var(--amber);
+                   border: 1px solid #4a3f1f; border-radius: 6px; padding: 1px 6px; }
+  #inspect .irow { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; }
+  #inspect .irow .k { color: var(--dim); } #inspect .irow .v { color: var(--ink); font-variant-numeric: tabular-nums; }
+  #inspect .seen { color: var(--green); } #inspect .heard { color: var(--blue); }
+  #inspect .note { margin-top: 7px; font-size: 10px; color: var(--dim2); line-height: 1.45; }
+
+  #ticker { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 24;
+            display: flex; gap: 8px; align-items: center; color: var(--dim); font-size: 11px;
+            background: rgba(8,12,15,.6); border: 1px solid rgba(42,58,70,.4);
+            padding: 6px 14px; border-radius: 9px; backdrop-filter: blur(8px);
+            max-width: 40vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* legend, bottom-left */
+  #legend { position: fixed; left: 12px; bottom: 12px; z-index: 24; display: flex; flex-wrap: wrap;
+            gap: 4px 12px; max-width: 286px; padding: 9px 12px; }
+  #legend .li { display: flex; align-items: center; gap: 6px; font-size: 10px; color: #9fb0bd; }
+  #legend .sw { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+  #legend .sw.line { height: 2px; border-radius: 2px; }
+
+  @media (max-width: 1000px) {
+    #rail { width: 230px; } #right { width: 250px; } #ticker, #legend { display: none; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="field"></canvas>
+
+  <div id="top">
+    <div id="ttl"><span class="glyph">◈◈◈</span><span>FLEET</span>
+      <span class="sub">— a swarm covering ground over an imperfect radio</span></div>
+    <div class="spacer"></div>
+    <button class="tbtn" id="btn-learn">❓ EXPLAIN</button>
+    <button class="tbtn hot" id="btn-play">⏸ PAUSE</button>
+    <button class="tbtn" id="btn-reset">↻ RESET</button>
+    <a class="tbtn" href="/" id="btn-back" title="back to the arena">← ARENA</a>
+  </div>
+
+  <div id="rail" class="glass">
+    <h4>The world</h4>
+    <div class="ctrl">
+      <div class="lbl"><b>Environment</b></div>
+      <select class="sel" id="s-env">
+        <option value="open">Open field</option>
+        <option value="obstacles">Scattered obstacles</option>
+        <option value="rooms">Building &amp; corridors</option>
+      </select>
+      <div class="hint">where the swarm searches — obstacles block movement and break line-of-sight.</div>
+    </div>
+    <div class="ctrl">
+      <div class="lbl"><b>Robots</b><span class="v" id="v-count">6</span></div>
+      <input type="range" id="s-count" min="2" max="16" step="1" value="6">
+    </div>
+    <div class="ctrl">
+      <div class="lbl"><b>Data points to find</b><span class="v" id="v-targets">8</span></div>
+      <input type="range" id="s-targets" min="0" max="20" step="1" value="8">
+      <div class="hint">things to discover and relay <b>back to base</b> — the green tower.</div>
+    </div>
+    <label class="chk"><input type="checkbox" id="s-base" checked> relay data back to base station</label>
+
+    <h4>What each robot can hear</h4>
+    <div class="ctrl">
+      <div class="lbl"><b>Radio range</b><span class="v" id="v-range">14 m</span></div>
+      <input type="range" id="s-range" min="4" max="40" step="1" value="14">
+      <div class="hint">two robots talk only while this close. Past it, they're on their own.</div>
+    </div>
+    <div class="ctrl">
+      <div class="lbl"><b>Link reliability</b><span class="v" id="v-loss">85%</span></div>
+      <input type="range" id="s-loss" min="40" max="100" step="1" value="85">
+      <div class="hint">best-case delivery odds; messages fail more toward the edge of range.</div>
+    </div>
+
+    <h4>What each robot can handle</h4>
+    <div class="ctrl">
+      <div class="lbl"><b>Airtime</b><span class="v" id="v-bw">4 / s</span></div>
+      <input type="range" id="s-bw" min="1" max="20" step="1" value="4">
+      <div class="hint">messages a robot can send per second — its slice of the band.</div>
+    </div>
+    <div class="ctrl">
+      <div class="lbl"><b>Onboard memory</b><span class="v" id="v-mem">60</span></div>
+      <input type="range" id="s-mem" min="10" max="200" step="5" value="60">
+      <div class="hint">cells it remembers. Full memory forgets old ground — and may re-walk it.</div>
+    </div>
+    <div class="ctrl">
+      <div class="lbl"><b>Inbox depth</b><span class="v" id="v-buf">8</span></div>
+      <input type="range" id="s-buf" min="1" max="40" step="1" value="8">
+      <div class="hint">messages queued while it finishes its move. Full inbox → new messages are dropped.</div>
+    </div>
+
+    <h4>Coordination strategy</h4>
+    <div id="strats"></div>
+  </div>
+
+  <div id="right">
+    <div id="hud" class="glass">
+      <h4>Fleet telemetry · hover any tile to learn it</h4>
+      <div class="stats">
+        <div class="stat wide"><div class="k">Ground mapped <span class="q">?</span></div>
+          <div class="v" id="m-cover">0%</div><div id="cover-bar"><div id="cover-fill"></div></div>
+          <div class="tip"><b>Ground mapped</b> — share of searchable cells at least one robot has sensed. The mission is done at 100%.</div></div>
+        <div class="stat"><div class="k">Overlap <span class="q">?</span></div><div class="v" id="m-redundant">0</div>
+          <div class="tip"><b>Overlapping searches</b> — cells a <b>second</b> robot re-walked (amber on the map). Wasted effort: it happens when robots don't know what teammates already covered.</div></div>
+        <div class="stat"><div class="k">Linked now <span class="q">?</span></div><div class="v" id="m-linked">0/0</div>
+          <div class="tip"><b>Connectivity</b> — robots that currently have at least one neighbour in radio range. The rest are islands and can't share.</div></div>
+        <div class="stat"><div class="k">Delivered <span class="q">?</span></div><div class="v" id="m-recv">0</div>
+          <div class="tip"><b>Delivered</b> — messages that actually <b>arrived</b> in a teammate's inbox and were read.</div></div>
+        <div class="stat"><div class="k">Dropped <span class="q">?</span></div><div class="v" id="m-drop">0</div>
+          <div class="tip"><b>Dropped</b> — messages that were sent but never landed: the radio link <b>failed</b> (likely near the edge of range), or the receiver's <b>inbox was full</b>. High drop % = radio overloaded or robots too far apart.</div></div>
+        <div class="stat"><div class="k">Data → base <span class="q">?</span></div><div class="v" id="m-data">0/0</div>
+          <div class="tip"><b>Data delivered</b> — discovered data points relayed all the way back to the base station (the sink). A find isn't "done" until it reaches base.</div></div>
+        <div class="stat"><div class="k">Elapsed <span class="q">?</span></div><div class="v" id="m-time">0.0s</div>
+          <div class="tip">Wall-clock since the last reset.</div></div>
+      </div>
+    </div>
+
+    <div id="teach" class="glass">
+      <div class="hd">
+        <button class="tab on" data-pane="strategy">STRATEGY</button>
+        <button class="tab" data-pane="concepts">CONCEPTS</button>
+        <span class="grow"></span>
+        <span class="exp" id="teach-exp" title="expand">⤢</span>
+      </div>
+      <div class="body">
+        <div class="pane on" id="pane-strategy">
+          <div id="builtin-ui">
+            <div class="sname" id="s-name">Gossip</div>
+            <div class="sprose" id="s-prose"></div>
+            <pre id="s-code"><code></code></pre>
+          </div>
+          <div id="custom-ui" style="display:none">
+            <div class="sname">✨ Your algorithm</div>
+            <div class="sprose">Write a per-robot policy in JavaScript — or describe one and let
+              your <b>local LLM</b> draft it. It runs ~5×/sec for every robot, against the same
+              radio range, airtime and memory limits as the built-ins.</div>
+            <div class="cgen">
+              <input id="custom-goal" placeholder="describe a smarter algorithm… e.g. fan out first, then sweep back to base">
+              <button id="custom-llm">✨ Generate</button>
+            </div>
+            <textarea id="custom-code" spellcheck="false" autocomplete="off"></textarea>
+            <div class="crow"><button id="custom-run">▶ Run this algorithm</button><span id="custom-stat">edit or generate, then run</span></div>
+            <details class="capi"><summary>API — what <code>r</code> and <code>H</code> give you</summary><pre id="custom-api"></pre></details>
+          </div>
+        </div>
+        <div class="pane" id="pane-concepts">
+          <h5>Delivered vs. dropped</h5>
+          <p>Every message a robot sends either <span class="key">arrives</span> in a neighbour's inbox
+             (<b>delivered</b>) or it doesn't (<span class="bad">dropped</span>). A message drops for two
+             reasons: the <b>radio link failed</b> — far more likely near the edge of range — or it arrived
+             but the receiver's <b>inbox was already full</b> (it's busy finishing one job at a time). A high
+             drop rate means your radio is overloaded or the swarm is spread too thin.</p>
+          <h5>Overlapping searches</h5>
+          <p>The <span class="warn">amber</span> tiles were mapped by <b>two or more</b> robots — duplicated,
+             wasted work. It happens whenever robots don't know what teammates have done: no radio, dropped
+             updates, or stale memory. Better coordination keeps tiles <span class="key">green-once</span>.</p>
+          <h5>How do we optimise it?</h5>
+          <p>Cranking <b>range</b>, <b>airtime</b> and <b>memory</b> up always helps — but real radios can't just
+             scale. The software wins come from being smarter with the bytes you have: share <b>intent</b>
+             (claim where you're going), not just raw map; <b>route</b> data toward a sink instead of flooding;
+             elect <b>local leaders</b> to split the area. Slide range down and switch strategies to feel the trade-offs.</p>
+          <h5>Is this libp2p?</h5>
+          <p>Same family of ideas. <b>libp2p</b> is the real-world peer-to-peer stack (it powers IPFS, Ethereum,
+             and many robot fleets): <code>gossipsub</code> floods updates to peers, a <b>Kademlia DHT</b> finds
+             who-has-what, and multi-hop routing relays to a server. This sandbox is a toy model of gossipsub +
+             geographic routing — libp2p is the batteries-included, production version of exactly this.</p>
+          <h5>So what is "swarm intelligence"?</h5>
+          <p>No robot sees the whole field. Coverage <b>emerges</b> from local rules — map near you, tell your
+             neighbours, avoid claimed ground, carry data toward base. That's <b>stigmergy</b>: simple local
+             interactions producing smart global behaviour, with <b>no central brain required</b>. It scales
+             because every rule stays local — each robot only ever reasons about who it can currently hear.</p>
+          <h5>The base station (the "main server")</h5>
+          <p>The <span class="key">green tower</span> is the sink. A discovered data point is relayed
+             <b>hop by hop</b> toward it (greedy geographic routing): each robot hands its data to a neighbour
+             that's closer to base, or carries it like a <b>data mule</b> until one is. Watch data reach base
+             even when no single robot can see base alone — that's the swarm acting as one antenna.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="inspect" class="glass"></div>
+  <div id="scrim"></div>
+
+  <div id="legend" class="glass">
+    <div class="li"><span class="sw" style="background:rgba(0,212,126,.55)"></span>mapped once</div>
+    <div class="li"><span class="sw" style="background:rgba(224,160,48,.6)"></span>overlap (wasted)</div>
+    <div class="li"><span class="sw line" style="background:var(--green)"></span>radio link</div>
+    <div class="li"><span class="sw line" style="background:var(--amber)"></span>link at its limit</div>
+    <div class="li"><span class="sw" style="background:var(--green);border-radius:50%"></span>data → base</div>
+    <div class="li"><span class="sw" style="background:#2e3c4a"></span>obstacle</div>
+  </div>
+
+  <div id="ticker">fleet booting…</div>
+
+  <script type="module" src="./fleet.js"></script>
+</body>
+</html>

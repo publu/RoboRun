@@ -1353,8 +1353,9 @@ async function enterRobotDeck() {
       "behavior fill this deck. The same policy file drives the sim and this robot.";
     const rooms = $("rooms"); if (rooms) rooms.innerHTML = "";
   }
-  // EYES camera feed (frame-polled, deterministic)
-  $("p-eyes").style.display = "";
+  // EYES camera feed (frame-polled, deterministic) — dock it via the layout
+  // so it lands in the same deck slot the sim uses, not floating at 0,0
+  layout["p-eyes"].hidden = false; applyLayout();
   let camSrc = "robot";
   $("eyesSrc").addEventListener("change", (e) => { camSrc = e.target.value; });
   (function pump() {
@@ -2254,7 +2255,30 @@ function buildStartScreen() {
     card.addEventListener("pointerleave", () => { p.hoverTarget = 0; });
     previews.push(p);
   }
-  buildRosCard();   // the real-robot path sits alongside the sim robots
+  buildRosCard();    // the real-robot path sits alongside the sim robots
+  buildFleetCard();  // …and the many-robot path, on the right
+}
+
+/* the FLEET card: one quadruped is the sandbox; a fleet of them is the hard
+   part — sharing what each finds over a radio that only reaches so far. The
+   card is just the door; every knob (robots, radio, memory, the coordination
+   algorithm, even an LLM-written one) lives inside the sandbox itself. */
+function buildFleetCard() {
+  const grid = document.getElementById("startGrid");
+  const card = document.createElement("div");
+  card.className = "bot-card fleet-card";
+  card.innerHTML = `<div class="fleet-ic">◈◈◈</div>
+    <h3>FLEET<div class="fleet-sub">MANY QUADRUPEDS</div></h3>
+    <div class="tag">a swarm covering a field over an imperfect radio — tune the
+      range, memory and coordination algorithm, or have an LLM write a better one</div>
+    <div class="tasks">
+      <button class="fleet-go">▶ OPEN FLEET LAB</button>
+    </div>`;
+  grid.appendChild(card);
+  card.querySelector(".fleet-go").addEventListener("click", () => {
+    // hosted (static) builds have no /fleet route; the file sits beside arena
+    location.href = (MODE === "wasm") ? "./fleet.html" : "/fleet";
+  });
 }
 
 /* the ROS card: a complete system shows the real-robot path whether or not a
@@ -2271,6 +2295,7 @@ function buildRosCard() {
   grid.appendChild(card);
   refreshRosCard();
 }
+let rosScanning = false;
 async function refreshRosCard() {
   const tasks = document.getElementById("ros-tasks");
   if (!tasks) return;
@@ -2278,42 +2303,78 @@ async function refreshRosCard() {
   try { s = await (await fetch("/api/sources")).json(); } catch {}
   tasks.innerHTML = "";
   const enterRobot = () => { startEl.classList.remove("show"); enterRobotMode(); };
+  const connectAnd = async (host, port) => {
+    const r = await api("/api/ros/connect", { host, port: port || 9090 });
+    if (r && r.ok !== false) enterRobot();
+  };
   if (!s) {                               // no runtime reachable at all
     tasks.innerHTML = `<div class="ros-hint">start <b>roborun</b>, then point a ` +
       `Gazebo or Isaac sim — or a real robot — at it over rosbridge. The same ` +
       `policy file drives them all.</div>`;
     return;
   }
-  if (s.robot && s.robot.connected) {     // a source is live on rosbridge
+
+  // 1) the live robot, if one is already connected on rosbridge
+  const connectedHost = s.robot && s.robot.connected ? s.robot.host : null;
+  if (connectedHost) {
     const ty = s.robot.type;
     const label = (ty && ty !== "webcam_only") ? ty.toUpperCase() : "ROSBRIDGE";
     const btn = document.createElement("button");
-    btn.innerHTML = `▶ ${label} · ${s.robot.host}<span class="live">LIVE</span>`;
+    btn.innerHTML = `▶ ${label} · ${connectedHost}<span class="live">LIVE</span>`;
     btn.addEventListener("click", enterRobot);
     tasks.appendChild(btn);
   }
-  for (const f of ((s.network && s.network.found) || [])) {   // others on the LAN
-    if (s.robot && s.robot.connected && f.host === s.robot.host) continue;
+
+  // 2) one view per robot the scan found on the network — pick any to enter it
+  const found = ((s.network && s.network.found) || []).filter((f) => f.host !== connectedHost);
+  for (const f of found) {
     const btn = document.createElement("button");
-    btn.textContent = `connect ${f.host}:${f.port}`;
-    btn.addEventListener("click", async () => {
-      await api("/api/ros/connect", { host: f.host, port: f.port }); enterRobot(); });
+    btn.innerHTML = `▶ ${f.local ? "THIS MACHINE" : "ROBOT"} · ${f.host}:${f.port}` +
+      `<span class="live" style="border-color:#3a4d5a;color:#9fb0bd">rosbridge</span>`;
+    btn.addEventListener("click", () => connectAnd(f.host, f.port));
     tasks.appendChild(btn);
   }
-  if (!(s.robot && s.robot.connected)) {
+
+  // 3) the scan button — on a hosted page this is what trips the browser's
+  // "access devices on your network" permission, then loads every robot found
+  const scanBtn = document.createElement("button");
+  scanBtn.className = "ros-scan";
+  scanBtn.innerHTML = rosScanning ? "⟳ scanning the network…"
+    : (found.length ? "⚲ rescan network for robots" : "⚲ Allow network scan to load robots");
+  scanBtn.disabled = rosScanning;
+  scanBtn.addEventListener("click", () => scanNetwork());
+  tasks.appendChild(scanBtn);
+  if (!connectedHost && !found.length && !rosScanning) {
     const hint = document.createElement("div"); hint.className = "ros-hint";
-    hint.innerHTML = "nothing connected — enter a rosbridge IP (sim or robot, :9090):";
+    hint.innerHTML = "lets the browser see robots on your wifi — or enter a rosbridge IP below.";
     tasks.appendChild(hint);
   }
+
+  // 4) manual IP, always available as a fallback
   const row = document.createElement("div"); row.className = "ros-connect";
   row.innerHTML = `<input id="ros-ip" placeholder="robot ip" value="127.0.0.1">` +
     `<button id="ros-go">CONNECT</button>`;
   tasks.appendChild(row);
-  document.getElementById("ros-go").addEventListener("click", async () => {
-    const ip = document.getElementById("ros-ip").value.trim(); if (!ip) return;
-    const r = await api("/api/ros/connect", { host: ip, port: 9090 });
-    if (r.ok) enterRobot();
+  document.getElementById("ros-go").addEventListener("click", () => {
+    const ip = document.getElementById("ros-ip").value.trim(); if (ip) connectAnd(ip, 9090);
   });
+}
+
+/* Kick a forced LAN scan and poll until it settles, then re-render the card
+   with one entry per robot found. The POST to the local runtime is also what
+   triggers the browser's local-network permission prompt on the hosted site. */
+async function scanNetwork() {
+  if (rosScanning) return;
+  rosScanning = true; refreshRosCard();
+  try { await api("/api/sources/scan", {}); } catch {}
+  const t0 = Date.now();
+  while (Date.now() - t0 < 7000) {
+    await new Promise((r) => setTimeout(r, 700));
+    let s = null;
+    try { s = await (await fetch("/api/sources")).json(); } catch {}
+    if (s && s.network && !s.network.scanning) break;
+  }
+  rosScanning = false; refreshRosCard();
 }
 let startRaf = 0, startLastT = 0;
 function animateStart(t) {
@@ -2395,8 +2456,8 @@ document.getElementById("btnRun").addEventListener("click", async () => {
     // sandbox writes player_policy; robot mode edits the robot's own
     // behavior file, and never without saying so
     const name = MODE === "robot" ? robotPolicyName : "player_policy";
-    if (MODE === "robot" &&
-        !confirm(`Deploy "${name}" to the CONNECTED ROBOT?\nIt hot-reloads and starts moving hardware immediately.`)) {
+    if (MODE === "robot" && !await ckConfirm(`⚠ Deploy "${name}" to the connected robot?`,
+        "It hot-reloads and starts moving hardware immediately.")) {
       policyStatus("deploy cancelled", "");
       return;
     }
@@ -2446,7 +2507,7 @@ function updateTelemetry() {
 /* ════════════════ panels ════════════════ */
 const LAYOUT_KEY = "arena-layout-v3";
 const PANEL_IDS = ["p-brief", "p-policy", "p-status", "p-map", "p-view1", "p-view2",
-                   "p-runs"];
+                   "p-runs", "p-eyes"];
 let zTop = 100;
 function defaultLayout() {
   if (innerWidth < 760) {
@@ -2478,6 +2539,9 @@ function defaultLayout() {
     "p-view1":  { l: Math.round(w / 2 - 170), t: h - 244, w: 340, h: 230, hidden: true },
     "p-runs":   { l: Math.round(w / 2 - 230), t: TOP + 30, w: 460,
                   h: Math.min(440, h - TOP - 60), hidden: true },
+    // EYES (the connected robot's camera) docks where the sim shows its POV,
+    // so a ROS robot lands in the exact same deck — hidden until robot mode.
+    "p-eyes":   { l: Math.round(w / 2 - 180), t: h - 264, w: 360, h: 248, hidden: true },
   };
 }
 function loadLayout() {
