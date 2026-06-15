@@ -2566,6 +2566,10 @@ function applyLayout() {
   for (const id of PANEL_IDS) {
     const el = document.getElementById(id), st = layout[id];
     if (!el || !st) continue;
+    // EYES is the *real robot's* camera; in the sim there's no camera, so it
+    // would just sit black. It's a robot-deck-only panel — never show it (or
+    // its toolbar toggle) outside robot mode, even if a saved layout had it open.
+    const robotOnly = id === "p-eyes" && MODE !== "robot";
     const w = Math.min(st.w, innerWidth - 12);
     const h = Math.min(st.h, innerHeight - TOP - 8);
     // clamp AND write back, so a layout saved offscreen heals itself
@@ -2575,10 +2579,12 @@ function applyLayout() {
     el.style.top = `${st.t}px`;
     el.style.width = `${w}px`;
     el.style.height = `${h}px`;
-    el.classList.toggle("hidden", !!st.hidden);
+    el.classList.toggle("hidden", robotOnly || !!st.hidden);
     document.querySelector(`#toolbar [data-panel="${id}"]`)
-      ?.classList.toggle("on", !st.hidden);
+      ?.classList.toggle("on", !robotOnly && !st.hidden);
   }
+  const eb = document.getElementById("btnEyes");
+  if (eb) eb.style.display = MODE === "robot" ? "" : "none";
 }
 function initPanels() {
   for (const id of PANEL_IDS) {
