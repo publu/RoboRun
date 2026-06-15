@@ -1258,10 +1258,11 @@ async function detectMode() {
   const iAmRuntime = rt.live && !rt.remote;   // this page IS the roborun server
   const pinned = localStorage.getItem("roborun.source");
 
-  // a robot wired directly into THIS runtime boots straight to its cockpit;
-  // a static launcher (e.g. :8000) always opens the menu, even if a robot is
-  // reachable — the menu is the front door to the whole system.
-  if (iAmRuntime && pinned !== "sim") {
+  // The menu is the front door: a freshly opened page ALWAYS lands on the
+  // selector, even when a robot is already connected (it just shows up as a
+  // live card you can pick). We only skip straight into a robot when the user
+  // explicitly pinned one before — a deliberate, sticky choice, never the default.
+  if (iAmRuntime && pinned === "robot") {
     try {
       const ctl = new AbortController();
       const t = setTimeout(() => ctl.abort(), 1500);
@@ -1336,8 +1337,9 @@ async function enterRobotDeck() {
     const grid = new THREE.GridHelper(120, 120, 0x1a2a38, 0x0f1820);
     grid.name = "robotGrid"; grid.position.y = 0.01; scene.add(grid);
   }
-  // sim-only toolbar bits off; robot panels on
-  for (const id of ["btnLevels"]) { const e = $(id); if (e) e.style.display = "none"; }
+  // keep LEVELS visible as the way back to the picker — never trap the user in
+  // the robot deck with no door out (relabelled so it reads as "the menu")
+  const lvl = $("btnLevels"); if (lvl) { lvl.style.display = ""; lvl.textContent = "⊞ MENU"; }
   for (const sel of ['button[data-panel="p-runs"]', 'button[data-panel="p-brief"]']) {
     const b = document.querySelector(sel); if (b) b.style.display = "none";
   }
