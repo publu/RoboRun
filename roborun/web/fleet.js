@@ -208,6 +208,7 @@ function spawnFleet() {
       color: PALETTE[i % PALETTE.length], speed: 3.0 + rng() * 0.6,
       goal: null, gcell: -1,
       seen: new Set(), heard: new Set(), order: [], fresh: [],
+      everSeen: new Set(), everKnown: new Set(),   // lifetime record (never evicted)
       inbox: [], budget: cfg.bw, sent: 0, isLeader: false, assigned: -1,
       payload: new Set(),       // data points carried but not yet at base
     });
@@ -251,6 +252,8 @@ function sense() {
   }
 }
 function remember(r, c, via) {
+  r.everKnown.add(c);                            // lifetime record, never forgotten
+  if (via === "seen") r.everSeen.add(c);
   if (r.seen.has(c)) return;
   if (via === "seen") { r.seen.add(c); r.heard.delete(c); r.fresh.push(c); }
   else if (!r.heard.has(c)) r.heard.add(c);
@@ -492,8 +495,15 @@ function draw() {
     ctx.fillStyle = bits > 1 ? "rgba(224,160,48,.17)" : "rgba(0,212,126,.10)";
     ctx.fillRect(wx(cx(c) - CELL / 2), wy(cy(c) - CELL / 2), CELL * s + 1, CELL * s + 1);
   }
-  // hovered robot's knowledge: seen filled in its colour, heard as outline
+  // hovered robot's knowledge, three tiers: faint = it once knew but has since
+  // forgotten (memory full); filled = sensed firsthand & still in memory;
+  // outline = heard from a peer & still in memory.
   if (hoverBot) {
+    for (const c of hoverBot.everKnown) {            // forgotten footprint
+      if (hoverBot.seen.has(c) || hoverBot.heard.has(c)) continue;
+      ctx.fillStyle = hoverBot.color + "14";
+      ctx.fillRect(wx(cx(c) - CELL / 2), wy(cy(c) - CELL / 2), CELL * s + 1, CELL * s + 1);
+    }
     for (const c of hoverBot.seen) { ctx.fillStyle = hoverBot.color + "44";
       ctx.fillRect(wx(cx(c) - CELL / 2), wy(cy(c) - CELL / 2), CELL * s + 1, CELL * s + 1); }
     ctx.strokeStyle = hoverBot.color + "88"; ctx.lineWidth = 1;
@@ -584,21 +594,26 @@ function updateInspector() {
   const el = $("inspect");
   if (!hoverBot || !hoverXY) { el.classList.remove("on"); return; }
   const r = hoverBot, nb = (r.neighbors || neighbors(r)).length;
-  const mapped = r.seen.size, heard = r.heard.size;
-  const pct = Math.round((mapped + heard) / Math.max(1, NCOVER) * 100);
+  const mapped = r.seen.size, heard = r.heard.size, inMem = mapped + heard;
+  const everKnown = r.everKnown.size, forgotten = Math.max(0, everKnown - inMem);
+  const pct = Math.round(inMem / Math.max(1, NCOVER) * 100);
   const note = nb ? `linked to ${nb} peer${nb > 1 ? "s" : ""} — sharing what it sees`
                   : "out of radio range — searching solo, no one to tell";
   el.innerHTML =
     `<div class="ih"><span class="dot" style="background:${r.color}"></span>` +
     `<span class="nm">robot ${r.id}</span>` +
     `${r.isLeader && cfg.strat === "leader" ? '<span class="role">LEADER</span>' : ''}</div>` +
-    `<div class="irow"><span class="k">mapped itself</span><span class="v seen">${mapped} cells</span></div>` +
-    `<div class="irow"><span class="k">heard from peers</span><span class="v heard">${heard} cells</span></div>` +
-    `<div class="irow"><span class="k">knows of the field</span><span class="v">${pct}%</span></div>` +
+    `<div class="ihd">IN MEMORY NOW · ${inMem}/${cfg.mem} cells</div>` +
+    `<div class="irow"><span class="k">sensed firsthand</span><span class="v seen">${mapped}</span></div>` +
+    `<div class="irow"><span class="k">heard from peers</span><span class="v heard">${heard}</span></div>` +
+    `<div class="ihd">EVER KNOWN · its whole history</div>` +
+    `<div class="irow"><span class="k">cells discovered</span><span class="v">${everKnown}</span></div>` +
+    `<div class="irow"><span class="k">forgotten (memory full)</span><span class="v${forgotten ? " warn" : ""}">${forgotten}</span></div>` +
+    `<div class="ihd">RIGHT NOW</div>` +
     `<div class="irow"><span class="k">inbox</span><span class="v">${r.inbox.length} / ${cfg.buf}</span></div>` +
     `<div class="irow"><span class="k">messages sent</span><span class="v">${r.sent}</span></div>` +
     (cfg.base ? `<div class="irow"><span class="k">data carried</span><span class="v">${r.payload.size}</span></div>` : "") +
-    `<div class="note">${note}. Filled tiles = sensed firsthand; outlined = only heard over the radio.</div>`;
+    `<div class="note">${note}. <b style="color:${r.color}">Filled</b> = sensed firsthand, <b>outlined</b> = heard over radio, <b style="opacity:.5">faint</b> = once knew but forgot.</div>`;
   el.classList.add("on");
   const w = 232, pad = 14;
   let lx = hoverXY.x + 18, ly = hoverXY.y + 14;

@@ -49,8 +49,9 @@ class Robot:
     speed: float = 3.0
     heading: float = math.pi / 2
     goal: int = -1                                   # cell index, -1 = free
-    known: set = field(default_factory=set)          # cells I believe are mapped
+    known: set = field(default_factory=set)          # cells I believe are mapped (in memory now)
     order: list = field(default_factory=list)        # eviction order for memory
+    ever_known: set = field(default_factory=set)     # lifetime record — never evicted
     fresh: list = field(default_factory=list)        # mapped since last broadcast
     inbox: list = field(default_factory=list)
     budget: float = 0.0
@@ -75,12 +76,17 @@ class Robot:
             self._remember(c)
 
     def _remember(self, c: int, fresh: bool = False) -> None:
+        self.ever_known.add(c)            # lifetime record, never forgotten
         if c in self.known:
             return
         self.known.add(c)
         self.order.append(c)
         if fresh:
             self.fresh.append(c)
+
+    def forgotten(self) -> int:
+        """Cells it once knew but has since evicted because memory filled up."""
+        return len(self.ever_known) - len(self.known)
 
 
 class Fleet:
