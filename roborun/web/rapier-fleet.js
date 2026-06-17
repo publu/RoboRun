@@ -235,9 +235,9 @@ function wire() {
   $("#reset") && ($("#reset").onclick = () => { if (S.ready) spawnRobots(); });
   fetch("/api/projects/active").then(r => r.json()).then(d => {
     const s = $("#scope"); if (!s) return;
-    s.innerHTML = d.active
-      ? `Real Rapier physics — robots across ${S.floors} floors (via elevators) collecting jointly into <b>${d.active.project} / ${d.active.environment}</b>. Every detection lands in that environment's search + spatial map.`
-      : `Real Rapier physics — robots across floors via elevators, in one warehouse. Detections go to the active project (currently <b>scratch</b>).`;
+    const where = d.active ? `<b>${d.active.project} / ${d.active.environment}</b>` : `<b>scratch</b>`;
+    s.innerHTML = `<b>Layer 2: real Rapier physics.</b> ${S.floors} floors of warehouse, real bodies + collisions + elevators — robots collecting jointly into ${where}; every detection lands in its search + spatial map. ` +
+      `<span style="color:var(--fg-dim)">Coordination strategies (how they decide where to search) live in the <a href="/fleet">Swarm Lab →</a></span>`;
   }).catch(() => {});
 }
 
