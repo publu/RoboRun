@@ -49,7 +49,7 @@
 <body>
 <header>
   <h1>SCENARIOS</h1>
-  <span class="sub">scored runs · suites · pass-rate — every run sealed &amp; cross-embodiment</span>
+  <span class="sub">Test your robot's behaviors and see how they score. Click a scenario to run it — each run is recorded and tamper-proof.</span>
   <nav style="margin-left:auto;display:flex;gap:14px;font-size:12px">
     <a href="/" style="color:#7aaf90;text-decoration:none">cockpit</a>
     <a href="/scenarios" style="color:#00d47e;text-decoration:none">scenarios</a>
@@ -98,7 +98,7 @@ async function post(body){
 async function loadRunnable(){
   let d; try{ d=await j("/api/scenarios/defs"); }catch(e){ return; }
   const el=$("#runnable");
-  if(!d.defs || !d.defs.length){ el.innerHTML='<div class="empty">no runnable scenarios registered</div>'; return; }
+  if(!d.defs || !d.defs.length){ el.innerHTML='<div class="empty">No scenarios available. Built-in demos load automatically; add your own with <code>@scenario_def</code>.</div>'; return; }
   const bySuite={}; d.defs.forEach(x=>(bySuite[x.suite||"(none)"]=bySuite[x.suite||"(none)"]||[]).push(x));
   el.innerHTML=Object.entries(bySuite).map(([s,defs])=>`
     <div class="card">
@@ -112,7 +112,7 @@ async function loadRunnable(){
 async function loadSuites(){
   const d = await j("/api/scenarios/suites");
   const el = $("#suites");
-  if(!d.suites || !d.suites.length){ el.innerHTML='<div class="empty">No suites yet — run a scenario with a <code>suite=</code> group.</div>'; return; }
+  if(!d.suites || !d.suites.length){ el.innerHTML='<div class="empty">No suites yet — click a scenario above to run it, and its results will appear here grouped by suite with a pass-rate.</div>'; return; }
   el.innerHTML = d.suites.map(c => `
     <div class="card ${state.suite===c.suite?'sel':''}" data-suite="${c.suite}">
       <div class="name">${c.suite}</div>
@@ -133,7 +133,7 @@ async function loadRuns(){
   const d = await j("/api/scenarios?"+qs.toString());
   $("#runsHead").textContent = "Runs" + (state.suite? " · "+state.suite : "") + ` (${d.total})`;
   const tb = $("#runs");
-  if(!d.results || !d.results.length){ tb.innerHTML='<tr><td colspan="7" class="empty">No runs.</td></tr>'; return; }
+  if(!d.results || !d.results.length){ tb.innerHTML='<tr><td colspan="7" class="empty">No runs recorded yet. Run a scenario above (or <code>roborun demo</code>) to see scored results here.</td></tr>'; return; }
   tb.innerHTML = d.results.map(r => {
     const m = Object.entries(r.metrics||{}).filter(([k])=>!k.startsWith("_"))
       .slice(0,4).map(([k,v])=>`${k}: ${v}`).join(" · ");

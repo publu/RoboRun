@@ -51,9 +51,9 @@
   </nav>
 </header>
 <div class="bar">
-  <div class="seg" id="mode">
-    <button data-by="clip" class="on">semantic</button>
-    <button data-by="label">label</button>
+  <div class="seg" id="mode" title="how to match — by meaning (AI understanding) or by exact object label">
+    <button data-by="clip" class="on">by meaning</button>
+    <button data-by="label">by object</button>
   </div>
   <input id="q" placeholder="who/what to find — 'person in red', 'forklift', 'red mug'…"
          onkeydown="if(event.key==='Enter')run()">
@@ -61,10 +61,10 @@
   <label class="src">until</label><input id="until" type="datetime-local">
   <input id="source" placeholder="camera/source (optional)" style="width:150px">
   <button class="go" onclick="run()">Search</button>
-  <button onclick="exportDs()" title="curate a labeled dataset from these hits">⤓ Dataset</button>
+  <button onclick="exportDs()" title="save these results as a labeled training dataset (images + labels), with verifiable provenance">⤓ Save as dataset</button>
 </div>
 <main>
-  <div class="meta" id="meta">Search across every recorded run — sim, robot, and production — over all of time.</div>
+  <div class="meta" id="meta">Find any object or person across everything your robots have ever recorded — sim, real robots, and cameras. Type what you're looking for, or narrow it to a time range.</div>
   <div class="grid" id="grid"></div>
 </main>
 <script>
@@ -106,7 +106,7 @@ async function run(){
       <div class="when">${when}${score}</div>
       <div class="src">${r.source||"?"} · ${r.source_id||r.robot_id||""}</div>
     </div></div>`;
-  }).join("") : `<div class="empty">No matches. Try a label search, widen the time range, or record some runs first.</div>`;
+  }).join("") : `<div class="empty">Nothing found yet.<br><br>If this is a fresh install, there's no data to search — record a run (open the cockpit and press <b>M</b>) or run <code>roborun demo</code> in your terminal to load sample data. Already have runs? Try the <b>label</b> tab or widen the time range.</div>`;
 }
 </script>
 </body>

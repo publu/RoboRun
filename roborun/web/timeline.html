@@ -41,10 +41,11 @@
   </nav>
 </header>
 <main>
+  <p style="color:var(--dim);font-size:13px;margin:0 0 18px">Everything happening right now, as it happens — recent camera snapshots and a live feed of what your robots and behaviors are doing.</p>
   <h2>Recent sightings</h2>
-  <div class="strip" id="strip"><div class="empty">no keyframes yet</div></div>
+  <div class="strip" id="strip"><div class="empty">No camera snapshots yet — start a camera or sim, or run <code>roborun demo</code>.</div></div>
   <h2>Event stream (live)</h2>
-  <div class="feed" id="feed"><div class="empty">waiting for events…</div></div>
+  <div class="feed" id="feed"><div class="empty">Waiting for activity… events show up here the moment a behavior runs, a robot moves, or something is detected.</div></div>
 </main>
 <script>
 const $=s=>document.querySelector(s);

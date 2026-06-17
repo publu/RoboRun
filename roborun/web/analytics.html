@@ -42,6 +42,7 @@
   </nav>
 </header>
 <main>
+  <p style="color:var(--dim);font-size:13px;margin:0 0 18px">A live overview of everything your robots have seen and done — what they detected, how often, which robots are active, and how your behaviors score. Updates every few seconds.</p>
   <div class="kpis" id="kpis"></div>
   <div class="cols">
     <div class="panel"><h2>Detections by label (all time)</h2><div id="labels"></div></div>
@@ -59,7 +60,7 @@ const bars=(el,items,labelKey,valKey,pct)=>{
     <span class="lab">${i[labelKey]}</span>
     <span class="track"><span class="fill" style="width:${pct?i[valKey]:(i[valKey]/max*100)}%"></span></span>
     <span class="v">${pct?(i[valKey]+'%'):i[valKey]}</span></div>`).join("")
-    : '<div class="empty">no data yet — record some runs</div>';
+    : '<div class="empty">Nothing here yet — record a run (cockpit → <b>M</b>) or run <code>roborun demo</code> to load sample data.</div>';
 };
 function spark(el,pts){
   if(!pts.length){ el.innerHTML='<div class="empty">no data</div>'; return; }
