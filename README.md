@@ -108,7 +108,7 @@ Every run — sim, real robot, or webcam — flows through one loop: **YOLO + CL
 The cockpit's **▤ VIEWS** menu opens the dashboards (also `roborun demo` to populate them instantly):
 
 - **/search** — find anything/anyone over time; export the hits as a labeled dataset (sealed provenance).
-- **/scenarios** — scored runs + suites with pass-rates; run a scenario or a whole suite (the Antioch loop).
+- **/scenarios** — give a behavior a task, run it, and see if it passed; group runs into suites with a pass-rate, and re-run after every change.
 - **/run** — per-run trajectory · velocity · clearance · LiDAR, with **synced playback** (scrub a moment → the frame the robot saw) and **⚑ Flag** to bookmark incidents to revisit.
 - **/analytics** — detections over time, suite pass-rates, per-robot fleet activity.
 - **/timeline** — the live event stream + recent sightings.
