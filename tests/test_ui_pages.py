@@ -94,6 +94,9 @@ def test_analytics_payload(server):
     assert any(s["suite"] == "warehouse" for s in d["suites"])
     assert "over_time" in d and len(d["over_time"]) == 24
     assert d["runs"]["count"] >= 0
+    # per-robot fleet breakdown
+    robots = {r["robot_id"] for r in d.get("robots", [])}
+    assert {"r1", "r2"} <= robots
 
 
 def test_search_api_over_time(server):

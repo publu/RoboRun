@@ -47,7 +47,8 @@
     <div class="panel"><h2>Detections by label (all time)</h2><div id="labels"></div></div>
     <div class="panel"><h2>Observations · last 24h</h2><div id="sparkwrap"></div></div>
     <div class="panel"><h2>Suite pass-rate</h2><div id="suites"></div></div>
-    <div class="panel"><h2>Data by source</h2><div id="sources"></div></div>
+    <div class="panel"><h2>Data by source (sim / robot / production)</h2><div id="sources"></div></div>
+    <div class="panel" style="grid-column:1/-1"><h2>Fleet activity</h2><div id="fleet"></div></div>
   </div>
 </main>
 <script>
@@ -83,6 +84,14 @@ async function load(){
   spark($("#sparkwrap"), d.over_time||[]);
   bars($("#suites"), (d.suites||[]).map(s=>({suite:s.suite,pct:Math.round(s.pass_rate*100)})), "suite","pct",true);
   bars($("#sources"), d.sources||[], "source","count",false);
+  const robots=d.robots||[];
+  $("#fleet").innerHTML = robots.length? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">`+
+    robots.map(r=>`<div style="border:1px solid var(--line);border-radius:8px;padding:10px">
+      <div style="color:var(--accent);font-weight:600">${r.robot_id}</div>
+      <div class="empty">${r.observations} obs · ${r.top_label||"—"}</div>
+      <div class="empty">last seen ${r.last_seen?new Date(r.last_seen*1000).toLocaleString():"—"}</div>
+    </div>`).join("")+`</div>`
+    : '<div class="empty">no robots have recorded data yet — connect one or run a sim</div>';
 }
 load(); setInterval(load, 5000);
 </script>

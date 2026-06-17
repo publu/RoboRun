@@ -444,6 +444,22 @@ class SpatialMemoryStore:
             return [{"t": start + i * bucket_s, "count": by.get(i, 0)}
                     for i in range(buckets)]
 
+    def robots_breakdown(self) -> list[dict]:
+        """Per-robot fleet view: observation count, last-seen, top label."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT robot_id, COUNT(*) c, MAX(ts) last FROM observations "
+                "GROUP BY robot_id ORDER BY c DESC").fetchall()
+            out = []
+            for r in rows:
+                top = self._conn.execute(
+                    "SELECT d.label FROM detections d JOIN observations o ON o.id=d.obs_id "
+                    "WHERE o.robot_id=? GROUP BY d.label ORDER BY COUNT(*) DESC LIMIT 1",
+                    (r[0],)).fetchone()
+                out.append({"robot_id": r[0], "observations": r[1],
+                            "last_seen": r[2], "top_label": top[0] if top else None})
+            return out
+
     def source_breakdown(self) -> list[dict]:
         with self._lock:
             rows = self._conn.execute(

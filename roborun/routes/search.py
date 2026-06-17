@@ -82,6 +82,7 @@ def analytics(h):
         out["labels"] = store.label_histogram(top=15)
         out["over_time"] = store.counts_over_time(bucket_s=3600.0, buckets=24)
         out["sources"] = store.source_breakdown()
+        out["robots"] = store.robots_breakdown()
     except Exception as exc:
         out["observations_error"] = str(exc)
     try:
