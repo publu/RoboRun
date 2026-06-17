@@ -90,7 +90,7 @@ def test_backend_registry():
     ids = {b["id"] for b in bl}
     assert {"rapier", "mujoco", "mjx", "gazebo", "isaac", "real"} <= ids
     isaac = backends.get("isaac")
-    assert isaac["status"] == "planned"            # honest: not built yet
+    assert isaac["status"] in {"available", "ready"}   # driver exists (isaac.py)
     rapier = backends.get("rapier")
     assert rapier["status"] == "ready" and rapier["caps"]["fleet"] is True
 
