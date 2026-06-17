@@ -101,6 +101,28 @@ What this proves: the recorded run — images, detections, and decisions include
 
 The UI at `http://localhost:8765` is the flight deck itself: live camera with YOLO boxes, the black box streaming, the live anchor badge, a command bar, and director keys. `M` record/seal · `V` verify · `T` tamper · `R` runs/replay · `C` sources.
 
+## Track and search everything over time
+
+Every run — sim, real robot, or webcam — flows through one loop: **YOLO + CLIP → sealed MCAP → a live index you can search across all of history.** So "where did I last see the forklift", "who was in the lobby yesterday", "every red mug across the fleet" are one query — semantic (CLIP), label (YOLO), place, or time window — over every run and robot.
+
+The cockpit's **▤ VIEWS** menu opens the dashboards (also `roborun demo` to populate them instantly):
+
+- **/search** — find anything/anyone over time; export the hits as a labeled dataset (sealed provenance).
+- **/scenarios** — scored runs + suites with pass-rates; run a scenario or a whole suite (the Antioch loop).
+- **/run** — per-run trajectory · velocity · clearance · LiDAR, with **synced playback** (scrub a moment → the frame the robot saw) and **⚑ Flag** to bookmark incidents to revisit.
+- **/analytics** — detections over time, suite pass-rates, per-robot fleet activity.
+- **/timeline** — the live event stream + recent sightings.
+
+From the local runner, no browser needed:
+
+```bash
+roborun search "person"          # across every recorded run, all-time
+roborun scenarios run mjx_reach  # score a scenario (vectorized MuJoCo, sealed)
+roborun dataset "forklift" ./ds  # curate a labeled training set from a search
+```
+
+The robot handle gets it too: `robot.go_to_place("the charging dock")` navigates to where it last saw something (semantic memory), and the same `recall_place` is an MCP tool any agent can call.
+
 ## Connect a real robot
 
 ```bash
@@ -109,7 +131,7 @@ roborun connect 192.168.1.42 --move   # proves it: clamped 0.5s nudge, then stop
 roborun connect --scan                # DDS discovery — nothing to install on the robot
 ```
 
-If rosbridge isn't running on the robot yet, the command prints the exact two lines to run there — that's the whole setup. **No ROS install on your machine.** Once connected, plain `roborun` drives that robot and the same `behaviors/*.py` files now move real hardware: Unitree Go2/G1, TurtleBot, arms, drones, NVIDIA Isaac Sim, Gazebo. `robot.move()` goes to the sim if it's running, otherwise to the connected robot, always through the same safety clamps.
+If rosbridge isn't running on the robot yet, the command prints the exact two lines to run there — that's the whole setup. **No ROS install on your machine, and it works with both ROS 1 and ROS 2** — rosbridge speaks both, and RoboRun detects which (the DDS path is ROS 2-only). Once connected, plain `roborun` drives that robot and the same `behaviors/*.py` files now move real hardware: Unitree Go2/G1, TurtleBot, arms, drones, NVIDIA Isaac Sim, Gazebo. `robot.move()` goes to the sim if it's running, otherwise to the connected robot, always through the same safety clamps.
 
 Optional extras: `pip install ros-agent[vision]` (YOLO + CLIP), `[sim]` (MuJoCo), `[ros]` (direct DDS), `[crypto]` (Ed25519 signing), `[anchor]` (RFC 3161 timestamping), `[fleet]` (R2 + DuckDB cross-robot), `[all]`.
 
