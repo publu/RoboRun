@@ -68,3 +68,41 @@ def perception_status(h):
     send_json(h, 200, {"ok": True, "running": _session is not None,
                        "mode": getattr(_session, "mode", None),
                        "indexed": getattr(_session, "indexed", 0)})
+
+
+@get("/api/analytics")
+def analytics(h):
+    """One dashboard payload: detections histogram, observations over time, source
+    breakdown, suite pass-rates, run + fleet counts. Everything tracked, summarized."""
+    out: dict = {"ok": True}
+    try:
+        from roborun.routes._singletons import get_memory
+        store = get_memory()
+        out["observations"] = store.stats()
+        out["labels"] = store.label_histogram(top=15)
+        out["over_time"] = store.counts_over_time(bucket_s=3600.0, buckets=24)
+        out["sources"] = store.source_breakdown()
+    except Exception as exc:
+        out["observations_error"] = str(exc)
+    try:
+        from roborun.scenario import list_suites
+        out["suites"] = list_suites()
+    except Exception:
+        out["suites"] = []
+    try:
+        from roborun.recorder import list_runs
+        runs = list_runs()
+        out["runs"] = {"count": len(runs),
+                       "total_bytes": sum(r.get("size", 0) for r in runs),
+                       "sealed": sum(1 for r in runs if r.get("sealed")),
+                       "anchored": sum(1 for r in runs if r.get("anchored"))}
+    except Exception:
+        out["runs"] = {"count": 0}
+    try:
+        from roborun.routes.fleet import _load_fleet
+        fleet = _load_fleet()
+        out["fleet"] = {"total": len(fleet),
+                        "online": sum(1 for r in fleet if r.get("status") == "online")}
+    except Exception:
+        out["fleet"] = {"total": 0, "online": 0}
+    send_json(h, 200, out)

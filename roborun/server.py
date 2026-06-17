@@ -123,6 +123,13 @@ class Handler(SimpleHTTPRequestHandler):
         # the scenarios board (suites + scored runs)
         if path_only == "/scenarios":
             self.path = "/scenarios.html"
+        # search over time · live timeline · analytics dashboard
+        if path_only == "/search":
+            self.path = "/search.html"
+        if path_only == "/timeline":
+            self.path = "/timeline.html"
+        if path_only == "/analytics":
+            self.path = "/analytics.html"
         super().do_GET()
 
     def do_OPTIONS(self) -> None:

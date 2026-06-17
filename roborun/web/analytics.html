@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script src="./runtime-base.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoboRun · Analytics</title>
+<style>
+  :root{ --bg:#0b0e0c; --panel:#11150f; --line:#1e2a1f; --fg:#e6f0e8; --dim:#7aaf90; --accent:#00d47e; }
+  *{ box-sizing:border-box; } body{ margin:0; background:var(--bg); color:var(--fg);
+     font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  header{ display:flex; align-items:center; gap:14px; padding:16px 24px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1{ font-size:15px; margin:0; } header nav{ margin-left:auto; display:flex; gap:14px; }
+  header nav a{ color:var(--dim); text-decoration:none; font-size:12px; } header nav a.on{ color:var(--accent); }
+  main{ padding:24px; max-width:1200px; margin:0 auto; }
+  .kpis{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:24px; }
+  .kpi{ background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .kpi .n{ font-size:28px; font-weight:700; color:var(--accent); }
+  .kpi .l{ color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.5px; }
+  .cols{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  @media(max-width:760px){ .cols{ grid-template-columns:1fr; } }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .panel h2{ font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--dim); margin:0 0 14px; }
+  .row{ display:flex; align-items:center; gap:10px; margin:5px 0; font-size:12px; }
+  .row .lab{ width:110px; color:var(--fg); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row .track{ flex:1; height:14px; background:#16210f; border-radius:4px; overflow:hidden; }
+  .row .fill{ height:100%; background:var(--accent); }
+  .row .v{ width:48px; text-align:right; color:var(--dim); }
+  svg{ width:100%; height:90px; display:block; }
+  .spark path{ fill:none; stroke:var(--accent); stroke-width:2; }
+  .spark rect{ fill:rgba(0,212,126,.08); }
+  .empty{ color:var(--dim); font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📊 ANALYTICS</h1>
+  <nav>
+    <a href="/">cockpit</a><a href="/scenarios">scenarios</a>
+    <a href="/timeline">timeline</a><a href="/analytics" class="on">analytics</a>
+    <a href="/fleet">fleet</a><a href="/search">search</a>
+  </nav>
+</header>
+<main>
+  <div class="kpis" id="kpis"></div>
+  <div class="cols">
+    <div class="panel"><h2>Detections by label (all time)</h2><div id="labels"></div></div>
+    <div class="panel"><h2>Observations · last 24h</h2><div id="sparkwrap"></div></div>
+    <div class="panel"><h2>Suite pass-rate</h2><div id="suites"></div></div>
+    <div class="panel"><h2>Data by source</h2><div id="sources"></div></div>
+  </div>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const bars=(el,items,labelKey,valKey,pct)=>{
+  const max=Math.max(1,...items.map(i=>i[valKey]));
+  el.innerHTML=items.length? items.map(i=>`<div class="row">
+    <span class="lab">${i[labelKey]}</span>
+    <span class="track"><span class="fill" style="width:${pct?i[valKey]:(i[valKey]/max*100)}%"></span></span>
+    <span class="v">${pct?(i[valKey]+'%'):i[valKey]}</span></div>`).join("")
+    : '<div class="empty">no data yet — record some runs</div>';
+};
+function spark(el,pts){
+  if(!pts.length){ el.innerHTML='<div class="empty">no data</div>'; return; }
+  const max=Math.max(1,...pts.map(p=>p.count)), W=380,H=90;
+  const d=pts.map((p,i)=>`${i?'L':'M'}${(i/(pts.length-1)*W).toFixed(1)},${(H-p.count/max*(H-8)-4).toFixed(1)}`).join(" ");
+  const total=pts.reduce((a,p)=>a+p.count,0);
+  el.innerHTML=`<div class="spark"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path d="${d}"/></svg></div><div class="empty">${total} observations · 24h</div>`;
+}
+async function load(){
+  let d; try{ d=await (await fetch("/api/analytics")).json(); }catch(e){ return; }
+  const obs=d.observations||{}, runs=d.runs||{}, fleet=d.fleet||{};
+  const kpi=(n,l)=>`<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`;
+  $("#kpis").innerHTML=[
+    kpi(obs.total??0,"observations"),
+    kpi(obs.with_embeddings??0,"clip-indexed"),
+    kpi(runs.count??0,"sealed runs"),
+    kpi((((runs.total_bytes||0)/1e9).toFixed(2))+"G","recorded"),
+    kpi(fleet.total??0,"robots"),
+    kpi((d.suites||[]).length,"suites"),
+  ].join("");
+  bars($("#labels"), d.labels||[], "label","count",false);
+  spark($("#sparkwrap"), d.over_time||[]);
+  bars($("#suites"), (d.suites||[]).map(s=>({suite:s.suite,pct:Math.round(s.pass_rate*100)})), "suite","pct",true);
+  bars($("#sources"), d.sources||[], "source","count",false);
+}
+load(); setInterval(load, 5000);
+</script>
+</body>
+</html>

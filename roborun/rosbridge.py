@@ -167,6 +167,20 @@ class RosbridgeClient:
         types = values.get("types", [])
         return [{"topic": t, "type": tp} for t, tp in zip(topics, types)]
 
+    def ros_version(self, timeout: float = 5.0) -> str:
+        """ROS1 or ROS2 from topic/type heuristics over the same rosbridge link
+        (rosbridge_suite speaks both). 'ros2' if ROS2-only signals present,
+        'ros1' for ROS1-only signals, else 'unknown'."""
+        topics = self.list_topics(timeout=timeout)
+        names = {t["topic"] for t in topics}
+        types = {t["type"] for t in topics}
+        if "/parameter_events" in names or any(
+                str(tp).startswith("rcl_interfaces/") for tp in types):
+            return "ros2"
+        if "/rosout_agg" in names or "rosgraph_msgs/Log" in types:
+            return "ros1"
+        return "unknown"
+
     def publish(self, topic: str, msg_type: str, message: dict) -> None:
         self._send({"op": "publish", "topic": topic,
                     "type": msg_type, "msg": message})

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script src="./runtime-base.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoboRun · Timeline</title>
+<style>
+  :root{ --bg:#0b0e0c; --panel:#11150f; --line:#1e2a1f; --fg:#e6f0e8; --dim:#7aaf90; --accent:#00d47e; --amber:#d4a030; --blue:#4090e0; --red:#e0563f; }
+  *{ box-sizing:border-box; } body{ margin:0; background:var(--bg); color:var(--fg);
+     font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  header{ display:flex; align-items:center; gap:14px; padding:16px 24px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1{ font-size:15px; margin:0; } header nav{ margin-left:auto; display:flex; gap:14px; }
+  header nav a{ color:var(--dim); text-decoration:none; font-size:12px; } header nav a.on{ color:var(--accent); }
+  header .live{ font-size:11px; color:var(--dim); }
+  header .live.on{ color:var(--accent); }
+  main{ padding:20px 24px; max-width:1100px; margin:0 auto; }
+  h2{ font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--dim); margin:18px 0 10px; }
+  .strip{ display:flex; gap:8px; overflow-x:auto; padding-bottom:8px; }
+  .strip .f{ flex:0 0 auto; width:120px; }
+  .strip img{ width:120px; height:84px; object-fit:cover; border-radius:6px; background:#070907; display:block; }
+  .strip .t{ font-size:10px; color:var(--dim); margin-top:3px; }
+  .feed{ border-left:2px solid var(--line); margin-left:8px; }
+  .ev{ position:relative; padding:7px 0 7px 20px; font-size:13px; }
+  .ev::before{ content:""; position:absolute; left:-5px; top:13px; width:8px; height:8px; border-radius:50%; background:var(--accent); }
+  .ev.system::before{ background:var(--dim); } .ev.agent::before{ background:var(--blue); }
+  .ev.scenario::before{ background:var(--amber); } .ev.notify::before{ background:var(--red); }
+  .ev .ti{ color:var(--dim); font-size:11px; margin-right:8px; }
+  .ev .ty{ color:var(--dim); font-size:10px; text-transform:uppercase; }
+  .empty{ color:var(--dim); font-size:12px; padding:20px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🕓 TIMELINE</h1>
+  <span class="live" id="live">○ connecting…</span>
+  <nav>
+    <a href="/">cockpit</a><a href="/scenarios">scenarios</a>
+    <a href="/timeline" class="on">timeline</a><a href="/analytics">analytics</a>
+    <a href="/fleet">fleet</a><a href="/search">search</a>
+  </nav>
+</header>
+<main>
+  <h2>Recent sightings</h2>
+  <div class="strip" id="strip"><div class="empty">no keyframes yet</div></div>
+  <h2>Event stream (live)</h2>
+  <div class="feed" id="feed"><div class="empty">waiting for events…</div></div>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const time=ts=>new Date((ts||0)*1000).toLocaleTimeString();
+
+async function loadStrip(){
+  try{
+    const d=await (await fetch("/api/timeline?limit=20")).json();
+    const e=d.entries||[];
+    $("#strip").innerHTML = e.length? e.map(m=>`<div class="f">
+      <img loading="lazy" src="/api/memory/thumb/${m.id}" onerror="this.style.visibility='hidden'">
+      <div class="t">${time(m.ts)}</div></div>`).join("")
+      : '<div class="empty">no keyframes yet</div>';
+  }catch(e){}
+}
+
+const feed=$("#feed"); let count=0;
+function addEvent(ev){
+  if(count===0) feed.innerHTML="";
+  const div=document.createElement("div");
+  div.className="ev "+(ev.type||"");
+  div.innerHTML=`<span class="ti">${time(ev.ts)}</span><span class="ty">${ev.type||""}/${ev.source||""}</span> ${ev.title||""}`;
+  feed.prepend(div);
+  if(++count>200) feed.lastChild?.remove();
+}
+function connect(){
+  const es=new EventSource("/api/events/stream");
+  es.onopen=()=>{ $("#live").textContent="● live"; $("#live").classList.add("on"); };
+  es.onmessage=e=>{ try{ addEvent(JSON.parse(e.data)); }catch(_){} };
+  es.onerror=()=>{ $("#live").textContent="○ reconnecting…"; $("#live").classList.remove("on"); };
+}
+loadStrip(); setInterval(loadStrip, 5000); connect();
+</script>
+</body>
+</html>

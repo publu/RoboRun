@@ -36,8 +36,15 @@ from typing import Any, TYPE_CHECKING
 if TYPE_CHECKING:  # numpy only backs the CLIP paths; the SQLite index runs without it
     import numpy as np
 
+def _default_db_path() -> Path:
+    """The searchable index lives alongside the runs, honoring ROBORUN_STATE_DIR
+    so sim/robot/production deployments can place all data where they want."""
+    base = os.environ.get("ROBORUN_STATE_DIR")
+    return (Path(base) if base else Path(".roborun")) / "spatial_memory.db"
+
+
 DB_DIR = Path(".roborun")
-DB_PATH = DB_DIR / "spatial_memory.db"
+DB_PATH = DB_DIR / "spatial_memory.db"  # legacy default; __init__ uses _default_db_path()
 THUMB_SIZE = (320, 240)
 THUMB_QUALITY = 70
 
@@ -86,7 +93,7 @@ class SpatialMemoryStore:
         s3_prefix: str = "roborun/memories/",
         s3_endpoint: str | None = None,
     ) -> None:
-        self._db_path = Path(db_path) if db_path else DB_PATH
+        self._db_path = Path(db_path) if db_path else _default_db_path()
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
         self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
@@ -409,6 +416,40 @@ class SpatialMemoryStore:
             dets = self._fetch_detections([r["id"] for r in rows])
             return [self._row_to_dict(r, dets.get(r["id"], []),
                                       distance=self._dist(r, x, y, z)) for r in rows]
+
+    # ── analytics aggregations (for the dashboard) ────────────────────────
+    def label_histogram(self, top: int = 20, since: float | None = None) -> list[dict]:
+        with self._lock:
+            sql = ("SELECT d.label, COUNT(*) c FROM detections d "
+                   "JOIN observations o ON o.id = d.obs_id ")
+            params: list[Any] = []
+            if since is not None:
+                sql += "WHERE o.ts >= ? "
+                params.append(since)
+            sql += "GROUP BY d.label ORDER BY c DESC LIMIT ?"
+            params.append(top)
+            return [{"label": r[0], "count": r[1]}
+                    for r in self._conn.execute(sql, params).fetchall()]
+
+    def counts_over_time(self, bucket_s: float = 3600.0,
+                         buckets: int = 24) -> list[dict]:
+        with self._lock:
+            now = time.time()
+            start = now - bucket_s * buckets
+            rows = self._conn.execute(
+                "SELECT CAST((ts - ?) / ? AS INT) b, COUNT(*) c FROM observations "
+                "WHERE ts >= ? GROUP BY b ORDER BY b", (start, bucket_s, start)
+            ).fetchall()
+            by = {int(r[0]): r[1] for r in rows}
+            return [{"t": start + i * bucket_s, "count": by.get(i, 0)}
+                    for i in range(buckets)]
+
+    def source_breakdown(self) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT COALESCE(source,'?') s, COUNT(*) c FROM observations "
+                "GROUP BY s ORDER BY c DESC").fetchall()
+            return [{"source": r[0], "count": r[1]} for r in rows]
 
     # ── time-range search ─────────────────────────────────────────────────
     def search_time(self, since: float | None = None, until: float | None = None,

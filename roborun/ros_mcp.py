@@ -678,8 +678,20 @@ def _tool_get_robot_info(args: dict) -> dict:
             "dds": _check_dds(),
             "rosbridge": rb is not None and rb.is_connected if rb else False,
         },
+        "ros_version": (_ros_version_from_topics(disc["topics"])),
         "discovered_topics": len(disc["topics"]),
     }
+
+
+def _ros_version_from_topics(topics: list) -> str:
+    """ROS1/ROS2 from the discovered topic set (works for DDS or rosbridge)."""
+    names = {t.get("name") for t in topics}
+    types = {str(t.get("type", "")) for t in topics}
+    if "/parameter_events" in names or any(tp.startswith("rcl_interfaces/") for tp in types):
+        return "ros2"
+    if "/rosout_agg" in names or "rosgraph_msgs/Log" in types:
+        return "ros1"
+    return "unknown"
 
 
 _active_tap = None
