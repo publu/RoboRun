@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script src="./runtime-base.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoboRun · Data Browser</title>
+<link rel="stylesheet" href="./ui.css">
+<style>
+  *{ box-sizing:border-box; } body{ margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--mono); }
+  header{ display:flex; align-items:baseline; gap:16px; padding:18px 24px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1{ font-size:16px; margin:0; } header .sub{ color:var(--fg-dim); font-size:12px; max-width:560px; }
+  main{ padding:22px 24px; max-width:1100px; margin:0 auto; }
+  h2{ font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--fg-dim); margin:24px 0 12px; }
+  .scope{ background:#0e1a12; border:1px solid var(--accent-dim); border-radius:var(--r); padding:10px 14px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:12px; }
+  .scope b{ color:var(--accent); }
+  .runs{ display:flex; flex-direction:column; gap:8px; }
+  .run{ display:flex; align-items:center; gap:12px; background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:11px 14px; text-decoration:none; color:var(--fg); }
+  .run:hover{ border-color:var(--accent); }
+  .run .nm{ font-weight:600; font-size:13px; } .run .meta{ color:var(--fg-dim); font-size:11px; }
+  .run .grow{ flex:1; }
+  .bk{ display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px; }
+  .bcard{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r-sm); padding:11px 13px; }
+  .bcard .nm{ font-weight:600; font-size:12.5px; display:flex; justify-content:space-between; align-items:center; }
+  .bcard .cap{ color:var(--fg-dim); font-size:10.5px; margin-top:6px; line-height:1.7; }
+  .empty{ color:var(--fg-dim); padding:30px; text-align:center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>DATA BROWSER</h1>
+  <span class="sub">Every recorded run in this project — sim, robot, fleet — with its streams. Open one to scrub the synced telemetry, camera, map and lidar.</span>
+  <nav class="nav">
+    <a href="/">cockpit</a><a href="/projects">projects</a><a href="/browser" class="on">browser</a>
+    <a href="/scenarios">scenarios</a><a href="/timeline">timeline</a><a href="/search">search</a>
+  </nav>
+</header>
+<main>
+  <div id="scope"></div>
+
+  <h2>Runs</h2>
+  <div id="runs" class="runs"><div class="empty">loading…</div></div>
+
+  <h2>Backends — what this install can run</h2>
+  <div id="backends" class="bk"><div class="empty">loading…</div></div>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const gb=b=>b>1e9?(b/1e9).toFixed(2)+" GB":b>1e6?(b/1e6).toFixed(1)+" MB":(b/1e3|0)+" KB";
+const when=t=>t?new Date(t*1000).toLocaleString():"";
+
+async function j(u){ return (await fetch(u)).json(); }
+
+async function load(){
+  const d=await j("/api/runs");
+  $("#scope").innerHTML = `<div class="scope">scope:
+    ${d.active?`<b>${esc(d.active.project)}</b> / ${esc(d.active.environment)}`:`<b>scratch</b> (unscoped default)`}
+    <span style="margin-left:auto"><a class="btn sm" href="/projects">switch project →</a></span></div>`;
+  const el=$("#runs");
+  if(!d.runs||!d.runs.length){ el.innerHTML='<div class="empty">No recorded runs in this scope yet. Record in the cockpit (press M), run a scenario, or switch project.</div>'; return; }
+  el.innerHTML=d.runs.map(r=>{
+    const m=r.manifest||{};
+    const seal = r.anchored?'<span class="pill ok">anchored</span>':r.sealed?'<span class="pill warn">sealed</span>':'<span class="pill">open</span>';
+    const cams=(m.cameras||[]).length;
+    return `<a class="run" href="/run?id=${encodeURIComponent(r.run)}">
+      <span class="nm">${esc(r.run)}</span>
+      <span class="meta">${esc(r.robot_id||'')}${m.backend?' · '+esc(m.backend):''}${cams?' · '+cams+' cam':''}</span>
+      <span class="grow"></span>
+      <span class="meta">${gb(r.size||0)} · ${when(m.ended||m.started)}</span>
+      ${seal}</a>`;
+  }).join("");
+}
+
+async function loadBackends(){
+  const d=await j("/api/backends");
+  const color={ready:"var(--ok)",available:"var(--warn)",optional:"var(--blue)",planned:"var(--fg-dim)"};
+  $("#backends").innerHTML=d.backends.map(b=>`
+    <div class="bcard">
+      <div class="nm">${esc(b.name)}<span class="pill" style="color:${color[b.status]||'var(--fg-dim)'}">${esc(b.status)}</span></div>
+      <div class="cap">${Object.entries(b.caps).map(([k,v])=>`${k}: ${v===true?'✓':v===false?'—':esc(v)}`).join(" · ")}</div>
+    </div>`).join("");
+}
+
+load(); loadBackends();
+</script>
+</body>
+</html>

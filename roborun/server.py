@@ -138,6 +138,8 @@ class Handler(SimpleHTTPRequestHandler):
             self.path = "/arena.html"
         if path_only == "/projects":
             self.path = "/projects.html"
+        if path_only == "/browser":
+            self.path = "/browser.html"
         super().do_GET()
 
     def do_OPTIONS(self) -> None:
