@@ -564,6 +564,52 @@ class SpatialMemoryStore:
             rows = [r for r in rows if r.get("source_id") == source_id]
         return rows[:k]
 
+    def recall_combined(self, text: Any = None, label: str | None = None,
+                        near: dict | None = None, since: float | None = None,
+                        until: float | None = None, k: int = 10,
+                        robot_id: str | None = None,
+                        source_id: str | None = None) -> list[dict]:
+        """Unified retrieval (PERCEPTION_DATA_SPEC / platform spec 06 P2): combine
+        CLIP + label + spatial + time into ONE ranked result — "a person, near the
+        elevator, after 3pm." The strongest signal ranks; the rest AND-filter.
+        Scoped to the active project's index (the store path is per-project)."""
+        import math
+        kk = k * 8                       # over-fetch; AND-filters thin the set
+        # base ranking: semantic > label > spatial > time
+        if text is not None and str(text).strip():
+            import numpy as np
+            emb = text
+            if not isinstance(emb, np.ndarray):
+                from roborun.models import CLIPMatcher
+                emb = CLIPMatcher().embed_text(str(text))
+            rows = self.search_clip(emb, top_k=kk, robot_id=robot_id)
+        elif label:
+            rows = self.search_yolo(str(label), top_k=kk, robot_id=robot_id)
+        elif near:
+            rows = self.search_nearby(float(near["x"]), float(near["y"]),
+                                      near.get("z"), float(near.get("radius", 2.0)),
+                                      top_k=kk, robot_id=robot_id)
+        else:
+            rows = self.search_time(since, until, top_k=kk, robot_id=robot_id)
+        # AND-filters (only applied when not already the base signal)
+        if label and (text is not None and str(text).strip()):
+            lab = str(label).lower()
+            rows = [r for r in rows
+                    if any(lab in (d.get("label", "").lower())
+                           for d in (r.get("detections") or []))]
+        if near and (text is not None or label):
+            x, y, rad = float(near["x"]), float(near["y"]), float(near.get("radius", 2.0))
+            rows = [r for r in rows
+                    if r.get("x") is not None and r.get("y") is not None
+                    and math.hypot(r["x"] - x, r["y"] - y) <= rad]
+        if since is not None:
+            rows = [r for r in rows if (r.get("ts") or 0) >= since]
+        if until is not None:
+            rows = [r for r in rows if (r.get("ts") or 0) <= until]
+        if source_id:
+            rows = [r for r in rows if r.get("source_id") == source_id]
+        return rows[:k]
+
     def list_memories(
         self, limit: int = 50, robot_id: str | None = None, since: float | None = None,
         source: str | None = None, run_id: str | None = None,

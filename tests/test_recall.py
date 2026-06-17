@@ -56,3 +56,19 @@ def test_recall_robot_filter(store):
 def test_recall_unknown_mode(store):
     with pytest.raises(ValueError):
         store.recall("x", by="bogus")
+
+
+def test_recall_combined_and_filters(tmp_path):
+    """Unified recall ANDs label + spatial + time (platform spec 06 P2)."""
+    import time
+    s = SpatialMemoryStore(db_path=tmp_path / "c.db")
+    now = time.time()
+    s.store(robot_id="r", ts=now, x=5.0, y=5.0,
+            detections=[{"label": "forklift", "score": 0.9, "bbox": [0, 0, 9, 9]}])
+    s.store(robot_id="r", ts=now - 3600, x=0.0, y=0.0,
+            detections=[{"label": "pallet", "score": 0.8, "bbox": [0, 0, 9, 9]}])
+    assert len(s.recall_combined(label="forklift")) == 1
+    assert len(s.recall_combined(label="forklift", near={"x": 5, "y": 5, "radius": 2})) == 1
+    assert len(s.recall_combined(label="forklift", near={"x": 50, "y": 50, "radius": 2})) == 0
+    assert len(s.recall_combined(label="pallet", since=now - 60)) == 0
+    assert len(s.recall_combined(near={"x": 0, "y": 0, "radius": 2})) == 1

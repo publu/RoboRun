@@ -11,6 +11,30 @@ from roborun.routes import get, post, send_json, ApiError
 _session = None
 
 
+@post("/api/recall")
+def recall_unified(h, payload):
+    """Unified retrieval (platform spec 06): combine semantic + label + spatial +
+    time in one query, scoped to the active project's index. Body: {text?, label?,
+    near?{x,y,radius?}, since?, until?, k?, source_id?}."""
+    from roborun.routes._singletons import get_memory
+    try:
+        store = get_memory()
+    except Exception:
+        from roborun.spatial_memory import SpatialMemoryStore
+        store = SpatialMemoryStore()
+    if not any(payload.get(key) is not None and payload.get(key) != ""
+               for key in ("text", "label", "near", "since", "until")):
+        raise ApiError(400, "provide at least one of text/label/near/since/until")
+    rows = store.recall_combined(
+        text=payload.get("text"), label=payload.get("label"),
+        near=payload.get("near"), since=payload.get("since"),
+        until=payload.get("until"), k=int(payload.get("k", 12)),
+        source_id=payload.get("source_id"))
+    from roborun import projects
+    send_json(h, 200, {"ok": True, "results": rows, "total": len(rows),
+                       "scope": projects.active()})
+
+
 @post("/api/search")
 def search_history(h, payload):
     """Body: {query, by?: clip|label|near, k?, since?, until?, source_id?}.
