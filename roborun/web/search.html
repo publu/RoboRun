@@ -57,9 +57,9 @@
   </div>
   <input id="q" placeholder="who/what to find — 'person in red', 'forklift', 'red mug'…"
          onkeydown="if(event.key==='Enter')run()">
-  <label class="src">since</label><input id="since" type="datetime-local">
-  <label class="src">until</label><input id="until" type="datetime-local">
-  <input id="source" placeholder="camera/source (optional)" style="width:150px">
+  <label class="src">from</label><input id="since" type="datetime-local" title="only show results after this time">
+  <label class="src">to</label><input id="until" type="datetime-local" title="only show results before this time">
+  <input id="source" placeholder="which camera? (optional)" style="width:150px" title="limit to one camera, e.g. front or dock">
   <button class="go" onclick="run()">Search</button>
   <button onclick="exportDs()" title="save these results as a labeled training dataset (images + labels), with verifiable provenance">⤓ Save as dataset</button>
 </div>
