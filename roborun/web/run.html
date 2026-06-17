@@ -30,9 +30,12 @@
 <main>
   <div class="meta" id="meta">loading…</div>
   <div class="panel" id="player" style="margin-bottom:16px;display:none">
-    <h2>Synced playback <span id="ptime" style="color:var(--dim)"></span></h2>
+    <h2>Synced playback <span id="ptime" style="color:var(--dim)"></span>
+      <button id="flag" title="flag this moment to revisit" style="background:#16210f;color:var(--amber);border:1px solid var(--line);border-radius:5px;padding:2px 10px;cursor:pointer;font:inherit;font-size:12px">⚑ Flag</button>
+    </h2>
     <img id="pframe" style="width:100%;max-height:340px;object-fit:contain;background:#070907;border-radius:6px" alt="frame">
     <input id="scrub" type="range" min="0" max="1000" value="0" style="width:100%;margin-top:10px;accent-color:var(--accent)">
+    <div id="incidents" style="margin-top:8px"></div>
   </div>
   <div class="grid">
     <div class="panel"><h2>Robot trajectory <span id="lblTraj"></span></h2><div id="traj"></div></div>
@@ -100,6 +103,20 @@ function setupPlayer(d){
   };
   scrub.oninput=()=>{ clearTimeout(timer); timer=setTimeout(show, 60); };
   scrub.value=0; show();
+  let curT=t0;
+  scrub.addEventListener("input",()=>{ curT=t0+(t1-t0)*scrub.value/1000; });
+  $("#flag").onclick=async()=>{
+    const note=prompt("Note for this moment (optional):")||"";
+    await fetch("/api/incidents/flag",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({run_id:qid,ts:curT,note})});
+    loadIncidents();
+  };
+  loadIncidents();
+}
+async function loadIncidents(){
+  try{ const d=await (await fetch("/api/incidents?run="+encodeURIComponent(qid))).json();
+    const el=$("#incidents");
+    el.innerHTML=(d.incidents||[]).map(i=>`<span style="display:inline-block;margin:3px 6px 0 0;background:rgba(212,160,48,.15);color:var(--amber);border-radius:999px;padding:2px 9px;font-size:11px">⚑ ${i.note||i.tag}</span>`).join("");
+  }catch(e){}
 }
 load();
 </script>

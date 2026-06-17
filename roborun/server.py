@@ -290,6 +290,15 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "dataset":
         from roborun.cli import dataset_cli
         raise SystemExit(dataset_cli(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "flag":
+        from roborun.incidents import flag, list_incidents
+        if len(sys.argv) > 2:
+            r = flag(sys.argv[2], note=" ".join(sys.argv[3:]))
+            print(f"flagged {r['id']} on {r['run_id']}")
+        else:
+            for i in list_incidents():
+                print(f"  {i['run_id']}  ⚑ {i.get('note') or i['tag']}")
+        raise SystemExit(0)
     if not WEB_ROOT.exists():
         raise SystemExit(f"Missing web directory at {WEB_ROOT}")
     STATE_ROOT.mkdir(parents=True, exist_ok=True)

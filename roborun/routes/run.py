@@ -45,6 +45,31 @@ def run_series_route(h):
     send_json(h, 200, run_series(run_id, robot))
 
 
+@post("/api/incidents/flag")
+def incident_flag(h, payload):
+    """Flag a moment in a run to revisit. Body: {run_id, ts?, note?, tag?}."""
+    from roborun.incidents import flag
+    run_id = str(payload.get("run_id", "")).strip()
+    if not run_id:
+        send_json(h, 400, {"ok": False, "error": "run_id required"})
+        return
+    rec = flag(run_id, ts=payload.get("ts"), note=str(payload.get("note", "")),
+               tag=str(payload.get("tag", "incident")),
+               robot_id=payload.get("robot_id"))
+    send_json(h, 200, {"ok": True, "incident": rec})
+
+
+@get("/api/incidents")
+def incidents_list(h):
+    """List incidents, optional ?run=<id>&tag=<t>."""
+    from urllib.parse import parse_qs, urlparse
+    from roborun.incidents import list_incidents
+    q = parse_qs(urlparse(h.path).query)
+    rows = list_incidents(run_id=(q.get("run") or [None])[0],
+                          tag=(q.get("tag") or [None])[0])
+    send_json(h, 200, {"ok": True, "incidents": rows, "total": len(rows)})
+
+
 @get("/api/run/frame")
 def run_frame(h):
     """Synced-playback frame: the camera JPEG nearest ?t= in run ?id=."""
