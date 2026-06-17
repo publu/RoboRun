@@ -101,6 +101,21 @@ def register_camera(h, payload):
     send_json(h, 200, {"ok": True, "environment": meta})
 
 
+@get("/api/worlds/warehouse")
+def warehouse_world(h):
+    """A large multi-floor warehouse world for the fleet sim (spec 04 P1).
+    ?floors=&rooms=&size=&seed="""
+    from roborun import worlds
+    q = parse_qs(urlparse(h.path).query)
+    one = lambda k, d: (q.get(k) or [d])[0]
+    world = worlds.warehouse(floors=int(one("floors", "3")),
+                             rooms_per_floor=int(one("rooms", "6")),
+                             size=float(one("size", "48")),
+                             seed=int(one("seed", "0")))
+    send_json(h, 200, {"ok": True, "world": world,
+                       "items": worlds.item_count(world)})
+
+
 @get("/api/backends")
 def list_backends(h):
     """Backend registry + live capability matrix (spec 03)."""
