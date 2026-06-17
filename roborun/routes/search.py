@@ -18,7 +18,7 @@ def search_history(h, payload):
     from roborun.routes._singletons import get_memory  # SpatialMemoryStore singleton
     from roborun.session import search
     query = payload.get("query")
-    if query is None and payload.get("by") not in ("time",):
+    if not query and payload.get("by") not in ("time", "uncertain"):
         raise ApiError(400, "query required")
     try:
         store = get_memory()
