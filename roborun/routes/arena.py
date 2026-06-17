@@ -81,6 +81,26 @@ def arena_state(h, payload):
     send_json(h, 200, {"ok": True})
 
 
+@post("/api/fleet/observe")
+def fleet_observe(h, payload):
+    """A fleet robot reports a detection at its world pose → indexed into the
+    active project/environment store (real multi-robot data, platform spec 04).
+    No throttle: each robot's first sighting of an item is one real observation."""
+    dets = payload.get("detections") or []
+    if dets:
+        try:
+            import time
+            from roborun.routes._singletons import get_memory
+            pose = payload.get("pose") or {}
+            get_memory().store(detections=dets, ts=time.time(),
+                               x=float(pose.get("x", 0.0)), y=float(pose.get("y", 0.0)),
+                               robot_id=str(payload.get("robot_id", "fleet")),
+                               source="sim", source_id="fleet")
+        except Exception:
+            pass
+    send_json(h, 200, {"ok": True})
+
+
 @post("/api/arena/event")
 def arena_event(h, payload):
     title = str(payload.get("title", "")).strip()

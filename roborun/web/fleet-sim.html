@@ -7,117 +7,57 @@
 <title>RoboRun · Fleet Sim</title>
 <link rel="stylesheet" href="./ui.css">
 <script src="./shell.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "@dimforge/rapier3d-compat": "https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.19.3/+esm"
+} }
+</script>
 <style>
-  *{ box-sizing:border-box; }
-  body{ margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--mono); }
-  main{ padding:18px 22px; max-width:1300px; margin:0 auto; }
-
-  /* intro scope line */
-  .scope{ background:#0e1a12; border:1px solid var(--accent-dim); border-radius:var(--r);
-          padding:10px 14px; font-size:12.5px; color:var(--fg-2); margin-bottom:14px; }
+  *{ box-sizing:border-box; } body{ margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--mono); }
+  .scope{ background:#0e1a12; border:1px solid var(--accent-dim); border-radius:var(--r); padding:11px 15px; font-size:12.5px; color:var(--fg-2); margin-bottom:14px; }
   .scope b{ color:var(--accent); }
-
-  /* ── header: title + KPIs + controls in one coherent panel ───────────── */
-  .panel-head{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r);
-               padding:14px; margin-bottom:14px; }
-  .head-top{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
-  .head-top h1{ font-size:14px; margin:0; letter-spacing:.04em; display:flex; align-items:center; gap:8px; }
-  .head-top .live{ display:inline-flex; align-items:center; gap:6px; font-size:11px;
-                   color:var(--fg-dim); margin-left:6px; }
-  .head-top .live .dot{ width:7px; height:7px; border-radius:50%; background:var(--accent);
-                        box-shadow:0 0 6px var(--accent); animation:pulse 1.6s ease-in-out infinite; }
-  .head-top .live.paused .dot{ background:var(--warn); box-shadow:none; animation:none; }
-  @keyframes pulse{ 0%,100%{ opacity:1; } 50%{ opacity:.35; } }
-
-  .kpis{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:14px; }
-  @media (max-width:640px){ .kpis{ grid-template-columns:repeat(2,1fr); } }
-
-  /* ── control bar ─────────────────────────────────────────────────────── */
-  .controls{ display:flex; gap:10px 18px; align-items:center; flex-wrap:wrap; }
-  .ctl{ display:flex; flex-direction:column; gap:5px; min-width:128px; }
-  .ctl .lbl{ display:flex; justify-content:space-between; font-size:10px;
-             text-transform:uppercase; letter-spacing:.08em; color:var(--fg-dim); }
-  .ctl .lbl b{ color:var(--fg); font-weight:600; font-variant-numeric:tabular-nums; }
-  .ctl input[type=range]{ accent-color:var(--accent); width:100%; height:4px; cursor:pointer; margin:0; }
-  .ctl-btns{ display:flex; gap:8px; margin-left:auto; align-self:flex-end; }
-
-  /* ── legend ──────────────────────────────────────────────────────────── */
-  .legend{ display:flex; flex-wrap:wrap; gap:7px 16px; align-items:center;
-           padding:9px 14px; background:var(--panel-2); border:1px solid var(--line);
-           border-radius:var(--r); margin-bottom:14px; font-size:11.5px; color:var(--fg-2); }
-  .legend .lg-h{ font-size:10px; text-transform:uppercase; letter-spacing:.1em; color:var(--fg-dim); }
-  .legend .lg{ display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
-  .legend .swatch{ width:14px; height:14px; flex:none; display:grid; place-items:center; }
-  .legend .tri{ width:0; height:0; border-left:7px solid transparent; border-right:7px solid transparent;
-                border-bottom:12px solid var(--accent); }
-  .legend .dot{ width:9px; height:9px; border-radius:50%; }
-  .legend .dot.on{ background:var(--accent); box-shadow:0 0 6px rgba(0,212,126,.7); }
-  .legend .dot.off{ background:#5a7563; }
-  .legend .elev{ width:14px; height:14px; border:1px solid var(--blue); background:rgba(64,144,224,.18);
-                 border-radius:3px; color:var(--blue); font-size:10px; line-height:13px; text-align:center; }
-
-  /* ── floor grid ──────────────────────────────────────────────────────── */
-  .floors{ display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:14px; }
-  .floor{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:12px; }
-  .floor h2{ font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:var(--fg-2);
-             margin:0 0 10px; display:flex; justify-content:space-between; align-items:center; }
-  .floor h2 .fc{ font-size:11px; color:var(--fg-dim); font-weight:400; letter-spacing:0;
-                 text-transform:none; display:flex; gap:10px; }
-  .floor h2 .fc b{ color:var(--accent); }
-  canvas{ width:100%; height:auto; display:block; background:#070a08;
-          border:1px solid var(--line-soft); border-radius:var(--r-sm); image-rendering:auto; }
-
-  .empty{ padding:60px 20px; text-align:center; color:var(--fg-dim); font-size:13px;
-          background:var(--panel); border:1px dashed var(--line); border-radius:var(--r); }
-  .empty .spin{ display:inline-block; animation:spin 1s linear infinite; }
-  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:14px 16px; margin-bottom:14px; }
+  .ph{ display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+  .ph .t{ font-size:13px; font-weight:600; } .ph .run{ font-size:11px; color:var(--accent); }
+  .controls{ display:flex; gap:18px; align-items:center; flex-wrap:wrap; }
+  .ctl{ display:flex; flex-direction:column; gap:3px; }
+  .ctl label{ font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--fg-dim); display:flex; justify-content:space-between; gap:10px; }
+  .ctl label b{ color:var(--accent); }
+  input[type=range]{ accent-color:var(--accent); width:150px; }
+  .btns{ margin-left:auto; display:flex; gap:8px; }
+  .kpis{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:14px 0 0; }
+  .legend{ display:flex; gap:18px; flex-wrap:wrap; font-size:11px; color:var(--fg-2); align-items:center; }
+  .legend .sw{ display:inline-flex; align-items:center; gap:6px; }
+  .legend .tri{ width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:9px solid var(--accent); }
+  .legend .dot{ width:9px;height:9px;border-radius:50%; } .legend .dot.on{ background:var(--accent); } .legend .dot.off{ background:#5a7a6a; }
+  .stagewrap{ display:flex; justify-content:center; }
+  #stage{ width:min(640px,100%); aspect-ratio:1; display:block; background:#080b08; border:1px solid var(--line); border-radius:var(--r); }
 </style>
 </head>
 <body>
 <main>
-  <div class="scope" id="scope">A swarm of robots covering one large warehouse, across floors, via elevators — collecting detections jointly into the active project's environment.</div>
+  <div class="scope" id="scope">Real Rapier physics — N robots in one warehouse, colliding with walls and each other, collecting jointly into the active environment.</div>
 
-  <div class="panel-head">
-    <div class="head-top">
-      <h1>🐝 FLEET SIM</h1>
-      <span class="live" id="live"><span class="dot"></span><span id="livetxt">running</span></span>
-    </div>
-
-    <div class="kpis" id="kpis"></div>
-
+  <div class="panel">
+    <div class="ph"><span style="font-size:16px">🐝</span><span class="t">FLEET SIM</span><span class="run">● Rapier physics</span></div>
     <div class="controls">
-      <div class="ctl">
-        <span class="lbl">robots <b id="nlab">8</b></span>
-        <input id="n" type="range" min="1" max="40" value="8">
-      </div>
-      <div class="ctl">
-        <span class="lbl">floors <b id="flab">3</b></span>
-        <input id="fl" type="range" min="1" max="4" value="3">
-      </div>
-      <div class="ctl">
-        <span class="lbl">speed <b id="slab">1.0×</b></span>
-        <input id="spd" type="range" min="1" max="40" value="10">
-      </div>
-      <div class="ctl-btns">
-        <button id="play" class="btn accent">⏸ pause</button>
-        <button id="reset" class="btn">↺ reset</button>
-      </div>
+      <div class="ctl"><label>robots <b id="nlab">8</b></label><input id="n" type="range" min="1" max="24" value="8"></div>
+      <div class="ctl"><label>speed <b id="slab">1.0×</b></label><input id="spd" type="range" min="2" max="40" value="10"></div>
+      <div class="btns"><button class="btn accent" id="play">⏸ pause</button><button class="btn" id="reset">↺ reset</button></div>
     </div>
+    <div class="kpis" id="kpis"></div>
   </div>
 
-  <div class="legend">
-    <span class="lg-h">Legend</span>
-    <span class="lg"><span class="swatch"><span class="tri"></span></span> robot (color per unit)</span>
-    <span class="lg"><span class="swatch"><span class="dot on"></span></span> detected item</span>
-    <span class="lg"><span class="swatch"><span class="dot off"></span></span> undetected item</span>
-    <span class="lg"><span class="swatch"><span class="elev">⇅</span></span> elevator</span>
-    <span class="lg" style="color:var(--fg-dim)">— walls / rooms</span>
+  <div class="panel legend">
+    <span class="sw"><span class="tri"></span> robot (real physics body)</span>
+    <span class="sw"><span class="dot on"></span> detected item</span>
+    <span class="sw"><span class="dot off"></span> undetected item</span>
+    <span class="sw" style="color:var(--fg-dim)">— walls / rooms</span>
   </div>
 
-  <div class="floors" id="floors">
-    <div class="empty"><span class="spin">◴</span> loading warehouse…</div>
-  </div>
+  <div class="stagewrap"><canvas id="stage" width="640" height="640"></canvas></div>
 </main>
-<script src="./fleet-sim.js"></script>
+<script type="module" src="./rapier-fleet.js"></script>
 </body>
 </html>
