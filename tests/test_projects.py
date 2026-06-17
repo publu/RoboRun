@@ -111,3 +111,27 @@ def test_mode_aware_retention(state, monkeypatch):
     assert "p/scratchy" in keys and "p/prod" in keys
     assert rep["projects"]["p/scratchy"]["mode"] == "scratch"
     assert rep["projects"]["p/scratchy"]["cap_gb"] == retention.MODE_CAPS["scratch"]
+
+
+def test_fleet_multirobot_into_one_environment(state):
+    """Spec 04 data semantics: N robots record into ONE environment and are
+    browsable together (the large-world rapier physics is separate frontend
+    work; the data plumbing is here)."""
+    from roborun import projects, environments, recorder
+    projects.create("warehouse")
+    environments.create("warehouse", "DC-3", backend="rapier", mode="test")
+    projects.set_active("warehouse", "dc-3")
+    rr = recorder.runs_root()
+    # three robots in the same environment
+    for rid in ("robo-1", "robo-2", "robo-3"):
+        d = rr / rid
+        d.mkdir(parents=True)
+        m = d / f"run-{rid}.mcap"
+        m.write_bytes(b"x" * 2048)
+        m.with_suffix(".seal").write_text("{}")
+    runs = recorder.list_runs()
+    robots = {r["robot_id"] for r in runs}
+    assert {"robo-1", "robo-2", "robo-3"} <= robots
+    # all under the one environment root
+    assert all(str(rr) in r["mcap"] for r in runs if r["robot_id"].startswith("robo-"))
+    projects.clear_active()
