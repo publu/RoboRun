@@ -45,6 +45,24 @@ def run_series_route(h):
     send_json(h, 200, run_series(run_id, robot))
 
 
+@get("/api/run/frame")
+def run_frame(h):
+    """Synced-playback frame: the camera JPEG nearest ?t= in run ?id=."""
+    from urllib.parse import parse_qs, urlparse
+    from roborun.run_series import frame_at
+    q = parse_qs(urlparse(h.path).query)
+    run_id = (q.get("id") or [""])[0]
+    t = float((q.get("t") or ["0"])[0])
+    jpeg = frame_at(run_id, t, (q.get("robot") or [None])[0]) if run_id else None
+    if jpeg is None:
+        h.send_response(404); h.end_headers(); return
+    h.send_response(200)
+    h.send_header("Content-Type", "image/jpeg")
+    h.send_header("Content-Length", str(len(jpeg)))
+    h.end_headers()
+    h.wfile.write(jpeg)
+
+
 @get("/api/run/events")
 def run_events(h):
     """Events of a recorded run, for replay. ?run=<name>&limit=N"""

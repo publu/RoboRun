@@ -36,6 +36,7 @@ def run_series(run_id: str, robot_id: str | None = None) -> dict[str, Any]:
     cmd: list[dict] = []
     clearance: list[dict] = []
     scan_latest: list[float] = []
+    frames: list[float] = []   # camera frame timestamps (for the scrubber)
     t0 = t1 = None
     counts: dict[str, int] = {}
 
@@ -52,6 +53,8 @@ def run_series(run_id: str, robot_id: str | None = None) -> dict[str, Any]:
             t1 = ts if t1 is None else max(t1, ts)
             topic = channel.topic
             counts[topic] = counts.get(topic, 0) + 1
+            if topic.startswith("/camera/"):
+                frames.append(round(ts, 3))
             if topic in ("/pose", "/odom"):
                 p = (obj.get("pose") or {}).get("position") or {}
                 if "x" in p:
@@ -75,6 +78,38 @@ def run_series(run_id: str, robot_id: str | None = None) -> dict[str, Any]:
 
     return {"ok": True, "run": run_id, "robot_id": robot_id or mcap.parent.name,
             "trajectory": traj, "velocity": velocity, "cmd": cmd,
-            "clearance": clearance, "scan": scan_latest,
+            "clearance": clearance, "scan": scan_latest, "frames": frames,
             "t0": t0, "t1": t1, "duration_s": round((t1 - t0), 2) if t0 and t1 else 0,
             "counts": counts}
+
+
+def frame_at(run_id: str, ts: float, robot_id: str | None = None) -> bytes | None:
+    """The camera JPEG nearest `ts` in a run — the synced-playback primitive
+    (scrub a time → see what the robot saw). CompressedImage only; codec video
+    opens in Foxglove. Returns raw JPEG bytes or None."""
+    import base64
+    mcap = _find_mcap(run_id, robot_id)
+    if mcap is None:
+        return None
+    from mcap.reader import make_reader
+    best = None
+    best_dt = None
+    with open(mcap, "rb") as fh:
+        for _s, channel, message in make_reader(fh).iter_messages():
+            if not channel.topic.startswith("/camera/") or channel.message_encoding != "json":
+                continue
+            try:
+                obj = json.loads(message.data)
+            except Exception:
+                continue
+            if obj.get("format") != "jpeg" or not obj.get("data"):
+                continue
+            dt = abs(message.log_time / 1e9 - ts)
+            if best_dt is None or dt < best_dt:
+                best_dt, best = dt, obj["data"]
+    if best is None:
+        return None
+    try:
+        return base64.b64decode(best)
+    except Exception:
+        return None

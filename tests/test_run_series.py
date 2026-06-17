@@ -49,3 +49,22 @@ def test_missing_run(tmp_path, monkeypatch):
     monkeypatch.setenv("ROBORUN_STATE_DIR", str(tmp_path))
     s = run_series("run_does_not_exist")
     assert s["ok"] is False
+
+
+def test_frame_at_returns_nearest_jpeg(tmp_path, monkeypatch):
+    monkeypatch.setenv("ROBORUN_STATE_DIR", str(tmp_path))
+    from roborun.events import runs_root
+    from roborun.run_series import run_series, frame_at
+    rec = RunRecorder(robot_id="bot", root=runs_root(), checkpoint_interval=0.05)
+    t0 = time.time()
+    for i in range(6):
+        rec.write_camera(b"\xff\xd8" + bytes([i]) * 40, name="front", ts=t0 + i)
+        rec.write_pose(i * 0.1, 0.0, 0.0, ts=t0 + i)
+    rec.close(do_anchor=False)
+
+    s = run_series(rec.run_id)
+    assert len(s["frames"]) == 6        # scrubber timeline
+    jpeg = frame_at(rec.run_id, t0 + 3.1)
+    assert jpeg is not None and jpeg.startswith(b"\xff\xd8")
+    assert jpeg[2] == 3                  # nearest is the i=3 frame
+    assert frame_at("nope", 0) is None
