@@ -6,6 +6,9 @@ from __future__ import annotations
 
 from roborun.routes import get, post, send_json, ApiError
 
+# Registering built-in runnable scenarios so the board is live out of the box.
+import roborun.demo_scenarios  # noqa: F401
+
 
 @get("/api/scenarios")
 def list_scenarios(h):
