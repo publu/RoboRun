@@ -368,7 +368,12 @@ class WebcamPipeline:
                     scene = sb.get_scene()
                     pts = scene.get("points") or []
                     if pts:
-                        rec.write_cloud("scene", pts, frame_id="world")
+                        # get_scene() returns nested [[x,y,z(,r,g,b)], …];
+                        # write_cloud wants a flat [x,y,z, …] float list.
+                        flat = []
+                        for p in pts:
+                            flat.extend((float(p[0]), float(p[1]), float(p[2])))
+                        rec.write_cloud("scene", flat, frame_id="world")
                         self._last_cloud_ts = now
         except Exception:
             pass
