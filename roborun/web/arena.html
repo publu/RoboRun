@@ -141,87 +141,82 @@
   .wasm-mode .server-only { display: none !important; }
 
   /* start screen: pick a robot, pick a task */
+  /* start modal — standardized on the dashboard design system (ui.css tokens) */
   #start { position: fixed; inset: 0; display: none; place-items: center; z-index: 70;
-           background: rgba(5,8,10,.8); backdrop-filter: blur(6px);
-           -webkit-backdrop-filter: blur(6px); overflow: auto; }
+           background: rgba(6,9,8,.86); backdrop-filter: blur(8px);
+           -webkit-backdrop-filter: blur(8px); overflow: auto; }
   #start.show { display: grid; }
-  .start-card { text-align: center; max-width: 1200px; padding: 18px;
+  .start-card { text-align: center; max-width: 1180px; padding: 26px 22px;
                 position: relative; margin: 24px auto; }
-  .start-card h1 { color: #00d47e; letter-spacing: .22em; font-size: 22px; margin: 0 0 8px; }
-  .start-card .sub { color: #9fb0bd; margin: 0 auto 20px; max-width: 660px; line-height: 1.6; }
-  .start-card .tagline { color: #d7e0e8; margin: 0 auto 14px; max-width: 720px;
-                         line-height: 1.55; font-size: 15px; }
-  .start-card .tagline b { color: #00d47e; }
-  .start-steps { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
-                 margin: 0 auto 18px; max-width: 880px; }
+  .start-card h1 { color: var(--fg); letter-spacing: .04em; font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .start-card .sub { color: var(--fg-2); margin: 0 auto 22px; max-width: 660px; line-height: 1.6; font-size: 13px; }
+  .start-card .tagline { color: var(--fg); margin: 0 auto 14px; max-width: 720px; line-height: 1.55; font-size: 14px; }
+  .start-card .tagline b, .start-card .sub b { color: var(--accent); }
+  .start-steps { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin: 0 auto 18px; max-width: 880px; }
   .start-steps > div { flex: 1 1 220px; max-width: 280px; text-align: left;
-                       background: rgba(11,14,17,.85); border: 1px solid #1f2a33;
-                       border-radius: 8px; padding: 10px 12px; color: #9fb0bd;
-                       font-size: 12px; line-height: 1.55; }
-  .start-steps span { display: block; color: #00d47e; letter-spacing: .14em;
-                      font-size: 11px; margin-bottom: 4px; }
-  .start-steps b { color: #d7e0e8; }
-  .start-card .sub b { color: #d7e0e8; }
-  .start-card .close { position: absolute; top: 0; right: 6px; background: none; border: none;
-                       color: #6b7b88; font: inherit; font-size: 18px; cursor: pointer; }
-  #startGrid { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
-  .bot-card { width: 205px; background: rgba(11,14,17,.85); border: 1px solid #1f2a33;
-              border-radius: 10px; padding: 10px 10px 12px; transition: border-color .2s; }
-  .bot-card:hover { border-color: #1f6e4c; }
+                       background: var(--panel); border: 1px solid var(--line);
+                       border-radius: var(--r-sm); padding: 11px 13px; color: var(--fg-2); font-size: 12px; line-height: 1.55; }
+  .start-steps span { display: block; color: var(--accent); letter-spacing: .12em; font-size: 11px; margin-bottom: 4px; }
+  .start-steps b { color: var(--fg); }
+  .start-card .close { position: absolute; top: 2px; right: 6px; background: none; border: none;
+                       color: var(--fg-dim); font: inherit; font-size: 18px; cursor: pointer; }
+  .start-card .close:hover { color: var(--bad); }
+  #startGrid { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .bot-card { width: 210px; background: var(--panel); border: 1px solid var(--line);
+              border-radius: var(--r); padding: 12px; transition: border-color .15s, background .15s; }
+  .bot-card:hover { border-color: var(--accent); background: var(--panel-2); }
   .bot-card canvas { width: 165px; height: 140px; display: block; margin: 0 auto; }
-  .bot-card h3 { color: #d7e0e8; margin: 6px 0 2px; font-size: 12px; letter-spacing: .14em; }
-  .bot-card .tag { color: #6b7b88; font-size: 11px; min-height: 30px; }
-  .bot-card .tasks { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
-  .bot-card .tasks button { background: #10161c; border: 1px solid #2a3a46; color: #9fb0bd;
-              border-radius: 5px; font: inherit; font-size: 11px; padding: 6px;
-              cursor: pointer; letter-spacing: .06em; }
-  .bot-card .tasks button:hover { color: #00d47e; border-color: #1f6e4c; }
-  .start-foot { color: #4a5a66; margin-top: 18px; }
-  .start-foot b { color: #6b7b88; }
+  .bot-card h3 { color: var(--fg); margin: 8px 0 2px; font-size: 12.5px; letter-spacing: .1em; }
+  .bot-card .tag { color: var(--fg-dim); font-size: 11px; min-height: 30px; }
+  .bot-card .tasks { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .bot-card .tasks button { background: var(--panel-2); border: 1px solid var(--line); color: var(--fg-2);
+              border-radius: var(--r-sm); font: inherit; font-size: 11.5px; padding: 7px; cursor: pointer;
+              letter-spacing: .04em; transition: color .12s, border-color .12s, background .12s; }
+  .bot-card .tasks button:hover { color: var(--accent); border-color: var(--accent-dim); background: #0e1a12; }
+  .start-foot { color: var(--fg-dim); margin-top: 18px; font-size: 12px; }
+  .start-foot b { color: var(--fg-2); }
 
-  /* the ROS / real-robot card — the complete system, connected or not */
-  .ros-card { display: flex; flex-direction: column; border-color: #1f4434 !important; }
+  /* the ROS / real-robot card */
+  .ros-card { display: flex; flex-direction: column; }
   .ros-card .ros-ic { width: 165px; height: 140px; margin: 0 auto; display: flex;
-        align-items: center; justify-content: center; font-size: 54px; color: #00d47e; opacity: .85; }
-  .ros-card .ros-sub { color: #00d47e; font-size: 10px; letter-spacing: .14em; margin-top: 2px; }
-  .ros-hint { color: #6b7b88; font-size: 11px; line-height: 1.5; padding: 6px 2px; }
-  .ros-hint b { color: #9fb0bd; }
-  .ros-card .tasks button .live { color: #00d47e; font-size: 9px; letter-spacing: .12em;
-        border: 1px solid #1f6e4c; border-radius: 5px; padding: 1px 6px; margin-left: 6px; }
+        align-items: center; justify-content: center; font-size: 54px; color: var(--accent); opacity: .85; }
+  .ros-card .ros-sub { color: var(--accent); font-size: 10px; letter-spacing: .12em; margin-top: 2px; }
+  .ros-hint { color: var(--fg-dim); font-size: 11px; line-height: 1.5; padding: 6px 2px; }
+  .ros-hint b { color: var(--fg-2); }
+  .ros-card .tasks button .live { color: var(--accent); font-size: 9px; letter-spacing: .1em;
+        border: 1px solid var(--accent-dim); border-radius: var(--r-sm); padding: 1px 6px; margin-left: 6px; }
   .ros-connect { display: flex; gap: 6px; margin-top: 6px; }
-  .ros-connect input { flex: 1; min-width: 0; background: #0a0f13; color: #d7e0e8;
-        border: 1px solid #2a3a46; border-radius: 5px; font: inherit; font-size: 11px; padding: 6px 8px; }
-  .ros-connect input:focus { outline: none; border-color: #1f6e4c; }
-  .ros-connect button { background: #0d3325; color: #00d47e; border: 1px solid #1f6e4c;
-        border-radius: 5px; font: inherit; font-size: 11px; padding: 6px 12px; cursor: pointer; }
-  .ros-connect button:hover { background: #14241c; }
-  .ros-card .ros-scan { width: 100%; margin-top: 4px; background: #0d2633; color: #6ac0ff;
-        border: 1px solid #1f4a6e; border-radius: 5px; font: inherit; font-size: 11px;
-        padding: 7px; cursor: pointer; letter-spacing: .04em; }
-  .ros-card .ros-scan:hover { background: #123347; color: #9fd8ff; }
+  .ros-connect input { flex: 1; min-width: 0; background: var(--panel-2); color: var(--fg);
+        border: 1px solid var(--line); border-radius: var(--r-sm); font: inherit; font-size: 11.5px; padding: 7px 8px; }
+  .ros-connect input:focus { outline: none; border-color: var(--accent); }
+  .ros-connect button { background: var(--accent); color: #06120a; border: 1px solid var(--accent);
+        border-radius: var(--r-sm); font: inherit; font-size: 11.5px; font-weight: 600; padding: 7px 12px; cursor: pointer; }
+  .ros-connect button:hover { background: #1ee08c; }
+  .ros-card .ros-scan { width: 100%; margin-top: 4px; background: var(--panel-2); color: var(--blue);
+        border: 1px solid var(--line); border-radius: var(--r-sm); font: inherit; font-size: 11.5px;
+        padding: 8px; cursor: pointer; letter-spacing: .03em; }
+  .ros-card .ros-scan:hover { background: #14222e; border-color: var(--blue); }
   .ros-card .ros-scan:disabled { opacity: .7; cursor: default; }
 
-  /* the FLEET card — many quadrupeds + an imperfect radio, configured here */
-  .fleet-card { border-color: #1f4a6e !important; }
+  /* the FLEET card */
   .fleet-card .fleet-ic { width: 165px; height: 92px; margin: 0 auto; display: flex;
-        align-items: center; justify-content: center; font-size: 38px; color: #40a0e0;
-        opacity: .9; letter-spacing: -.18em; }
-  .fleet-card h3 .fleet-sub { color: #40a0e0; font-size: 10px; letter-spacing: .14em; margin-top: 2px; }
+        align-items: center; justify-content: center; font-size: 38px; color: var(--blue); opacity: .9; letter-spacing: -.18em; }
+  .fleet-card h3 .fleet-sub { color: var(--blue); font-size: 10px; letter-spacing: .12em; margin-top: 2px; }
   .fleet-ctrls { display: flex; flex-direction: column; gap: 7px; margin: 6px 2px 2px; }
   .fleet-ctrls .fc { display: flex; flex-direction: column; gap: 2px; }
   .fleet-ctrls .fc .lbl { display: flex; justify-content: space-between; font-size: 10.5px; }
-  .fleet-ctrls .fc .lbl span:first-child { color: #9fb0bd; letter-spacing: .04em; }
-  .fleet-ctrls .fc .lbl b { color: #40a0e0; font-weight: 400; font-variant-numeric: tabular-nums; }
+  .fleet-ctrls .fc .lbl span:first-child { color: var(--fg-2); letter-spacing: .04em; }
+  .fleet-ctrls .fc .lbl b { color: var(--blue); font-weight: 400; font-variant-numeric: tabular-nums; }
   .fleet-ctrls input[type=range] { -webkit-appearance: none; appearance: none; height: 3px;
-        border-radius: 3px; background: #1f2a33; outline: none; }
+        border-radius: 3px; background: var(--line); outline: none; }
   .fleet-ctrls input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px;
-        height: 12px; border-radius: 50%; background: #40a0e0; cursor: pointer; }
+        height: 12px; border-radius: 50%; background: var(--blue); cursor: pointer; }
   .fleet-ctrls input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border: 0;
-        border-radius: 50%; background: #40a0e0; cursor: pointer; }
-  .fleet-card .fleet-go { background: #10283a; color: #40a0e0; border: 1px solid #1f4a6e;
-        border-radius: 5px; font: inherit; font-size: 11px; padding: 7px; cursor: pointer;
-        letter-spacing: .08em; margin-top: 8px; width: 100%; }
-  .fleet-card .fleet-go:hover { background: #16344c; color: #6ac0ff; }
+        border-radius: 50%; background: var(--blue); cursor: pointer; }
+  .fleet-card .fleet-go { background: var(--panel-2); color: var(--blue); border: 1px solid var(--line);
+        border-radius: var(--r-sm); font: inherit; font-size: 11.5px; padding: 8px; cursor: pointer;
+        letter-spacing: .06em; margin-top: 8px; width: 100%; }
+  .fleet-card .fleet-go:hover { background: #14222e; border-color: var(--blue); }
 
   /* RUN is the one button a first-time visitor must find */
   #btnRun { background: #0d3325 !important; color: #00d47e !important;
