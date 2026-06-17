@@ -110,3 +110,26 @@ def test_gz_runner_dry_run_without_world():
     out = r.run_level({"robot": "wheeled", "props": [{"kind": "box", "x": 1, "z": 1}]})
     assert out["status"] == "no-world"
     assert any(s["name"] == "robot" for s in out["plan"])
+
+
+def test_gz_runner_runs_against_mock_world():
+    """Exercise the full GzRunner.run_level 'ran' path with a fake gz service
+    surface (no ROS needed) — proves detect→spawn→lockstep orchestration."""
+    calls = {"create": 0, "control": 0}
+
+    class FakeTransport:
+        def topics(self):
+            return {"/clock": "rosgraph_msgs/Clock",
+                    "/world/lobby/control": "srv", "/world/lobby/create": "srv"}
+        def call_service(self, name, args=None, timeout=5.0):
+            if name.endswith("/create"): calls["create"] += 1
+            elif name.endswith("/control"): calls["control"] += 1
+            return {"ok": True}
+
+    r = gz.GzRunner(transport=FakeTransport())
+    assert r.attach() is True and r.world == "lobby"
+    out = r.run_level({"robot": "dog", "props": [{"kind": "box", "x": 1, "z": 1}]},
+                      seed=3, steps=10)
+    assert out["status"] == "ran" and out["world"] == "lobby" and out["seed"] == 3
+    assert calls["create"] >= 2          # robot + prop spawned
+    assert calls["control"] >= 10        # lockstep steps issued
