@@ -147,15 +147,19 @@
   #pane-concepts .warn { color: var(--amber); } #pane-concepts b { color: var(--ink); }
   #pane-concepts code { background: rgba(0,212,126,.1); color: #8fe3bf; padding: 0 4px; border-radius: 4px; font-size: 11px; }
 
-  /* expanded TEACH overlay */
+  /* expanded TEACH overlay — solid + opaque so text is crisp, not blurred over the sim */
   #teach.expanded { position: fixed; inset: 5vh 6vw; width: auto; z-index: 80;
-                    box-shadow: 0 40px 120px rgba(0,0,0,.7); }
-  #teach.expanded .pane.on { padding: 26px 32px; font-size: 13px; }
+                    background: #0c1116; backdrop-filter: none; -webkit-backdrop-filter: none;
+                    border: 1px solid #2a3a46; border-radius: 12px;
+                    box-shadow: 0 40px 120px rgba(0,0,0,.8); }
+  #teach.expanded .pane.on { padding: 26px 32px; font-size: 14px; line-height: 1.6; color: var(--ink); }
+  #teach.expanded .pane.on b, #teach.expanded .pane.on strong { color: #fff; }
+  #teach.expanded .sprose, #teach.expanded p { color: #c3cdd6 !important; }
   #teach.expanded #pane-strategy.on { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-content: start; }
   #teach.expanded #pane-concepts.on { columns: 2; column-gap: 34px; }
   #teach.expanded #pane-concepts p, #teach.expanded #pane-strategy .sprose { font-size: 13px; }
-  #scrim { position: fixed; inset: 0; z-index: 79; background: rgba(4,6,8,.55);
-           backdrop-filter: blur(3px); display: none; }
+  #scrim { position: fixed; inset: 0; z-index: 79; background: rgba(4,6,8,.82);
+           backdrop-filter: blur(4px); display: none; }
   #scrim.on { display: block; }
 
   /* robot inspector — follows the cursor when you hover a robot */
@@ -203,7 +207,8 @@
     <button class="tbtn" id="btn-learn">❓ EXPLAIN</button>
     <button class="tbtn hot" id="btn-play">⏸ PAUSE</button>
     <button class="tbtn" id="btn-reset">↻ RESET</button>
-    <a class="tbtn" href="/" id="btn-back" title="back to the arena">← ARENA</a>
+    <a class="tbtn" href="/" id="btn-back" title="back to the main cockpit"
+       style="border-color:#1f4434;color:#00d47e">← Cockpit</a>
   </div>
 
   <div id="rail" class="glass">

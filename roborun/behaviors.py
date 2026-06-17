@@ -585,12 +585,13 @@ class Robot:
         clamped = (forward, strafe, turn, climb) != raw
 
         sent = False
+        target = "sim"   # where the command actually went — keeps the timeline honest
         try:
             from roborun.arena import get_arena
             arena = get_arena()
             if arena.is_active():
                 arena.set_cmd(forward, strafe, turn, climb)
-                sent = True
+                sent = True; target = "sim"
         except Exception:
             pass
         if not sent:
@@ -599,7 +600,7 @@ class Robot:
                 sim = get_simulator()
                 if sim.is_running:
                     sim.set_cmd_vel(forward, strafe, turn)
-                    sent = True
+                    sent = True; target = "sim"
             except Exception:
                 pass
         if not sent:
@@ -613,7 +614,7 @@ class Robot:
                     from roborun.ros_telemetry import get_bridge
                     client.move(forward, strafe, turn,
                                 get_bridge().cmd_vel_topic, linear_z=climb)
-                    sent = True
+                    sent = True; target = "robot"
             except Exception:
                 pass
 
@@ -645,7 +646,7 @@ class Robot:
         if delta >= 0.3 or (delta > 0.01 and now - self._last_move_emit >= 1.0):
             self._last_cmd = cmd
             self._last_move_emit = now
-            emit("ros", self._name, f"move fwd={forward:.2f} turn={turn:.2f}",
+            emit(target, self._name, f"move fwd={forward:.2f} turn={turn:.2f}",
                  {"forward": round(forward, 2), "strafe": round(strafe, 2),
                   "turn": round(turn, 2)})
 

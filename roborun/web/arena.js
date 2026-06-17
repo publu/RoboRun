@@ -917,8 +917,25 @@ function loadLevel(i) {
     w.order.map((id) => ({ id: `r${id}`, label: `ring ${id + 1}`, done: false })));
   postEvent("arena", `level loaded: ${LV.name}`, { robot: LV.robot });
   if (MODE === "robot" && levelGroup) levelGroup.visible = false;
+  // Route: reflect the level in the URL (#level-name) so it's bookmarkable and the
+  // browser BACK button steps between levels / out of the sim.
+  if (!window._navFromHistory) {
+    try {
+      const nm = encodeURIComponent(LV.name);
+      if (decodeURIComponent((location.hash || "").slice(1)) !== LV.name)
+        history.pushState({ level: levelIndex }, "", "#" + nm);
+    } catch (_) {}
+  }
 }
 levelSel.addEventListener("change", () => loadLevel(+levelSel.value));
+window.addEventListener("popstate", () => {
+  const nm = decodeURIComponent((location.hash || "").slice(1));
+  const idx = LEVELS.findIndex((l) => l.name === nm);
+  if (idx >= 0 && idx !== levelIndex) {
+    window._navFromHistory = true;
+    try { loadLevel(idx); } finally { window._navFromHistory = false; }
+  }
+});
 
 function winChamber(detail) {
   won = true;
@@ -1519,6 +1536,9 @@ function enterCockpit(src) {
   } else {
     // stream = the sim's 3D render. POV is "what the robot sees"; the game
     // loop keeps rendering it full-screen behind the cockpit chrome.
+    // The sim is driven by player_policy; disable the webcam follow behavior so
+    // it doesn't fight the sandbox policy for the arena (or spam "no actuator").
+    api("/api/behaviors/disable", { name: "follow_person" }).catch(() => {});
     $("ck-src").style.display = "none";
     // chase cam: a stable 3rd-person view of the robot in its world, so a
     // turning policy doesn't whip the whole screen around like POV does
@@ -2515,7 +2535,7 @@ function updateTelemetry() {
 }
 
 /* ════════════════ panels ════════════════ */
-const LAYOUT_KEY = "arena-layout-v3";
+const LAYOUT_KEY = "arena-layout-v4";  // v4: reset stale/scattered saved layouts to the clean 2-rail default
 const PANEL_IDS = ["p-brief", "p-policy", "p-status", "p-map", "p-view1", "p-view2",
                    "p-runs", "p-eyes"];
 let zTop = 100;
@@ -2868,7 +2888,13 @@ function frame(now) {
 }
 
 await initPhysics();                       // rapier WASM, once per page
-loadLevel(0);
+// open the level named in the URL hash (#level-name) if present, else the first
+{
+  const _h = decodeURIComponent((location.hash || "").slice(1));
+  const _hi = LEVELS.findIndex((l) => l.name === _h);
+  window._navFromHistory = true;
+  try { loadLevel(_hi >= 0 ? _hi : 0); } finally { window._navFromHistory = false; }
+}
 detectMode().then(() => pollNetworkRobots()); pollCmd(); pushState(); pollSightings(); renderRuns();
 requestAnimationFrame(frame);
 
