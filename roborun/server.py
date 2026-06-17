@@ -273,8 +273,25 @@ def _frame_recorder_loop() -> None:
         time.sleep(0.1)
 
 
+_HELP = """RoboRun — run robots, record everything, search it over time.
+
+  roborun                 start the server + UI (http://localhost:8765)
+  roborun demo            load sample data so the dashboards aren't empty
+  roborun connect <ip>    connect a real robot (ROS 1 or ROS 2, via rosbridge)
+  roborun search <query>  find anything/anyone across every recorded run
+  roborun scenarios       list / run scored behavior tests   (run <name> | suite <name>)
+  roborun dataset <q> <d> curate a labeled training set from a search (sealed provenance)
+  roborun flag <run>      bookmark a moment in a run to revisit
+  roborun skill <...>     install / manage skills from GitHub
+
+Open the cockpit, then its ▤ VIEWS menu for: search · scenarios · timeline · analytics · fleet."""
+
+
 def main() -> None:
     import sys
+    if len(sys.argv) > 1 and sys.argv[1] in ("help", "--help", "-h"):
+        print(_HELP)
+        raise SystemExit(0)
     if len(sys.argv) > 1 and sys.argv[1] == "skill":
         from roborun.skills.manager import cli
         raise SystemExit(cli(sys.argv[2:]))
