@@ -24,6 +24,9 @@
   .env{ display:flex; align-items:center; gap:10px; padding:7px 10px; background:var(--bg-2); border:1px solid var(--line-soft); border-radius:var(--r-sm); }
   .env .nm{ font-size:12.5px; } .env .meta{ color:var(--fg-dim); font-size:11px; }
   .env .grow{ flex:1; }
+  .cams{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:4px 0 10px 10px; padding-left:10px; border-left:2px solid var(--line-soft); }
+  .cams .lab{ color:var(--fg-dim); font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; }
+  .newCam input{ padding:4px 6px; }
   form{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px; }
   input,select{ background:var(--panel-2); color:var(--fg); border:1px solid var(--line); border-radius:var(--r-sm); font:inherit; font-size:12.5px; padding:6px 9px; }
   .empty{ color:var(--fg-dim); padding:24px; }
@@ -109,18 +112,39 @@ async function loadEnvs(pid, box){
   if(!d.environments||!d.environments.length){ box.innerHTML='<div class="meta">no environments — add one below</div>'; return; }
   box.innerHTML=d.environments.map(e=>{
     const sel=active&&active.project===pid&&active.environment===e.id;
+    const cams=(e.cameras||[]).map(c=>`<span class="chip" title="${esc(JSON.stringify(c.placement||{}))}">📷 ${esc(c.source_id)} · ${esc(c.kind)}</span>`).join("");
     return `<div class="env">
       <span class="nm">${esc(e.name)}</span>
       <span class="chip">${esc(e.backend)}</span><span class="chip">${esc(e.mode)}</span>
-      <span class="meta">${e.runs||0} runs</span>
+      <span class="meta">${e.runs||0} runs · ${(e.cameras||[]).length} cam</span>
       <span class="grow"></span>
       ${sel?'<span class="pill ok">active</span>':`<button class="btn sm" onclick="select('${esc(pid)}','${esc(e.id)}')">select</button>`}
+    </div>
+    <div class="cams">
+      <span class="lab">cameras (spec 09 — tag where each looks):</span>
+      ${cams||'<span class="meta">none tagged</span>'}
+      <form class="newCam" onsubmit="return addCam(this)" data-proj="${esc(pid)}" data-env="${esc(e.id)}">
+        <input class="cId" placeholder="camera id" size="10" required>
+        <input class="cx" placeholder="x" size="2"><input class="cy" placeholder="y" size="2"><input class="cz" placeholder="z" size="2"><input class="cyaw" placeholder="yaw" size="3">
+        <select class="cKind"><option value="robot">robot</option><option value="fixed">fixed</option></select>
+        <button class="btn sm" type="submit">+ tag camera</button>
+      </form>
     </div>`;
   }).join("");
 }
 
 async function select(pid,eid){ await post("/api/projects/active",{project:pid,environment:eid}); load(); }
 async function clearActive(){ await post("/api/projects/active/clear",{}); load(); }
+
+function num(v){ const n=parseFloat(v); return isFinite(n)?n:0; }
+async function addCam(form){
+  const placement={x:num(form.cx.value),y:num(form.cy.value),z:num(form.cz.value),
+                   roll:0,pitch:0,yaw:num(form.cyaw.value)};
+  await post("/api/environments/camera",{project:form.dataset.proj,environment:form.dataset.env,
+    source_id:form.cId.value.trim(),kind:form.cKind.value,placement});
+  load();
+  return false;
+}
 
 $("#newProj").onsubmit=async e=>{
   e.preventDefault();

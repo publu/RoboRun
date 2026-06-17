@@ -43,6 +43,13 @@
   color: var(--fg-dim); margin: 0 0 8px;
 }
 
+/* ── active-project chip (project-chip.js, every dashboard) ────────────── */
+.proj-chip { font-size: 11px; padding: 3px 10px; border: 1px solid var(--line);
+  border-radius: 999px; color: var(--fg-dim); text-decoration: none; white-space: nowrap;
+  transition: border-color .12s, color .12s; }
+.proj-chip.scoped { color: var(--accent); border-color: var(--accent-dim); background: #0e1a12; }
+.proj-chip:hover { border-color: var(--accent); color: var(--fg); }
+
 /* ── nav strip (dashboards) ────────────────────────────────────────────── */
 .nav { margin-left: auto; display: flex; gap: 16px; flex-wrap: wrap; }
 .nav a { color: var(--fg-2); text-decoration: none; font-size: 12px; padding: 2px 0;
