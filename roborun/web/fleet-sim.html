@@ -31,8 +31,12 @@
   .legend .sw{ display:inline-flex; align-items:center; gap:6px; }
   .legend .tri{ width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:9px solid var(--accent); }
   .legend .dot{ width:9px;height:9px;border-radius:50%; } .legend .dot.on{ background:var(--accent); } .legend .dot.off{ background:#5a7a6a; }
-  .stagewrap{ display:flex; justify-content:center; }
-  #stage{ width:min(640px,100%); aspect-ratio:1; display:block; background:#080b08; border:1px solid var(--line); border-radius:var(--r); }
+  .legend .elev{ width:11px;height:11px;border:1.5px solid var(--blue);border-radius:2px;display:inline-flex;align-items:center;justify-content:center;color:var(--blue);font-size:8px; }
+  #floors{ display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; }
+  .floorp{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:10px; }
+  .floorp h3{ font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:var(--fg-dim); margin:0 0 8px; display:flex; justify-content:space-between; }
+  .floorp h3 b{ color:var(--accent); font-weight:600; }
+  .floorp canvas{ width:100%; aspect-ratio:1; display:block; background:#080b08; border-radius:6px; }
 </style>
 </head>
 <body>
@@ -43,6 +47,7 @@
     <div class="ph"><span style="font-size:16px">🐝</span><span class="t">FLEET SIM</span><span class="run">● Rapier physics</span></div>
     <div class="controls">
       <div class="ctl"><label>robots <b id="nlab">8</b></label><input id="n" type="range" min="1" max="24" value="8"></div>
+      <div class="ctl"><label>floors <b id="flab">3</b></label><input id="fl" type="range" min="1" max="4" value="3"></div>
       <div class="ctl"><label>speed <b id="slab">1.0×</b></label><input id="spd" type="range" min="2" max="40" value="10"></div>
       <div class="btns"><button class="btn accent" id="play">⏸ pause</button><button class="btn" id="reset">↺ reset</button></div>
     </div>
@@ -53,10 +58,11 @@
     <span class="sw"><span class="tri"></span> robot (real physics body)</span>
     <span class="sw"><span class="dot on"></span> detected item</span>
     <span class="sw"><span class="dot off"></span> undetected item</span>
+    <span class="sw"><span class="elev">⇅</span> elevator (between floors)</span>
     <span class="sw" style="color:var(--fg-dim)">— walls / rooms</span>
   </div>
 
-  <div class="stagewrap"><canvas id="stage" width="640" height="640"></canvas></div>
+  <div id="floors"></div>
 </main>
 <script type="module" src="./rapier-fleet.js"></script>
 </body>
