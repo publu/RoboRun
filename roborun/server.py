@@ -290,6 +290,9 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "dataset":
         from roborun.cli import dataset_cli
         raise SystemExit(dataset_cli(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "demo":
+        from roborun.cli import demo_cli
+        raise SystemExit(demo_cli(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] == "flag":
         from roborun.incidents import flag, list_incidents
         if len(sys.argv) > 2:

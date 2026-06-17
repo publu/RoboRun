@@ -36,3 +36,13 @@ def test_scenarios_cli_lists_and_runs(capsys):
     assert "PASSED" in capsys.readouterr().out
     assert scenarios_cli(["suite", "demo"]) == 0
     assert "%" in capsys.readouterr().out
+
+
+def test_demo_cli_populates(capsys):
+    from roborun.cli import demo_cli
+    assert demo_cli([]) == 0
+    assert "Demo seeded" in capsys.readouterr().out
+    from roborun.spatial_memory import SpatialMemoryStore
+    from roborun.scenario import list_suites
+    assert SpatialMemoryStore().stats()["total"] > 0
+    assert any(s["suite"] == "demo" for s in list_suites())

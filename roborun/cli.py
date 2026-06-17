@@ -34,6 +34,44 @@ def search_cli(argv: list[str]) -> int:
     return 0
 
 
+def demo_cli(argv: list[str]) -> int:
+    """Seed a populated demo so a fresh install shows a live UI immediately:
+    a recorded synthetic run (camera+detections+pose, indexed + searchable) and a
+    scored scenario suite. `roborun demo` then open the dashboards."""
+    import time
+    import numpy as np
+    from roborun.recorder import RunRecorder
+    from roborun.events import runs_root
+    from roborun.observations import StreamingExtractor
+    from roborun.spatial_memory import SpatialMemoryStore
+    from roborun.synthetic_camera import SyntheticCamera
+    from roborun.session import PerceptionSession
+    import roborun.demo_scenarios  # noqa
+    from roborun.scenario_defs import run_suite
+
+    store = SpatialMemoryStore()
+    labels = ["person", "forklift", "pallet"]
+    for lab in labels:
+        rec = RunRecorder(robot_id=f"demo-{lab}", root=runs_root(), checkpoint_interval=0.05)
+        rec.extractor = StreamingExtractor(store, robot_id=f"demo-{lab}",
+                                           run_id=rec.run_id, source="production")
+        cam = SyntheticCamera(label=lab)
+        sess = PerceptionSession(cam, store, mode="production", source_id=f"{lab}-cam",
+                                 recorder=rec, embed_fn=lambda f: f.reshape(-1, 3).mean(0).astype(np.float32),
+                                 hz=30)
+        cam.start()
+        try:
+            for _ in range(10):
+                sess.tick(); time.sleep(0.01)
+        finally:
+            cam.stop()
+        rec.close(do_anchor=False)
+    run_suite("demo")
+    print("Demo seeded: 3 runs recorded + indexed, demo suite scored.")
+    print("Open http://localhost:8765  → ▤ VIEWS → Search / Analytics / Scenarios")
+    return 0
+
+
 def dataset_cli(argv: list[str]) -> int:
     import argparse
     p = argparse.ArgumentParser(prog="roborun dataset",
