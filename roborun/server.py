@@ -81,6 +81,12 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         path_only = self.path.split("?", 1)[0]
 
+        # quiet the browser's favicon probe (was the only console 404)
+        if path_only == "/favicon.ico":
+            self.send_response(204)
+            self.end_headers()
+            return
+
         # MCP SSE discovery
         if path_only in ("/mcp", "/mcp/ros"):
             handle_mcp_sse(self)
