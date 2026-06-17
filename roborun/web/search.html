@@ -106,8 +106,24 @@ async function run(){
       <div class="when">${when}${score}</div>
       <div class="src">${r.source||"?"} · ${r.source_id||r.robot_id||""}</div>
     </div></div>`;
-  }).join("") : `<div class="empty">Nothing found yet.<br><br>If this is a fresh install, there's no data to search — record a run (open the cockpit and press <b>M</b>) or run <code>roborun demo</code> in your terminal to load sample data. Already have runs? Try the <b>label</b> tab or widen the time range.</div>`;
+  }).join("") : `<div class="empty">Nothing found yet.<br><br>If this is a fresh install, there's no data to search — record a run (open the cockpit and press <b>M</b>) or run <code>roborun demo</code> in your terminal to load sample data. Already have runs? Try the <b>by object</b> tab or widen the time range.</div>`;
 }
+
+// First-run: greet a brand-new user with a 3-step quick start (only when empty).
+async function firstRun(){
+  try{
+    const d=await (await fetch("/api/analytics")).json();
+    if((d.observations?.total||0) > 0) return;   // there's data → no onboarding
+    $("#grid").innerHTML = `<div class="empty" style="text-align:left;max-width:560px;margin:0 auto">
+      <div style="font-size:15px;color:var(--fg);margin-bottom:14px">👋 Welcome — let's get something to search.</div>
+      <div style="margin:8px 0"><b style="color:var(--accent)">1.</b> In your terminal, run <code>roborun demo</code> — it records a few sample runs and indexes them. <i>(Quickest win.)</i></div>
+      <div style="margin:8px 0"><b style="color:var(--accent)">2.</b> Or open the <a href="/" style="color:var(--accent)">cockpit</a>, start a sim or camera, and press <b>M</b> to record.</div>
+      <div style="margin:8px 0"><b style="color:var(--accent)">3.</b> Then come back and search — by meaning ("person in red") or by object ("forklift"), across everything, over all of time.</div>
+      <div style="margin-top:14px;font-size:12px">Once data exists, this page becomes your robots' memory: find anyone or anything they've ever seen, and export the results as a labeled dataset with verifiable provenance.</div>
+    </div>`;
+  }catch(e){}
+}
+firstRun();
 </script>
 </body>
 </html>
