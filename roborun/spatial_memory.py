@@ -38,7 +38,18 @@ if TYPE_CHECKING:  # numpy only backs the CLIP paths; the SQLite index runs with
 
 def _default_db_path() -> Path:
     """The searchable index lives alongside the runs, honoring ROBORUN_STATE_DIR
-    so sim/robot/production deployments can place all data where they want."""
+    so sim/robot/production deployments can place all data where they want.
+
+    When a project/environment is active (platform spec 06/07), the index is
+    scoped under it — so search in one project never sees another's data. Legacy
+    flat path when nothing is selected."""
+    try:
+        from roborun import projects
+        dr = projects.data_root()
+        if dr is not None:
+            return dr / "spatial_memory.db"
+    except Exception:
+        pass
     base = os.environ.get("ROBORUN_STATE_DIR")
     return (Path(base) if base else Path(".roborun")) / "spatial_memory.db"
 

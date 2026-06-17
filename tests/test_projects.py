@@ -82,3 +82,32 @@ def test_run_manifest_carries_context(state, tmp_path):
                                       "anchor": {"status": "unanchored"}})
     m = run_manifest.read(mcap)
     assert m["seal"]["merkle_root"] == "abc" and m["ended"] is not None
+
+
+def test_backend_registry():
+    from roborun import backends
+    bl = backends.list_backends()
+    ids = {b["id"] for b in bl}
+    assert {"rapier", "mujoco", "mjx", "gazebo", "isaac", "real"} <= ids
+    isaac = backends.get("isaac")
+    assert isaac["status"] == "planned"            # honest: not built yet
+    rapier = backends.get("rapier")
+    assert rapier["status"] == "ready" and rapier["caps"]["fleet"] is True
+
+
+def test_mode_aware_retention(state, monkeypatch):
+    from roborun import projects, environments, retention
+    projects.create("p")
+    environments.create("p", "scratchy", backend="rapier", mode="scratch")
+    environments.create("p", "prod", backend="real", mode="production")
+    # a sealed-but-not-uploaded body in each env
+    for env in ("scratchy", "prod"):
+        runs = state / "projects" / "p" / env / "runs" / "robo"
+        runs.mkdir(parents=True)
+        m = runs / "r.mcap"; m.write_bytes(b"x" * 1024)
+        m.with_suffix(".seal").write_text("{}")
+    rep = retention.enforce_all()
+    keys = set(rep["projects"])
+    assert "p/scratchy" in keys and "p/prod" in keys
+    assert rep["projects"]["p/scratchy"]["mode"] == "scratch"
+    assert rep["projects"]["p/scratchy"]["cap_gb"] == retention.MODE_CAPS["scratch"]

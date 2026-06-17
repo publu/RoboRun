@@ -83,3 +83,38 @@ def enforce(root: Path | None = None, max_gb: float | None = None,
         evicted.append(mcap.name)
     return {"total_bytes": total, "evicted": evicted,
             "kept_over_cap": total > max_bytes}
+
+
+# ── mode-aware retention across projects (platform spec 08) ────────────────
+# scratch is throwaway → small cap, evict sealed even if not uploaded.
+# production is precious → big cap, evict only sealed + uploaded.
+MODE_CAPS = {
+    "scratch": float(os.environ.get("ROBORUN_SCRATCH_MAX_GB", "2")),
+    "test": float(os.environ.get("ROBORUN_TEST_MAX_GB", "20")),
+    "production": float(os.environ.get("ROBORUN_PROD_MAX_GB", "100")),
+}
+
+
+def enforce_all() -> dict[str, Any]:
+    """Walk every project/environment and apply its mode's retention policy, so a
+    real-robot production env never competes with rapier scratch for space."""
+    from roborun import projects, environments
+    root = projects.projects_root()
+    reports: dict[str, Any] = {}
+    if not root.exists():
+        return {"projects": reports}
+    for pdir in sorted(root.iterdir()):
+        if not pdir.is_dir():
+            continue
+        for edir in sorted(pdir.iterdir()):
+            runs = edir / "runs"
+            if not runs.is_dir():
+                continue
+            meta = environments.get(pdir.name, edir.name) or {}
+            mode = meta.get("mode", "scratch")
+            cap = MODE_CAPS.get(mode, 20.0)
+            rep = enforce(root=runs, max_gb=cap,
+                          require_uploaded=(mode != "scratch"))
+            reports[f"{pdir.name}/{edir.name}"] = {
+                "mode": mode, "cap_gb": cap, **rep}
+    return {"projects": reports}

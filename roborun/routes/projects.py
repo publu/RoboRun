@@ -81,3 +81,43 @@ def create_environment(h, payload):
                                mode=str(payload.get("mode", "scratch")),
                                world_ref=payload.get("world_ref"))
     send_json(h, 200, {"ok": True, "environment": meta})
+
+
+@post("/api/environments/camera")
+def register_camera(h, payload):
+    """Tag a camera's placement in the environment frame (spec 09)."""
+    project = str(payload.get("project", "")).strip() or (projects.active() or {}).get("project")
+    env = str(payload.get("environment", "")).strip() or (projects.active() or {}).get("environment")
+    source_id = str(payload.get("source_id", "")).strip()
+    if not project or not env or not source_id:
+        raise ApiError(400, "project, environment, source_id required")
+    meta = environments.register_camera(
+        project, env, source_id,
+        placement=payload.get("placement"),
+        kind=str(payload.get("kind", "robot")),
+        intrinsics=payload.get("intrinsics"))
+    if meta is None:
+        raise ApiError(404, "environment not found")
+    send_json(h, 200, {"ok": True, "environment": meta})
+
+
+@get("/api/backends")
+def list_backends(h):
+    """Backend registry + live capability matrix (spec 03)."""
+    from roborun import backends
+    send_json(h, 200, {"ok": True, "backends": backends.list_backends()})
+
+
+@get("/api/runs")
+def list_runs(h):
+    """MCAP runs in the active project/environment, with their manifests —
+    the telemetry browser's index (spec 02)."""
+    from roborun import recorder as rec_mod, run_manifest
+    runs = rec_mod.list_runs()
+    for r in runs:
+        m = run_manifest.read(r.get("mcap", "")) if r.get("mcap") else None
+        if m:
+            r["manifest"] = {k: m.get(k) for k in
+                             ("project", "environment", "backend", "started",
+                              "ended", "cameras")}
+    send_json(h, 200, {"ok": True, "runs": runs, "active": projects.active()})
