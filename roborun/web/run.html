@@ -21,6 +21,12 @@
   svg{ width:100%; display:block; }
   .empty{ color:var(--fg-dim); font-size:12px; padding:20px; text-align:center; }
   #detail{ margin-bottom:20px; }
+  .phwrap{ position:relative; }
+  .ph{ position:absolute; top:0; bottom:0; width:1px; background:var(--accent); opacity:.7; pointer-events:none; display:none; }
+  .evlog{ max-height:200px; overflow:auto; font-size:12px; }
+  .evlog .ev{ display:flex; gap:10px; padding:3px 0; border-bottom:1px solid var(--line-soft); color:var(--fg-2); }
+  .evlog .ev.cur{ color:var(--fg); background:#0e150f; }
+  .evlog .ev .t{ color:var(--fg-dim); width:64px; flex:none; }
 </style>
 </head>
 <body>
@@ -37,19 +43,23 @@
 
   <div class="panel" id="player" style="margin-bottom:16px;display:none">
     <h2>Synced replay <span id="ptime" style="color:var(--fg-dim)"></span>
-      <button id="flag" class="btn sm" title="flag this moment to revisit" style="color:var(--amber)">⚑ Flag</button>
+      <span style="margin-left:auto;display:flex;gap:8px">
+        <button id="play" class="btn sm accent" title="play / pause — every panel moves together">▶ play</button>
+        <button id="flag" class="btn sm" title="flag this moment to revisit" style="color:var(--amber)">⚑ Flag</button>
+      </span>
     </h2>
     <img id="pframe" style="width:100%;max-height:340px;object-fit:contain;background:#070907;border-radius:6px" alt="frame">
     <input id="scrub" type="range" min="0" max="1000" value="0" style="width:100%;margin-top:10px;accent-color:var(--accent)">
     <div id="incidents" style="margin-top:8px"></div>
   </div>
 
-  <div class="seclabel" style="margin:4px 0 10px">Telemetry</div>
+  <div class="seclabel" style="margin:4px 0 10px">Telemetry — one clock across every panel</div>
   <div class="grid">
-    <div class="panel"><h2>Robot trajectory <span id="lblTraj"></span></h2><div id="traj"></div></div>
-    <div class="panel"><h2>Velocity <span style="color:var(--accent)">linear</span> · <span style="color:var(--blue)">angular</span></h2><div id="vel"></div></div>
-    <div class="panel"><h2>Obstacle clearance (m)</h2><div id="clear"></div></div>
+    <div class="panel"><h2>Robot trajectory <span id="lblTraj"></span></h2><div id="traj" class="phwrap"></div></div>
+    <div class="panel"><h2>Velocity <span style="color:var(--accent)">linear</span> · <span style="color:var(--blue)">angular</span></h2><div id="vel" class="phwrap"></div></div>
+    <div class="panel"><h2>Obstacle clearance (m)</h2><div id="clear" class="phwrap"></div></div>
     <div class="panel"><h2>LiDAR scan</h2><div id="scan"></div></div>
+    <div class="panel" style="grid-column:1/-1"><h2>Event log <span id="evcount" style="color:var(--fg-dim)"></span></h2><div id="events" class="evlog"></div></div>
   </div>
 </main>
 <script>
@@ -106,27 +116,59 @@ async function load(){
   scanChart($("#scan"), d.scan||[]);
   setupPlayer(d);
 }
+let EVENTS=[];
+function mkPlayhead(host){ const d=document.createElement("div"); d.className="ph"; host.appendChild(d); return d; }
 function setupPlayer(d){
-  const frames=d.frames||[], t0=d.t0, t1=d.t1;
-  if(!frames.length || t0==null){ return; }
+  const t0=d.t0, t1=d.t1, span=(t1-t0)||1;
+  const hasFrames=(d.frames||[]).length && t0!=null;
+  if(t0==null){ return; }
   $("#player").style.display="block";
+  if(!hasFrames){ $("#pframe").style.display="none"; }
   const scrub=$("#scrub");
-  let timer=null;
+  const phVel=mkPlayhead($("#vel")), phClr=mkPlayhead($("#clear"));
+  let curT=t0, timer=null;
   const show=()=>{
-    const frac=scrub.value/1000, t=t0+(t1-t0)*frac;
-    $("#ptime").textContent=`t=${(t-t0).toFixed(1)}s / ${(t1-t0).toFixed(1)}s`;
-    $("#pframe").src=`/api/run/frame?id=${encodeURIComponent(qid)}&t=${t}`;
+    const frac=scrub.value/1000; curT=t0+span*frac;
+    $("#ptime").textContent=`t=${(curT-t0).toFixed(1)}s / ${span.toFixed(1)}s`;
+    if(hasFrames) $("#pframe").src=`/api/run/frame?id=${encodeURIComponent(qid)}&t=${curT}`;
+    // shared playhead across the time-series panels
+    [phVel,phClr].forEach(p=>{ p.style.display="block"; p.style.left=(frac*100).toFixed(2)+"%"; });
+    // sync the event log: highlight the latest event at/under t
+    let curIdx=-1;
+    for(let i=0;i<EVENTS.length;i++){ if(EVENTS[i].ts<=curT) curIdx=i; else break; }
+    const rows=$("#events").children;
+    for(let i=0;i<rows.length;i++) rows[i].classList.toggle("cur", i===curIdx);
+    if(curIdx>=0 && rows[curIdx]) rows[curIdx].scrollIntoView({block:"nearest"});
   };
-  scrub.oninput=()=>{ clearTimeout(timer); timer=setTimeout(show, 60); };
+  scrub.oninput=()=>{ clearTimeout(timer); timer=setTimeout(show,40); show(); };
+  // play / pause — advances the one clock all panels share
+  let playing=false, raf=null, last=0;
+  const tick=(now)=>{ if(!playing) return;
+    if(last){ const dv=(now-last)/1000/span*1000; scrub.value=Math.min(1000, +scrub.value+dv); show();
+      if(+scrub.value>=1000){ stop(); return; } }
+    last=now; raf=requestAnimationFrame(tick);
+  };
+  const play=()=>{ playing=true; last=0; $("#play").textContent="⏸ pause"; raf=requestAnimationFrame(tick); };
+  const stop=()=>{ playing=false; $("#play").textContent="▶ play"; if(raf)cancelAnimationFrame(raf); };
+  $("#play").onclick=()=>{ playing?stop():play(); };
   scrub.value=0; show();
-  let curT=t0;
-  scrub.addEventListener("input",()=>{ curT=t0+(t1-t0)*scrub.value/1000; });
   $("#flag").onclick=async()=>{
     const note=prompt("Note for this moment (optional):")||"";
     await fetch("/api/incidents/flag",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({run_id:qid,ts:curT,note})});
     loadIncidents();
   };
-  loadIncidents();
+  loadIncidents(); loadEvents();
+}
+async function loadEvents(){
+  try{
+    const d=await (await fetch("/api/run/events?run="+encodeURIComponent(qid)+"&limit=500")).json();
+    EVENTS=(d.events||[]).filter(e=>e.ts).sort((a,b)=>a.ts-b.ts);
+    $("#evcount").textContent=EVENTS.length?`(${EVENTS.length})`:"";
+    const tm=ts=>new Date(ts*1000).toLocaleTimeString();
+    $("#events").innerHTML=EVENTS.length? EVENTS.map(e=>
+      `<div class="ev"><span class="t">${tm(e.ts)}</span><span>${(e.type||"")}/${(e.source||"")} · ${e.title||""}</span></div>`).join("")
+      : '<div class="empty">No events recorded for this run.</div>';
+  }catch(e){ $("#events").innerHTML='<div class="empty">—</div>'; }
 }
 async function loadIncidents(){
   try{ const d=await (await fetch("/api/incidents?run="+encodeURIComponent(qid))).json();
