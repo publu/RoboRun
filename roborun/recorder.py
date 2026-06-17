@@ -159,6 +159,15 @@ SCHEMAS: dict[str, dict] = {
 
 
 def runs_root() -> Path:
+    # When a project/environment is active, scope runs under it (spec 07/08);
+    # otherwise the legacy flat layout — fully back-compatible.
+    try:
+        from roborun import projects
+        dr = projects.data_root()
+        if dr is not None:
+            return dr / "runs"
+    except Exception:
+        pass
     base = os.environ.get("ROBORUN_STATE_DIR")
     root = Path(base) if base else Path.home() / ".roborun"
     return root / "runs"

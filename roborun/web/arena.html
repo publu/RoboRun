@@ -591,10 +591,13 @@ body.cockpit #cockpit { display: flex; }
   <button id="btnConnect" class="accent">⚡ CONNECT AGENT</button>
   <button id="btnReset" title="restore default layout">reset</button>
   <div class="sep" style="margin-left:auto"></div>
+  <a id="projChip" href="/projects" title="active project / environment — data records here"
+     style="text-decoration:none;color:#aebcc7;border:1px solid #2a3a46;border-radius:6px;padding:6px 10px;font-size:12px">◇ scratch</a>
   <span id="tb-views" style="position:relative">
     <button id="tb-views-btn" title="go to a dashboard">▤ VIEWS ▾</button>
     <span id="tb-views-menu" style="display:none;position:absolute;right:0;top:120%;z-index:60;background:#0d120c;border:1px solid #1e2a1f;border-radius:8px;padding:6px;min-width:150px;text-align:left">
       <a href="/" style="display:block;padding:6px 9px;color:#00d47e;text-decoration:none;border-radius:5px">⌂ cockpit (home)</a>
+      <a href="/projects" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">projects</a>
       <a href="/scenarios" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">scenarios</a>
       <a href="/timeline" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">timeline</a>
       <a href="/analytics" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">analytics</a>
@@ -603,7 +606,9 @@ body.cockpit #cockpit { display: flex; }
     </span>
   </span>
 </div>
-<script>(function(){var b=document.getElementById("tb-views-btn"),m=document.getElementById("tb-views-menu");if(b)b.onclick=function(e){e.stopPropagation();m.style.display=m.style.display==="none"?"block":"none";};document.addEventListener("click",function(){if(m)m.style.display="none";});})();</script>
+<script>(function(){var b=document.getElementById("tb-views-btn"),m=document.getElementById("tb-views-menu");if(b)b.onclick=function(e){e.stopPropagation();m.style.display=m.style.display==="none"?"block":"none";};document.addEventListener("click",function(){if(m)m.style.display="none";});
+// live active-project chip — shows where recordings land
+fetch("/api/projects/active").then(function(r){return r.json();}).then(function(d){var c=document.getElementById("projChip");if(!c)return;if(d.active){c.textContent="◆ "+d.active.project+" / "+d.active.environment;c.style.color="#00d47e";c.style.borderColor="#1f4434";}else{c.textContent="◇ scratch";}}).catch(function(){});})();</script>
 
 <div class="panel" id="p-brief">
   <div class="p-head"><b>MISSION</b><select id="levelSel"></select><span class="x">✕</span></div>

@@ -59,6 +59,7 @@ import roborun.routes.arena  # noqa: F401
 import roborun.routes.behaviors  # noqa: F401
 import roborun.routes.scenarios  # noqa: F401
 import roborun.routes.search  # noqa: F401
+import roborun.routes.projects  # noqa: F401
 from roborun.routes import dispatch_get, dispatch_post, read_json, send_json, ApiError
 from roborun.routes.mcp import handle_mcp_request, handle_mcp_sse
 
@@ -135,6 +136,8 @@ class Handler(SimpleHTTPRequestHandler):
         # the sim cockpit + its levels: /sim?level=<name> (consistent with /run?id=)
         if path_only == "/sim":
             self.path = "/arena.html"
+        if path_only == "/projects":
+            self.path = "/projects.html"
         super().do_GET()
 
     def do_OPTIONS(self) -> None:

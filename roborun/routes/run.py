@@ -125,6 +125,10 @@ def _mcap_path(payload: dict) -> Path | None:
 @post("/api/run/record/start")
 def record_start(h, payload):
     rec = rec_mod.start_recording(robot_id=payload.get("robot_id", "local"))
+    from roborun import run_manifest
+    run_manifest.write_start(rec.mcap_path, rec.run_id,
+                             payload.get("robot_id", "local"),
+                             backend=payload.get("backend"))
     bus.emit("system", "recorder", f"RECORDING · {rec.run_id}",
              {"run": rec.run_id, "mcap": str(rec.mcap_path)})
     send_json(h, 200, {"ok": True, **rec.status()})
@@ -137,6 +141,8 @@ def record_stop(h, payload):
         send_json(h, 200, {"ok": False, "error": "nothing is recording"})
         return
     mcap_path = rec_mod.runs_root() / seal["robot_id"] / f"{seal['run']}.mcap"
+    from roborun import run_manifest
+    run_manifest.finalize(mcap_path, seal=seal)
     indexed = None
     try:
         from roborun.observations import extract_run
