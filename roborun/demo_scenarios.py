@@ -28,9 +28,11 @@ def threshold_gain(ctx):
 
 
 def _register_mjx() -> None:
+    # Register iff the [mjx] extra is present — but DON'T import it here (that
+    # triggers mujoco_warp's noisy optional-dep messages on every CLI listing).
     try:
-        from roborun.mjx_env import available
-        if not available():
+        from roborun.mjx_env import installed
+        if not installed():
             return
     except Exception:
         return

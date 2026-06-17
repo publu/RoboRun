@@ -14,6 +14,13 @@ from __future__ import annotations
 from typing import Any, Callable
 
 
+def installed() -> bool:
+    """Whether the [mjx] extra is importable — WITHOUT importing it, so the common
+    CLI/listing path never triggers mujoco_warp's noisy optional-dep messages."""
+    import importlib.util
+    return all(importlib.util.find_spec(m) is not None for m in ("jax", "mujoco"))
+
+
 def available() -> bool:
     try:
         import jax  # noqa: F401
