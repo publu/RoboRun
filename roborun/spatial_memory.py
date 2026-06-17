@@ -318,6 +318,52 @@ class SpatialMemoryStore:
             return [self._row_to_dict(r, dets.get(r["id"], []),
                                       distance=self._dist(r, x, y, z)) for r in rows]
 
+    # ── time-range search ─────────────────────────────────────────────────
+    def search_time(self, since: float | None = None, until: float | None = None,
+                    top_k: int = 20, robot_id: str | None = None) -> list[dict]:
+        with self._lock:
+            where, params = ["1=1"], []  # type: ignore[var-annotated]
+            if since is not None:
+                where.append("ts >= ?"); params.append(since)
+            if until is not None:
+                where.append("ts <= ?"); params.append(until)
+            if robot_id:
+                where.append("robot_id = ?"); params.append(robot_id)
+            sql = (f"SELECT {_OBS_COLS} FROM observations WHERE {' AND '.join(where)} "
+                   f"ORDER BY ts DESC LIMIT ?")
+            params.append(top_k)
+            rows = self._conn.execute(sql, params).fetchall()
+            dets = self._fetch_detections([r["id"] for r in rows])
+            return [self._row_to_dict(r, dets.get(r["id"], [])) for r in rows]
+
+    # ── unified retrieval: "RAG for everything" (PERCEPTION_DATA_SPEC) ──────
+    def recall(self, query: Any = None, by: str = "clip", k: int = 10,
+               robot_id: str | None = None, **kw: Any) -> list[dict]:
+        """One entry over every index the agent/behaviors call:
+          by="clip"  → CLIP semantic (query: text str or np.ndarray embedding)
+          by="label" → indexed YOLO label (query: str)
+          by="near"  → spatial (kw: x, y[, z, radius])
+          by="time"  → time range (kw: since, until — unix seconds)
+        Returns Observation dicts (frame_ref → pull full frame from MCAP)."""
+        by = (by or "clip").lower()
+        if by == "label":
+            return self.search_yolo(str(query), top_k=k, robot_id=robot_id)
+        if by == "near":
+            return self.search_nearby(float(kw["x"]), float(kw["y"]),
+                                      kw.get("z"), float(kw.get("radius", 2.0)),
+                                      top_k=k, robot_id=robot_id)
+        if by == "time":
+            return self.search_time(kw.get("since"), kw.get("until"),
+                                    top_k=k, robot_id=robot_id)
+        if by == "clip":
+            import numpy as np
+            emb = query
+            if not isinstance(emb, np.ndarray):
+                from roborun.models import CLIPMatcher
+                emb = CLIPMatcher().embed_text(str(query))
+            return self.search_clip(emb, top_k=k, robot_id=robot_id)
+        raise ValueError(f"unknown recall mode {by!r} (clip|label|near|time)")
+
     def list_memories(
         self, limit: int = 50, robot_id: str | None = None, since: float | None = None,
         source: str | None = None, run_id: str | None = None,

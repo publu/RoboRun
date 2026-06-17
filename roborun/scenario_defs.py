@@ -87,11 +87,13 @@ class ScenarioContext:
     the scoring run, and a deadline-aware control helper."""
 
     def __init__(self, robot: Any, run: Any, params: dict[str, Any],
-                 deadline: float, tick_hz: float = 10.0) -> None:
+                 deadline: float, tick_hz: float = 10.0,
+                 seed: int | None = None) -> None:
         self.robot = robot
         self.run = run
         self.params = params
         self.deadline = deadline
+        self.seed = seed
         self._dt = 1.0 / max(1e-3, tick_hz)
 
     @property
@@ -126,17 +128,20 @@ def _default_handle():
 
 def run_scenario(name: str, robot: Any = None,
                  params: dict[str, Any] | None = None,
-                 tick_hz: float = 10.0) -> dict[str, Any]:
+                 tick_hz: float = 10.0, seed: int | None = None) -> dict[str, Any]:
     """Run one scenario by name; return its scored record. Raises KeyError if
-    the scenario isn't registered."""
+    the scenario isn't registered. `seed` is recorded into the run envelope for
+    deterministic replay + fair A/B (LOCAL_SIM_SPEC Phase 4)."""
     d = _REGISTRY.get(name)
     if d is None:
         raise KeyError(f"no scenario named {name!r}")
     robot = robot if robot is not None else _default_handle()
     merged = {**d.params, **(params or {})}
-    with scenario(d.name, tags=d.tags, params=merged, suite=d.suite) as run:
+    with scenario(d.name, tags=d.tags, params=merged, suite=d.suite,
+                  seed=seed) as run:
         ctx = ScenarioContext(robot=robot, run=run, params=merged,
-                              deadline=time.time() + d.timeout_s, tick_hz=tick_hz)
+                              deadline=time.time() + d.timeout_s, tick_hz=tick_hz,
+                              seed=seed)
         d.fn(ctx)
     # The record is persisted on context exit; read it back by id.
     rec = get_result(run.scenario_id)
@@ -161,4 +166,63 @@ def run_suite(suite: str, robot: Any = None,
     emit("scenario", "suite",
          f"suite {suite} done · {int(summary['pass_rate']*100)}% "
          f"({passed}/{len(results)})", {"suite": suite})
+    return summary
+
+
+# ── algorithm testing: A/B + sweeps + regression gates ──────────────────────
+
+
+def run_matrix(scenario_name: str,
+               variants: dict[str, dict[str, Any]] | None = None,
+               seeds: "list[int] | range" = (0,),
+               robot_factory: Callable[[str, int], Any] | None = None,
+               tick_hz: float = 10.0) -> dict[str, Any]:
+    """Run one scenario across {variant × seed} and compare — the A/B + sweep
+    runner. `variants` maps a name → param overrides; `robot_factory(variant,
+    seed)` supplies the handle per cell (defaults to the scenario's own handle).
+    Each cell is a sealed run, so the comparison is verifiable, not asserted.
+
+    Returns {cells, by_variant:{v:{runs,passed,pass_rate,mean,std}}, winner}."""
+    variants = variants or {"default": {}}
+    seeds = list(seeds)
+    cells: list[dict[str, Any]] = []
+    for vname, overrides in variants.items():
+        for s in seeds:
+            robot = robot_factory(vname, s) if robot_factory else None
+            rec = run_scenario(scenario_name, robot=robot,
+                               params={**(overrides or {}), "_variant": vname},
+                               tick_hz=tick_hz, seed=s)
+            cells.append({"variant": vname, "seed": s,
+                          "outcome": rec.get("outcome"),
+                          "metrics": rec.get("metrics", {}),
+                          "scenario_id": rec.get("scenario_id"),
+                          "run_id": rec.get("run_id")})
+    by_variant: dict[str, dict[str, Any]] = {}
+    for vname in variants:
+        rows = [c for c in cells if c["variant"] == vname]
+        passed = sum(1 for c in rows if c["outcome"] == "passed")
+        by_variant[vname] = {
+            "runs": len(rows), "passed": passed,
+            "pass_rate": round(passed / len(rows), 3) if rows else 0.0,
+        }
+    winner = max(by_variant, key=lambda v: by_variant[v]["pass_rate"]) if by_variant else None
+    emit("scenario", "matrix",
+         f"matrix {scenario_name} · {len(variants)}×{len(seeds)} → winner {winner}",
+         {"scenario": scenario_name})
+    return {"scenario": scenario_name, "seeds": seeds, "cells": cells,
+            "by_variant": by_variant, "winner": winner}
+
+
+def regression_gate(suite: str, baseline_pass_rate: float,
+                    robot: Any = None) -> dict[str, Any]:
+    """Run a suite and return {ok, pass_rate, baseline}. `ok` is False when the
+    suite regressed below the baseline — wire into CI (`exit(0 if ok else 1)`)."""
+    summary = run_suite(suite, robot=robot)
+    ok = summary.get("pass_rate", 0.0) >= baseline_pass_rate
+    summary["ok"] = ok
+    summary["baseline"] = baseline_pass_rate
+    emit("scenario", "gate",
+         f"gate {suite}: {int(summary.get('pass_rate',0)*100)}% vs "
+         f"{int(baseline_pass_rate*100)}% → {'PASS' if ok else 'REGRESSION'}",
+         {"suite": suite, "ok": ok})
     return summary

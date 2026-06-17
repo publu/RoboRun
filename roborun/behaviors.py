@@ -551,10 +551,12 @@ class Robot:
 
     def move(self, forward: float = 0.0, strafe: float = 0.0, turn: float = 0.0,
              climb: float = 0.0) -> None:
+        raw = (forward, strafe, turn, climb)
         forward = max(-MAX_LINEAR, min(MAX_LINEAR, forward))
         strafe = max(-MAX_LINEAR, min(MAX_LINEAR, strafe))
         turn = max(-MAX_ANGULAR, min(MAX_ANGULAR, turn))
         climb = max(-MAX_LINEAR, min(MAX_LINEAR, climb))  # Twist linear.z
+        clamped = (forward, strafe, turn, climb) != raw
 
         sent = False
         try:
@@ -598,6 +600,17 @@ class Robot:
                      "a robot (further move logs muted)", {})
             return
         self._warned_no_actuator = False
+
+        # Record the command actually sent (post-clamp) into the sealed run, so
+        # replay answers "why did it move", not just "what did it see".
+        try:
+            from roborun.recorder import active_recorder
+            rec = active_recorder()
+            if rec is not None:
+                rec.write_cmd(forward, strafe, turn, climb,
+                              source=self._name, clamped=clamped)
+        except Exception:
+            pass
 
         # Real actuator: log on sharp changes immediately, otherwise ≤1/sec.
         cmd = (forward, strafe, turn)

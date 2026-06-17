@@ -57,6 +57,7 @@ import roborun.routes.skills  # noqa: F401
 import roborun.routes.run  # noqa: F401
 import roborun.routes.arena  # noqa: F401
 import roborun.routes.behaviors  # noqa: F401
+import roborun.routes.scenarios  # noqa: F401
 from roborun.routes import dispatch_get, dispatch_post, read_json, send_json, ApiError
 from roborun.routes.mcp import handle_mcp_request, handle_mcp_sse
 
@@ -118,6 +119,9 @@ class Handler(SimpleHTTPRequestHandler):
         # the fleet comms sandbox is its own page; "/fleet" is the clean URL
         if path_only == "/fleet":
             self.path = "/fleet.html"
+        # the scenarios board (suites + scored runs)
+        if path_only == "/scenarios":
+            self.path = "/scenarios.html"
         super().do_GET()
 
     def do_OPTIONS(self) -> None:

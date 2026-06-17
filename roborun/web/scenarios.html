@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script src="./runtime-base.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoboRun · Scenarios</title>
+<style>
+  :root{ --bg:#0b0e0c; --panel:#11150f; --line:#1e2a1f; --fg:#e6f0e8; --dim:#7aaf90;
+         --accent:#00d47e; --red:#e0563f; --amber:#d4a030; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--fg);
+        font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  header{ display:flex; align-items:baseline; gap:16px; padding:18px 24px;
+          border-bottom:1px solid var(--line); }
+  header h1{ font-size:16px; margin:0; letter-spacing:.5px; }
+  header .sub{ color:var(--dim); font-size:12px; }
+  header a{ color:var(--dim); text-decoration:none; margin-left:auto; }
+  main{ padding:24px; max-width:1200px; margin:0 auto; }
+  h2{ font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--dim);
+      margin:28px 0 12px; }
+  .cards{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; }
+  .card{ background:var(--panel); border:1px solid var(--line); border-radius:10px;
+         padding:14px 16px; cursor:pointer; transition:border-color .15s; }
+  .card:hover{ border-color:var(--accent); }
+  .card.sel{ border-color:var(--accent); }
+  .card .name{ font-weight:600; margin-bottom:8px; word-break:break-word; }
+  .rate{ font-size:26px; font-weight:700; }
+  .rate small{ font-size:12px; color:var(--dim); font-weight:400; margin-left:6px; }
+  .bar{ height:5px; border-radius:3px; background:#23311f; margin:8px 0 6px; overflow:hidden; }
+  .bar i{ display:block; height:100%; background:var(--accent); }
+  .meta{ color:var(--dim); font-size:11px; }
+  table{ width:100%; border-collapse:collapse; }
+  th,td{ text-align:left; padding:8px 10px; border-bottom:1px solid var(--line);
+         font-size:12px; vertical-align:top; }
+  th{ color:var(--dim); font-weight:500; text-transform:uppercase; letter-spacing:.5px; }
+  .pill{ display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; }
+  .passed{ background:rgba(0,212,126,.15); color:var(--accent); }
+  .failed{ background:rgba(224,86,63,.15); color:var(--red); }
+  .error{ background:rgba(212,160,48,.15); color:var(--amber); }
+  .metrics{ color:var(--dim); }
+  .empty{ color:var(--dim); padding:40px; text-align:center; }
+  .filters{ display:flex; gap:8px; margin-bottom:12px; }
+  .filters button{ background:var(--panel); color:var(--dim); border:1px solid var(--line);
+        border-radius:6px; padding:4px 12px; cursor:pointer; font:inherit; font-size:12px; }
+  .filters button.on{ color:var(--accent); border-color:var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>SCENARIOS</h1>
+  <span class="sub">scored runs · suites · pass-rate — every run sealed &amp; cross-embodiment</span>
+  <a href="/">← cockpit</a>
+</header>
+<main>
+  <h2>Suites</h2>
+  <div id="suites" class="cards"><div class="empty">loading…</div></div>
+
+  <h2 id="runsHead">Runs</h2>
+  <div class="filters" id="filters">
+    <button data-o="" class="on">all</button>
+    <button data-o="passed">passed</button>
+    <button data-o="failed">failed</button>
+    <button data-o="error">error</button>
+  </div>
+  <table>
+    <thead><tr><th>Outcome</th><th>Scenario</th><th>Suite</th><th>Seed</th>
+      <th>Metrics</th><th>Eval</th><th>When</th></tr></thead>
+    <tbody id="runs"><tr><td colspan="7" class="empty">loading…</td></tr></tbody>
+  </table>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+let state = { suite:null, outcome:"" };
+
+async function j(u){ const r = await fetch(u); return r.json(); }
+
+function pct(x){ return Math.round((x||0)*100); }
+
+async function loadSuites(){
+  const d = await j("/api/scenarios/suites");
+  const el = $("#suites");
+  if(!d.suites || !d.suites.length){ el.innerHTML='<div class="empty">No suites yet — run a scenario with a <code>suite=</code> group.</div>'; return; }
+  el.innerHTML = d.suites.map(c => `
+    <div class="card ${state.suite===c.suite?'sel':''}" data-suite="${c.suite}">
+      <div class="name">${c.suite}</div>
+      <div class="rate">${pct(c.pass_rate)}%<small>${c.passed}/${c.runs} pass</small></div>
+      <div class="bar"><i style="width:${pct(c.pass_rate)}%"></i></div>
+      <div class="meta">${(c.scenarios||[]).slice(0,4).join(", ")}${c.scenarios&&c.scenarios.length>4?"…":""}</div>
+    </div>`).join("");
+  el.querySelectorAll(".card").forEach(card => card.onclick = () => {
+    state.suite = state.suite===card.dataset.suite ? null : card.dataset.suite;
+    loadSuites(); loadRuns();
+  });
+}
+
+async function loadRuns(){
+  const qs = new URLSearchParams();
+  if(state.suite) qs.set("suite", state.suite);
+  if(state.outcome) qs.set("outcome", state.outcome);
+  const d = await j("/api/scenarios?"+qs.toString());
+  $("#runsHead").textContent = "Runs" + (state.suite? " · "+state.suite : "") + ` (${d.total})`;
+  const tb = $("#runs");
+  if(!d.results || !d.results.length){ tb.innerHTML='<tr><td colspan="7" class="empty">No runs.</td></tr>'; return; }
+  tb.innerHTML = d.results.map(r => {
+    const m = Object.entries(r.metrics||{}).filter(([k])=>!k.startsWith("_"))
+      .slice(0,4).map(([k,v])=>`${k}: ${v}`).join(" · ");
+    const ev = Object.entries(r.evaluation||{}).map(([g,vs])=>
+      `${g}{${Object.entries(vs).map(([k,v])=>k+":"+v).join(",")}}`).join(" ");
+    return `<tr>
+      <td><span class="pill ${r.outcome}">${r.outcome}</span>${r.reason?`<div class="meta">${r.reason}</div>`:""}</td>
+      <td>${r.name}</td><td class="metrics">${r.suite||"—"}</td>
+      <td class="metrics">${r.seed??"—"}</td>
+      <td class="metrics">${m||"—"}</td><td class="metrics">${ev||"—"}</td>
+      <td class="metrics">${(r.ended||"").replace("T"," ").replace("Z","")}</td>
+    </tr>`;
+  }).join("");
+}
+
+$("#filters").querySelectorAll("button").forEach(b => b.onclick = () => {
+  state.outcome = b.dataset.o;
+  $("#filters").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
+  loadRuns();
+});
+
+loadSuites(); loadRuns();
+setInterval(()=>{ loadSuites(); loadRuns(); }, 5000);
+</script>
+</body>
+</html>

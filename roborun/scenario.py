@@ -58,6 +58,7 @@ class ScenarioRun:
     params: dict[str, Any] = field(default_factory=dict)
     robot: str = "local"
     suite: str | None = None  # groups runs into a pass-rate card (Antioch suites)
+    seed: int | None = None  # recorded for deterministic replay + fair A/B
     scenario_id: str = ""
     run_id: str | None = None  # linked sealed MCAP run, if recording
     started: float = field(default_factory=time.time)
@@ -114,6 +115,7 @@ class ScenarioRun:
             "params": self.params,
             "robot": self.robot,
             "suite": self.suite,
+            "seed": self.seed,
             "run_id": self.run_id,
             "outcome": self.outcome,
             "reason": self.reason,
@@ -172,7 +174,8 @@ class _ScenarioCtx:
 
 def scenario(name: str, tags: list[str] | None = None,
              params: dict[str, Any] | None = None,
-             robot: str = "local", suite: str | None = None) -> _ScenarioCtx:
+             robot: str = "local", suite: str | None = None,
+             seed: int | None = None) -> _ScenarioCtx:
     """Open a scored scenario. Use as a context manager; see module docstring.
 
     `suite` groups runs into one pass-rate card (Antioch's suites). If a
@@ -194,7 +197,7 @@ def scenario(name: str, tags: list[str] | None = None,
         pass
     run = ScenarioRun(name=name, tags=list(tags or []),
                       params=dict(params or {}), robot=robot, suite=suite,
-                      scenario_id=sid, run_id=run_id)
+                      seed=seed, scenario_id=sid, run_id=run_id)
     return _ScenarioCtx(run)
 
 

@@ -112,6 +112,39 @@ SCHEMAS: dict[str, dict] = {
             "prev": {"type": "string"},
         },
     },
+    "roborun.Command": {
+        "type": "object",
+        "properties": {
+            "timestamp": {"type": "object"},
+            "forward": {"type": "number"}, "strafe": {"type": "number"},
+            "turn": {"type": "number"}, "climb": {"type": "number"},
+            "grip": {"type": "boolean"}, "source": {"type": "string"},
+            "clamped": {"type": "boolean"},
+        },
+    },
+    "roborun.Telemetry": {
+        "type": "object",
+        "properties": {
+            "timestamp": {"type": "object"},
+            "channel": {"type": "string"}, "data": {"type": "object"},
+        },
+    },
+    "sensor_msgs/NavSatFix": {
+        "type": "object",
+        "properties": {
+            "timestamp": {"type": "object"},
+            "latitude": {"type": "number"}, "longitude": {"type": "number"},
+            "altitude": {"type": "number"}, "status": {"type": "integer"},
+        },
+    },
+    "foxglove.PointCloud": {
+        "type": "object",
+        "properties": {
+            "timestamp": {"type": "object"}, "frame_id": {"type": "string"},
+            "point_count": {"type": "integer"},
+            "points": {"type": "string", "contentEncoding": "base64"},
+        },
+    },
     "roborun.Json": {"type": "object"},
 }
 
@@ -279,6 +312,51 @@ class RunRecorder:
                      "orientation": orientation or {"x": 0, "y": 0, "z": 0, "w": 1}},
         }, ts)
 
+    def write_cmd(self, forward: float = 0.0, strafe: float = 0.0,
+                  turn: float = 0.0, climb: float = 0.0, grip: bool = False,
+                  source: str = "", clamped: bool = False,
+                  ts: float | None = None) -> None:
+        """The commanded action actually sent to the robot (post safety-clamp).
+        Records *why* it moved, not just what it saw — the spine of replay."""
+        ts = ts if ts is not None else time.time()
+        self.write_json("/cmd", "roborun.Command", {
+            "timestamp": _ts_obj(ts), "forward": forward, "strafe": strafe,
+            "turn": turn, "climb": climb, "grip": bool(grip),
+            "source": source, "clamped": bool(clamped),
+        }, ts)
+
+    def write_telemetry(self, channel: str, data: dict,
+                        ts: float | None = None) -> None:
+        """A telemetry series sample (battery/imu/joints/velocity/…) as a durable
+        MCAP channel, not just the ephemeral in-memory ring."""
+        ts = ts if ts is not None else time.time()
+        self.write_json(f"/telemetry/{channel}", "roborun.Telemetry", {
+            "timestamp": _ts_obj(ts), "channel": channel, "data": data,
+        }, ts)
+
+    def write_gps(self, latitude: float, longitude: float, altitude: float = 0.0,
+                  status: int = 0, ts: float | None = None) -> None:
+        ts = ts if ts is not None else time.time()
+        self.write_json("/gps", "sensor_msgs/NavSatFix", {
+            "timestamp": _ts_obj(ts), "latitude": latitude,
+            "longitude": longitude, "altitude": altitude, "status": status,
+        }, ts)
+
+    def write_cloud(self, name: str, points: list, frame_id: str = "world",
+                    ts: float | None = None) -> None:
+        """A point cloud (lidar/depth/gz) as foxglove.PointCloud. `points` is a
+        flat [x,y,z,...] float list, base64-packed; full cloud lives here, a
+        summary (centroid/bbox) goes to the hot index (PERCEPTION_DATA_SPEC)."""
+        import base64
+        import struct
+        ts = ts if ts is not None else time.time()
+        flat = [float(v) for v in points]
+        packed = base64.b64encode(struct.pack(f"<{len(flat)}f", *flat)).decode()
+        self.write_json(f"/cloud/{name}", "foxglove.PointCloud", {
+            "timestamp": _ts_obj(ts), "frame_id": frame_id,
+            "point_count": len(flat) // 3, "points": packed,
+        }, ts)
+
     def write_scan(self, ranges: list, x: float, y: float, heading: float,
                    frame_id: str = "world", ts: float | None = None) -> None:
         """Lidar as foxglove.LaserScan — the 3D panel draws the sweep
@@ -402,8 +480,17 @@ class RunRecorder:
                 "recording": not self._closed,
             }
 
-    def close(self, do_anchor: bool = True) -> dict[str, Any]:
-        """Finish the MCAP, seal it (O(1) seal + Merkle root), anchor the root."""
+    def close(self, do_anchor: bool = True,
+              anchor_async: bool = True) -> dict[str, Any]:
+        """Finish the MCAP and seal it (O(1) Merkle root + Ed25519 signature).
+
+        The signature is computed synchronously — that IS the integrity anchor,
+        and it binds the run at seal time. The *external timestamp* (RFC 3161) is
+        deferred to a background thread by default (`anchor_async`), so sealing no
+        longer blocks on TSA HTTP (was up to 10 s/TSA). `verify` already reports
+        `consistent_unanchored` → `verified_anchored` once the `.tsr` lands, so
+        async anchoring is exactly the existing offline path made the default —
+        no new trust assumption. Pass `anchor_async=False` for a blocking stamp."""
         with self._lock:
             if self._closed:
                 return json.loads(self.seal_path.read_text())
@@ -431,21 +518,41 @@ class RunRecorder:
                 "prev_run": self.prev_run,
                 "signature": sign_message(
                     f"{root}|{len(self._segments)}|{sealed_at}".encode()),
+                "anchor": {"status": "unanchored"},
             }
-            anchor_info: dict[str, Any] = {"status": "unanchored"}
-            if do_anchor:
-                tsr_bytes = anchor.stamp_digest(bytes.fromhex(root))
-                if tsr_bytes is not None:
-                    tsr_path = self.seal_path.with_suffix(".seal.tsr")
-                    tsr_path.write_bytes(tsr_bytes)
-                    anchor_info = {**anchor.status(
-                        tsr_path, expected_digest=bytes.fromhex(root)),
-                        "tsr": tsr_path.name}
-                else:
-                    anchor_info["reason"] = "offline or asn1crypto unavailable"
+            # Write the sealed (signed) record immediately — integrity is anchored.
+            self.seal_path.write_text(json.dumps(seal, indent=1))
+
+        if do_anchor:
+            if anchor_async:
+                threading.Thread(target=self._anchor_into_seal, args=(root,),
+                                 daemon=True, name=f"anchor-{self.run_id}").start()
+            else:
+                self._anchor_into_seal(root)
+                return json.loads(self.seal_path.read_text())
+        return seal
+
+    def _anchor_into_seal(self, root: str) -> dict[str, Any]:
+        """Stamp the Merkle root with an RFC 3161 TSA and fold the proof into the
+        already-written seal. Safe to run in a background thread."""
+        anchor_info: dict[str, Any] = {"status": "unanchored"}
+        try:
+            tsr_bytes = anchor.stamp_digest(bytes.fromhex(root))
+            if tsr_bytes is not None:
+                tsr_path = self.seal_path.with_suffix(".seal.tsr")
+                tsr_path.write_bytes(tsr_bytes)
+                anchor_info = {**anchor.status(
+                    tsr_path, expected_digest=bytes.fromhex(root)),
+                    "tsr": tsr_path.name}
+            else:
+                anchor_info["reason"] = "offline or asn1crypto unavailable"
+        except Exception as exc:  # never let anchoring crash a finished run
+            anchor_info["reason"] = f"anchor error: {exc}"
+        with self._lock:
+            seal = json.loads(self.seal_path.read_text())
             seal["anchor"] = anchor_info
             self.seal_path.write_text(json.dumps(seal, indent=1))
-            return seal
+        return anchor_info
 
 
 # ── verification ─────────────────────────────────────────────────────────
