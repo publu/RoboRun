@@ -58,7 +58,7 @@ async function loadStrip(){
     $("#strip").innerHTML = e.length? e.map(m=>`<div class="f">
       <img loading="lazy" src="/api/memory/thumb/${m.id}" onerror="this.style.visibility='hidden'">
       <div class="t">${time(m.ts)}</div></div>`).join("")
-      : '<div class="empty">no keyframes yet</div>';
+      : '<div class="empty">No camera snapshots yet — start a camera or sim, or run <code>roborun demo</code>.</div>';
   }catch(e){}
 }
 
