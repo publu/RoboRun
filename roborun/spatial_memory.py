@@ -610,6 +610,15 @@ class SpatialMemoryStore:
             rows = [r for r in rows if r.get("source_id") == source_id]
         return rows[:k]
 
+    def object_tracks(self, radius: float = 1.5, since: float | None = None,
+                      robot_id: str | None = None, limit: int = 800) -> list[dict]:
+        """Environment-level object tracks (spec 05 P3): cluster recent detections
+        by label + env-frame proximity into things-seen-at-a-place. Scoped to the
+        active project's index."""
+        from roborun.spatial import cluster_tracks
+        rows = self.search_time(since=since, until=None, top_k=limit, robot_id=robot_id)
+        return cluster_tracks(rows, radius=radius)
+
     def list_memories(
         self, limit: int = 50, robot_id: str | None = None, since: float | None = None,
         source: str | None = None, run_id: str | None = None,

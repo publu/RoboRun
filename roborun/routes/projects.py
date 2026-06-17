@@ -108,6 +108,30 @@ def list_backends(h):
     send_json(h, 200, {"ok": True, "backends": backends.list_backends()})
 
 
+@get("/api/spatial")
+def spatial_view(h):
+    """The environment's spatial picture (specs 05/09 P4): object tracks fused
+    into the env frame + the registered camera placements/frusta. Scoped to the
+    active project/environment."""
+    from roborun.routes._singletons import get_memory
+    from roborun import spatial as _sp
+    a = projects.active()
+    env = environments.active_meta() if a else None
+    cams = (env or {}).get("cameras", [])
+    frusta = []
+    for c in cams:
+        p = c.get("placement") or {}
+        frusta.append({"source_id": c.get("source_id"), "kind": c.get("kind"),
+                       "placement": p, "frustum": _sp.camera_frustum(p)})
+    try:
+        tracks = get_memory().object_tracks(radius=float(
+            (parse_qs(urlparse(h.path).query).get("radius") or ["1.5"])[0]))
+    except Exception:
+        tracks = []
+    send_json(h, 200, {"ok": True, "active": a, "environment": (env or {}).get("id"),
+                       "cameras": frusta, "tracks": tracks})
+
+
 @get("/api/runs")
 def list_runs(h):
     """MCAP runs in the active project/environment, with their manifests —
