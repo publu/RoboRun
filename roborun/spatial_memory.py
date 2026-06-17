@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS observations (
     thumbnail       BLOB,
     embedding       BLOB,
     source          TEXT,
+    source_id       TEXT,
     metadata        TEXT
 );
 CREATE TABLE IF NOT EXISTS detections (
@@ -72,7 +73,7 @@ CREATE INDEX IF NOT EXISTS idx_obs_run      ON observations(run_id);
 """
 
 _OBS_COLS = ("id, robot_id, run_id, ts, x, y, z, frame_id, frame_topic, "
-             "frame_log_time, source, metadata")
+             "frame_log_time, source, source_id, metadata")
 
 
 class SpatialMemoryStore:
@@ -92,6 +93,7 @@ class SpatialMemoryStore:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
         self._migrate_v1()
+        self._migrate_source_id()
         self._conn.commit()
         self._emb_cache: np.ndarray | None = None
         self._id_cache: list[str] = []
@@ -109,6 +111,15 @@ class SpatialMemoryStore:
                 self._s3 = boto3.client("s3", **kwargs)
             except ImportError:
                 pass
+
+    def _migrate_source_id(self) -> None:
+        """Additively add the multi-camera source_id column to older dbs."""
+        cols = {r[1] for r in self._conn.execute("PRAGMA table_info(observations)")}
+        if "source_id" not in cols:
+            self._conn.execute("ALTER TABLE observations ADD COLUMN source_id TEXT")
+        # index created here (after the column is guaranteed to exist)
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_obs_source "
+                           "ON observations(source_id, ts DESC)")
 
     def _migrate_v1(self) -> None:
         """Copy rows from the old `memories` table (detections as JSON) once."""
@@ -155,6 +166,7 @@ class SpatialMemoryStore:
         frame_topic: str | None = None,
         frame_log_time: int | None = None,
         source: str | None = None,
+        source_id: str | None = None,
         thumbnail: bytes | None = None,
     ) -> str:
         mid = str(uuid.uuid4())[:12]
@@ -186,12 +198,12 @@ class SpatialMemoryStore:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO observations (id, robot_id, run_id, ts, x, y, z, "
-                "frame_id, frame_topic, frame_log_time, thumbnail, embedding, source, metadata) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "frame_id, frame_topic, frame_log_time, thumbnail, embedding, source, source_id, metadata) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (mid, robot_id, run_id, ts or time.time(), x, y, z,
                  None, frame_topic, frame_log_time,
                  None if s3_stored else thumb_blob,
-                 emb_blob, source, meta_json),
+                 emb_blob, source, source_id, meta_json),
             )
             for d in detections or []:
                 self._insert_detection(mid, d)
@@ -338,31 +350,39 @@ class SpatialMemoryStore:
 
     # ── unified retrieval: "RAG for everything" (PERCEPTION_DATA_SPEC) ──────
     def recall(self, query: Any = None, by: str = "clip", k: int = 10,
-               robot_id: str | None = None, **kw: Any) -> list[dict]:
+               robot_id: str | None = None, source_id: str | None = None,
+               **kw: Any) -> list[dict]:
         """One entry over every index the agent/behaviors call:
           by="clip"  → CLIP semantic (query: text str or np.ndarray embedding)
           by="label" → indexed YOLO label (query: str)
           by="near"  → spatial (kw: x, y[, z, radius])
           by="time"  → time range (kw: since, until — unix seconds)
-        Returns Observation dicts (frame_ref → pull full frame from MCAP)."""
+        `source_id` filters to one camera angle. Returns Observation dicts
+        (frame_ref → pull full frame from MCAP)."""
         by = (by or "clip").lower()
+        # over-fetch when filtering by camera so k results survive the filter
+        kk = k * 4 if source_id else k
         if by == "label":
-            return self.search_yolo(str(query), top_k=k, robot_id=robot_id)
-        if by == "near":
-            return self.search_nearby(float(kw["x"]), float(kw["y"]),
+            rows = self.search_yolo(str(query), top_k=kk, robot_id=robot_id)
+        elif by == "near":
+            rows = self.search_nearby(float(kw["x"]), float(kw["y"]),
                                       kw.get("z"), float(kw.get("radius", 2.0)),
-                                      top_k=k, robot_id=robot_id)
-        if by == "time":
-            return self.search_time(kw.get("since"), kw.get("until"),
-                                    top_k=k, robot_id=robot_id)
-        if by == "clip":
+                                      top_k=kk, robot_id=robot_id)
+        elif by == "time":
+            rows = self.search_time(kw.get("since"), kw.get("until"),
+                                    top_k=kk, robot_id=robot_id)
+        elif by == "clip":
             import numpy as np
             emb = query
             if not isinstance(emb, np.ndarray):
                 from roborun.models import CLIPMatcher
                 emb = CLIPMatcher().embed_text(str(query))
-            return self.search_clip(emb, top_k=k, robot_id=robot_id)
-        raise ValueError(f"unknown recall mode {by!r} (clip|label|near|time)")
+            rows = self.search_clip(emb, top_k=kk, robot_id=robot_id)
+        else:
+            raise ValueError(f"unknown recall mode {by!r} (clip|label|near|time)")
+        if source_id:
+            rows = [r for r in rows if r.get("source_id") == source_id][:k]
+        return rows
 
     def list_memories(
         self, limit: int = 50, robot_id: str | None = None, since: float | None = None,
@@ -511,6 +531,7 @@ class SpatialMemoryStore:
                            "log_time": row["frame_log_time"]}
                           if row["frame_topic"] else None),
             "source": row["source"],
+            "source_id": (row["source_id"] if "source_id" in row.keys() else None),
             "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
         }
         d.update(extra)
