@@ -56,18 +56,18 @@
 const $=s=>document.querySelector(s);
 const bars=(el,items,labelKey,valKey,pct)=>{
   const max=Math.max(1,...items.map(i=>i[valKey]));
-  el.innerHTML=items.length? items.map(i=>`<div class="row">
+  paint(el, items.length? items.map(i=>`<div class="row">
     <span class="lab">${i[labelKey]}</span>
     <span class="track"><span class="fill" style="width:${pct?i[valKey]:(i[valKey]/max*100)}%"></span></span>
     <span class="v">${pct?(i[valKey]+'%'):i[valKey]}</span></div>`).join("")
-    : '<div class="empty">Nothing here yet — record a run (cockpit → <b>M</b>) or run <code>roborun demo</code> to load sample data.</div>';
+    : '<div class="empty">Nothing here yet — record a run (cockpit → <b>M</b>) or run <code>roborun demo</code> to load sample data.</div>');
 };
 function spark(el,pts){
-  if(!pts.length){ el.innerHTML='<div class="empty">no data</div>'; return; }
+  if(!pts.length){ paint(el,'<div class="empty">no data</div>'); return; }
   const max=Math.max(1,...pts.map(p=>p.count)), W=380,H=90;
   const d=pts.map((p,i)=>`${i?'L':'M'}${(i/(pts.length-1)*W).toFixed(1)},${(H-p.count/max*(H-8)-4).toFixed(1)}`).join(" ");
   const total=pts.reduce((a,p)=>a+p.count,0);
-  el.innerHTML=`<div class="spark"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path d="${d}"/></svg></div><div class="empty">${total} observations · 24h</div>`;
+  paint(el,`<div class="spark"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path d="${d}"/></svg></div><div class="empty">${total} observations · 24h</div>`);
 }
 async function load(){
   let d; try{ d=await (await fetch("/api/analytics")).json(); }catch(e){ return; }
@@ -77,20 +77,20 @@ async function load(){
     ? kpi(`${st.used_gb}G`, `of ${st.cap_gb}G used (${st.pct||0}%)`,
           `Local storage. ${st.evictable_gb||0}G is sealed + backed up and can be auto-freed (${st.runs||0} runs, ${st.sealed||0} sealed). Robots make 30–100 GB/shift — RoboRun stays local-first and keeps the tiny proofs even after freeing space.`)
     : kpi((((runs.total_bytes||0)/1e9).toFixed(2))+"G","data recorded");
-  $("#kpis").innerHTML=[
+  paint($("#kpis"),[
     kpi(obs.total??0,"things seen"),
     kpi(obs.with_embeddings??0,"AI-searchable"),
     kpi(runs.count??0,"saved runs"),
     stored,
     kpi(fleet.total??0,"robots"),
     kpi((d.suites||[]).length,"test suites"),
-  ].join("");
+  ].join(""));
   bars($("#labels"), d.labels||[], "label","count",false);
   spark($("#sparkwrap"), d.over_time||[]);
   bars($("#suites"), (d.suites||[]).map(s=>({suite:s.suite,pct:Math.round(s.pass_rate*100)})), "suite","pct",true);
   bars($("#sources"), d.sources||[], "source","count",false);
   const robots=d.robots||[]; const now=Date.now()/1000;
-  $("#fleet").innerHTML = robots.length? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">`+
+  paint($("#fleet"), robots.length? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">`+
     robots.map(r=>{
       const age = r.last_seen? now-r.last_seen : Infinity;
       const active = age < 120;            // seen in the last 2 min → active
@@ -101,7 +101,7 @@ async function load(){
       <div class="empty">${r.observations} seen · mostly ${r.top_label||"—"}</div>
       <div class="empty">last active ${r.last_seen?new Date(r.last_seen*1000).toLocaleString():"—"}</div>
     </div>`;}).join("")+`</div>`
-    : '<div class="empty">No robots have recorded data yet — connect one with <code>roborun connect</code>, start a sim, or run <code>roborun demo</code>.</div>';
+    : '<div class="empty">No robots have recorded data yet — connect one with <code>roborun connect</code>, start a sim, or run <code>roborun demo</code>.</div>');
 }
 load(); setInterval(load, 5000);
 </script>

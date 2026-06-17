@@ -93,6 +93,20 @@
   else document.addEventListener("DOMContentLoaded", badge);
 })();
 
+/* ── paint(el, html): write innerHTML only when it actually changed ──────
+ * The dashboards poll every few seconds and rebuild whole lists. Assigning
+ * innerHTML unconditionally tears down + rebuilds the DOM on every tick —
+ * that's the flicker, and it also drops hover/focus/selection. Routing the
+ * polled renders through this no-ops when the markup is identical (the
+ * common case), so the page only repaints on a real change.
+ */
+window.paint = (el, html) => {
+  if (!el || el.__lastHTML === html) return false;
+  el.__lastHTML = html;
+  el.innerHTML = html;
+  return true;
+};
+
 /* ── usage analytics (Vercel Web Analytics — events only, never video) ──
  * Lives here, not in arena.js, so it survives arena rewrites and covers
  * every page at once. Counts plays + connect-intent, broken down by

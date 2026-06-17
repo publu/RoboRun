@@ -84,20 +84,26 @@ async function loadRuns(){
   let d; try{ d=await j("/api/scenarios?"+qs.toString()); }catch(e){ return; }
   state.runs=d.results||[];
   const el=$("#runs");
-  if(!state.runs.length){ el.innerHTML='<div class="empty">No runs yet. Run a scenario (or <code>roborun demo</code>) and it shows up here.</div>'; return; }
-  el.innerHTML=state.runs.map(r=>{
+  if(!state.runs.length){ paint(el,'<div class="empty">No runs yet. Run a scenario (or <code>roborun demo</code>) and it shows up here.</div>'); return; }
+  const html=state.runs.map(r=>{
     const tags=(r.tags||[]).slice(0,3).map(t=>`<span>${t}</span>`).join("");
-    return `<a class="run ${r.run_id===state.sel?'sel':''}" data-id="${r.run_id||''}" data-key="${r.id||r.run_id||r.name}">
+    return `<a class="run" data-id="${r.run_id||''}" data-key="${r.id||r.run_id||r.name}">
       <div class="o ${r.outcome}">${(r.outcome||'·').toUpperCase()}</div>
       <div class="nm">${r.name||'(run)'}</div>
       <div class="meta">${r.suite?r.suite+' · ':''}${when(r.ended)}</div>
       <div class="tags">${tags}</div></a>`;
   }).join("");
-  el.querySelectorAll(".run").forEach(a=>a.onclick=e=>{ e.preventDefault(); select(a.dataset.id, a.dataset.key); });
-  // auto-select first / deep-linked run
-  const qid=new URLSearchParams(location.search).get("run");
-  if(qid){ select(qid, qid); }
-  else if(!state.sel && state.runs[0]){ const r=state.runs[0]; select(r.run_id||"", r.id||r.run_id||r.name); }
+  if(paint(el, html)){
+    el.querySelectorAll(".run").forEach(a=>a.onclick=e=>{ e.preventDefault(); select(a.dataset.id, a.dataset.key); });
+    el.querySelectorAll(".run").forEach(a=>a.classList.toggle("sel", a.dataset.id===state.sel || a.dataset.key===state.sel));
+  }
+  // auto-select once (first load or deep-link) — never on a poll, or the pane flashes
+  if(!state.inited){
+    state.inited=true;
+    const qid=new URLSearchParams(location.search).get("run");
+    if(qid) select(qid, qid);
+    else if(state.runs[0]){ const r=state.runs[0]; select(r.run_id||"", r.id||r.run_id||r.name); }
+  }
 }
 
 async function select(runId, key){

@@ -114,14 +114,14 @@ async function loadRunnable(){
 async function loadSuites(){
   const d = await j("/api/scenarios/suites");
   const el = $("#suites");
-  if(!d.suites || !d.suites.length){ el.innerHTML='<div class="empty">No suites yet — click a scenario above to run it, and its results will appear here grouped by suite with a pass-rate.</div>'; return; }
-  el.innerHTML = d.suites.map(c => `
+  if(!d.suites || !d.suites.length){ paint(el,'<div class="empty">No suites yet — click a scenario above to run it, and its results will appear here grouped by suite with a pass-rate.</div>'); return; }
+  if(!paint(el, d.suites.map(c => `
     <div class="card ${state.suite===c.suite?'sel':''}" data-suite="${c.suite}">
       <div class="name">${c.suite}</div>
       <div class="rate">${pct(c.pass_rate)}%<small>${c.passed}/${c.runs} pass</small></div>
       <div class="bar"><i style="width:${pct(c.pass_rate)}%"></i></div>
       <div class="meta">${(c.scenarios||[]).slice(0,4).join(", ")}${c.scenarios&&c.scenarios.length>4?"…":""}</div>
-    </div>`).join("");
+    </div>`).join(""))) return;
   el.querySelectorAll(".card").forEach(card => card.onclick = () => {
     state.suite = state.suite===card.dataset.suite ? null : card.dataset.suite;
     loadSuites(); loadRuns();
@@ -135,8 +135,8 @@ async function loadRuns(){
   const d = await j("/api/scenarios?"+qs.toString());
   $("#runsHead").textContent = "Runs" + (state.suite? " · "+state.suite : "") + ` (${d.total})`;
   const tb = $("#runs");
-  if(!d.results || !d.results.length){ tb.innerHTML='<tr><td colspan="7" class="empty">No runs recorded yet. Run a scenario above (or <code>roborun demo</code>) to see scored results here.</td></tr>'; return; }
-  tb.innerHTML = d.results.map(r => {
+  if(!d.results || !d.results.length){ paint(tb,'<tr><td colspan="7" class="empty">No runs recorded yet. Run a scenario above (or <code>roborun demo</code>) to see scored results here.</td></tr>'); return; }
+  paint(tb, d.results.map(r => {
     const m = Object.entries(r.metrics||{}).filter(([k])=>!k.startsWith("_"))
       .slice(0,4).map(([k,v])=>`${k}: ${v}`).join(" · ");
     const ev = Object.entries(r.evaluation||{}).map(([g,vs])=>
@@ -151,7 +151,7 @@ async function loadRuns(){
       <td class="metrics">${m||"—"}</td><td class="metrics">${ev||"—"}</td>
       <td class="metrics">${(r.ended||"").replace("T"," ").replace("Z","")}</td>
     </tr>`;
-  }).join("");
+  }).join(""));
 }
 
 $("#filters").querySelectorAll("button").forEach(b => b.onclick = () => {

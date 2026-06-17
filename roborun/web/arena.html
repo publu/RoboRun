@@ -45,12 +45,14 @@
              padding: 5px 8px; flex-wrap: wrap; justify-content: center;
              max-width: calc(100vw - 16px); box-sizing: border-box; }
   @media (max-width: 900px) {
-    #toolbar button { font-size: 10px; padding: 2px 6px; }
-    #toolbar { gap: 4px; }
+    #toolbar button { font-size: 12px; padding: 6px 9px; }
+    #toolbar { gap: 5px; }
   }
-  #toolbar button { background: #10161c; color: #6b7b88; border: 1px solid #2a3a46;
-                    border-radius: 4px; font: inherit; font-size: 11px;
-                    padding: 2px 9px; cursor: pointer; }
+  #toolbar button { background: #10161c; color: #aebcc7; border: 1px solid #2a3a46;
+                    border-radius: 6px; font: inherit; font-size: 13px;
+                    padding: 7px 12px; min-height: 30px; cursor: pointer;
+                    transition: background .12s, color .12s, border-color .12s; }
+  #toolbar button:hover { background: #1a242d; color: #eaf2f8; border-color: #3a4d5a; }
   #toolbar button.on { color: #00d47e; border-color: #1f4434; }
   #toolbar button.accent { color: #e0c050; border-color: #4a3f1f; }
   #toolbar .sep { width: 1px; background: #1f2a33; margin: 0 2px; }
@@ -310,9 +312,9 @@ body.cockpit #cockpit { display: flex; }
               line-height: 1.15; }
 .ck-chip.warn .v { color: #e0a030; }
 #ck-actions { display: flex; gap: 7px; align-items: center; }
-.ck-btn { background: rgba(16,22,28,.8); color: #9fb0bd; border: 1px solid #2a3a46;
-          border-radius: 8px; font: inherit; font-size: 11px; letter-spacing: .08em;
-          padding: 6px 12px; cursor: pointer; transition: all .15s; }
+.ck-btn { background: rgba(16,22,28,.8); color: #aebcc7; border: 1px solid #2a3a46;
+          border-radius: 8px; font: inherit; font-size: 12.5px; letter-spacing: .06em;
+          padding: 8px 14px; min-height: 32px; cursor: pointer; transition: all .15s; }
 .ck-btn:hover { color: #d7e0e8; border-color: #3a4d5a; }
 .ck-btn.hot { color: #06080a; background: #00d47e; border-color: #00d47e; font-weight: 700; }
 .ck-btn.hot:hover { background: #1ee08c; }
