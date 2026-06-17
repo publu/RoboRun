@@ -109,6 +109,28 @@ def make_vec(model_xml: str, n_envs: int = 256) -> MJXVecEnv:
     return MJXVecEnv(model, n_envs=n_envs)
 
 
+def score_vectorized(env: MJXVecEnv, policy_fn: Callable, reward_fn: Callable,
+                     steps: int, seed: int = 0) -> dict:
+    """Run N worlds and reduce to a pass-rate — the bridge from Simulate (MJX) to
+    Define (`scenario`). `reward_fn(obs)->float[n]` scores each world; a world
+    "passes" when its final reward >= 0. Returns per-world + aggregate, so the
+    scenario layer can record a sealed, scored MJX sweep.
+
+        with scenario("mjx-reach", suite="sim", seed=seed) as run:
+            r = score_vectorized(env, policy, reward, steps, seed)
+            run.metric("worlds", r["n"]); run.evaluate("reward", mean=r["mean"])
+            run.passed() if r["pass_rate"] >= 0.9 else run.failed("low pass-rate")
+    """
+    import numpy as np
+    obs = rollout(env, policy_fn, steps, seed)
+    rewards = np.asarray(reward_fn(obs)).reshape(-1)
+    passed = int((rewards >= 0).sum())
+    n = int(rewards.shape[0])
+    return {"n": n, "passed": passed,
+            "pass_rate": round(passed / n, 3) if n else 0.0,
+            "mean": float(rewards.mean()), "std": float(rewards.std())}
+
+
 # A minimal model for smoke tests / the "Ocean"-style sanity env (PufferLib idea):
 # a single actuated slider — trains/sanity-checks in seconds, no assets.
 SANITY_XML = """
