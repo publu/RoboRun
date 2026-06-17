@@ -209,12 +209,12 @@ function renderWhat(){
   $("#simStep").style.display=real?"none":"block";
   $("#realStep").style.display=real?"block":"none";
   $("#whatTitle").textContent = real ? "Connect a real robot" : "What to run";
-  $("#whatHint").textContent = real ? "same Python, your hardware" : "robot + task, or a fleet";
+  $("#whatHint").textContent = real ? "same Python, your hardware" : "robot + task";
   if(!real){
-    $("#robots").innerHTML=ROBOTS.map(([id,t,d])=>`<div class="opt ${id===S.robot?'sel':''}" data-r="${id}"><div class="t">${t}</div><div class="d">${d}</div></div>`).join("")
-      +`<div class="opt ${S.fleet?'sel':''}" data-fleet="1"><div class="t">🐝 Warehouse Fleet</div><div class="d">N robots, floors, elevators</div></div>`;
+    // a single robot + task. A fleet is its own thing (its own page + controls).
+    $("#robots").innerHTML=ROBOTS.map(([id,t,d])=>`<div class="opt ${id===S.robot?'sel':''}" data-r="${id}"><div class="t">${t}</div><div class="d">${d}</div></div>`).join("");
     $("#robots").querySelectorAll(".opt").forEach(o=>o.onclick=()=>{
-      if(o.dataset.fleet){ S.fleet=true; } else { S.fleet=false; S.robot=o.dataset.r; S.level=LEVELS[S.robot][0][0]; }
+      S.robot=o.dataset.r; S.level=LEVELS[S.robot][0][0];
       $("#robots").querySelectorAll(".opt").forEach(x=>x.classList.toggle("sel",x===o)); renderTasks(); summary();
     });
     renderTasks();
@@ -222,13 +222,12 @@ function renderWhat(){
   summary();
 }
 function renderTasks(){
-  if(S.fleet){ $("#tasks").innerHTML='<div class="summary">a multi-floor warehouse — set robot count + run in the fleet sim</div>'; return; }
-  $("#tasks").innerHTML=(LEVELS[S.robot]||[]).map(([lv,t])=>`<div class="opt ${lv===S.level?'sel':''}" data-l="${lv}"><div class="t">${t}</div></div>`).join("");
+  $("#tasks").innerHTML=(LEVELS[S.robot]||[]).map(([lv,t])=>`<div class="opt ${lv===S.level?'sel':''}" data-l="${lv}"><div class="t">${t}</div></div>`).join("")
+    +`<div style="margin-top:12px;font-size:12px;color:var(--fg-dim)">Running a swarm instead? A fleet is its own thing → <a href="/fleet-sim" style="color:var(--accent);text-decoration:none">Fleet Sim</a></div>`;
   $("#tasks").querySelectorAll(".opt").forEach(o=>o.onclick=()=>{ S.level=o.dataset.l; $("#tasks").querySelectorAll(".opt").forEach(x=>x.classList.toggle("sel",x===o)); summary(); });
 }
 function suggestName(){
   if(!SIM_BACKENDS.has(S.backend)) return S.backend+"-robot";
-  if(S.fleet) return "warehouse";
   return S.robot+"-"+S.backend;
 }
 function summary(){
@@ -242,8 +241,7 @@ function summary(){
   const real=!SIM_BACKENDS.has(S.backend);
   const proj=($("#newProj").value.trim()||$("#proj").value||"scratch");
   const env=$("#envName").value.trim()||suggestName();
-  const what = real ? `connect a real robot via ROS` :
-    S.fleet ? `warehouse fleet` : `${S.robot} · ${S.level}`;
+  const what = real ? `connect a real robot via ROS` : `${S.robot} · ${S.level}`;
   $("#summary").textContent = `Ready to launch — ${what} on ${S.backend} → ${proj}/${env}`;
 }
 // ── wizard: show one step at a time ───────────────────────────────────────
@@ -284,9 +282,8 @@ $("#launch").onclick=async()=>{
       await post("/api/environments",{project,name:envName,backend:S.backend,mode:$("#mode").value});
       await post("/api/projects/active",{project,environment:slug(envName)});
     }
-    // route to the right surface
-    if(S.fleet){ location.href="/fleet-sim"; }
-    else if(real){ location.href="/sim"; }            // cockpit + connect overlay
+    // route to the right surface (fleet is its own thing — set up via /fleet-sim)
+    if(real){ location.href="/sim"; }                 // cockpit + connect overlay
     else { location.href="/sim?level="+encodeURIComponent(S.level); }
   }catch(e){ $("#launch").textContent="▶ Launch"; $("#launch").disabled=false; $("#summary").textContent="launch failed: "+e; }
 };

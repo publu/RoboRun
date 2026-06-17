@@ -17,7 +17,7 @@ const LABELS = ["pallet", "forklift", "shelf", "crate", "barrel", "agv", "worker
 const H = 1 / 60, FLOOR_GAP = 6;
 const floorY = (f) => f * FLOOR_GAP;
 
-const S = { world: null, ctl: null, robots: [], floors: 3, size: 50, playing: true,
+const S = { world: null, ctl: null, robots: [], floors: 3, size: 50, playing: false,
             speed: 1, n: 8, floorData: [], elevators: [], detected: new Set(), found: 0,
             totalItems: 0, t0: performance.now(), canvases: [], ready: false };
 
@@ -75,7 +75,7 @@ async function build() {
 
 function spawnRobots() {
   for (const rb of S.robots) { try { S.world.removeRigidBody(rb.body); } catch {} }
-  S.robots = []; S.found = 0; S.detected = new Set(); S.t0 = performance.now();
+  S.robots = []; S.found = 0; S.detected = new Set(); S.elapsed = 0;
   const per = Math.ceil(Math.sqrt(S.n));
   for (let i = 0; i < S.n; i++) {
     const gx = i % per, gz = Math.floor(i / per);
@@ -210,7 +210,7 @@ function draw() {
 }
 function hud() {
   const cov = S.totalItems ? Math.round(S.found / S.totalItems * 100) : 0;
-  const el = (performance.now() - S.t0) / 1000;
+  const el = S.elapsed || 0;            // sim time — only advances while playing
   const tile = (n, l) => `<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`;
   $("#kpis").innerHTML = tile(S.robots.length, "robots") + tile(S.found + "/" + S.totalItems, "found") +
     tile(cov + "%", "coverage") + tile(el.toFixed(0) + "s", "elapsed");
@@ -219,8 +219,12 @@ function hud() {
 let last = performance.now(), acc = 0;
 function loop(now) {
   if (S.ready) {
-    const dt = Math.min(0.05, (now - last) / 1000) * S.speed; last = now;
-    if (S.playing) { acc += dt; let guard = 0; while (acc >= H && guard++ < 240) { stepOnce(); acc -= H; } }
+    const real = Math.min(0.05, (now - last) / 1000); last = now;
+    if (S.playing) {
+      S.elapsed = (S.elapsed || 0) + real;     // count sim time only while running
+      acc += real * S.speed; let guard = 0;
+      while (acc >= H && guard++ < 240) { stepOnce(); acc -= H; }
+    }
     draw(); hud();
   } else last = now;
   requestAnimationFrame(loop);
