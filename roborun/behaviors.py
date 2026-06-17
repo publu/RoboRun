@@ -703,6 +703,34 @@ class Robot:
     def recall(self, key: str, default: Any = None) -> Any:
         return self._load_memory().get(key, default)
 
+    # ---- semantic spatial recall + navigation (dimOS-style, over the index) ----
+
+    def recall_place(self, query: str, by: str = "label") -> dict | None:
+        """Where/when did I see <query>? Searches the persistent, all-time spatial
+        index (CLIP semantic / YOLO label) and returns the best-matching past
+        observation that has a position: {x, y, ts, label, robot_id, ...}, or None.
+        This is the memory behind 'go to where you last saw the red mug'."""
+        try:
+            from roborun.routes._singletons import get_memory
+            from roborun.session import search
+            for h in search(get_memory(), query, by=by, k=15):
+                if h.get("x") is not None:
+                    return h
+        except Exception:
+            pass
+        return None
+
+    def go_to_place(self, query: str, by: str = "label", tol: float = 0.5) -> bool:
+        """Semantic navigation: recall where <query> was seen, then goto it. True
+        when arrived, False if the place isn't in memory. Composes recall_place +
+        goto — the natural-language 'take me to X' verb, grounded in the seal."""
+        place = self.recall_place(query, by=by)
+        if place is None:
+            self.stop()
+            return False
+        self._intent("go_to_place", query, (place["x"], place.get("y", 0.0)))
+        return self.goto(place["x"], place.get("y", 0.0), tol=tol)
+
     @staticmethod
     def _load_memory() -> dict:
         try:

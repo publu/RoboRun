@@ -953,6 +953,23 @@ def _tool_seen(args: dict) -> dict:
     return {"ok": True, "sightings": summary(args.get("label"))}
 
 
+def _tool_recall_place(args: dict) -> dict:
+    """Semantic spatial recall over the all-time index: where/when was <query>
+    seen, across every run and mode. dimOS-style 'where did I last see X'."""
+    from roborun.routes._singletons import get_memory
+    from roborun.session import search
+    by = str(args.get("by", "label"))
+    hits = search(get_memory(), args.get("query", ""), by=by,
+                  k=int(args.get("k", 10)),
+                  since=args.get("since"), until=args.get("until"))
+    places = [{"x": h.get("x"), "y": h.get("y"), "ts": h.get("ts"),
+               "labels": sorted({d.get("label") for d in (h.get("detections") or [])}),
+               "robot_id": h.get("robot_id"), "source": h.get("source")}
+              for h in hits]
+    return {"ok": True, "query": args.get("query"), "count": len(places),
+            "places": places}
+
+
 def _tool_arena_status(args: dict) -> dict:
     from roborun.arena import get_arena
     a = get_arena()
@@ -1336,6 +1353,15 @@ MCP_TOOLS = [
             "label": {"type": "string", "description": "Filter to one label"}}},
     },
     {
+        "name": "recall_place",
+        "description": "Semantic spatial recall over the ALL-TIME index (every run, every robot, every mode): where and when was something seen, with its position. 'where did I last see the forklift', 'who was in the lobby yesterday'. by='label' (YOLO) or 'clip' (semantic text); optional since/until unix seconds.",
+        "inputSchema": {"type": "object", "properties": {
+            "query": {"type": "string", "description": "what/who to find"},
+            "by": {"type": "string", "enum": ["label", "clip", "near", "time"]},
+            "k": {"type": "integer"},
+            "since": {"type": "number"}, "until": {"type": "number"}}},
+    },
+    {
         "name": "arena_status",
         "description": "Arena chamber state: pose, rooms visited, won, live detections. The game loop: write_behavior, enable it, poll this until won.",
         "inputSchema": {"type": "object", "properties": {}},
@@ -1377,6 +1403,7 @@ _TOOL_HANDLERS = {
     "move": _tool_move,
     "see": _tool_see,
     "seen": _tool_seen,
+    "recall_place": _tool_recall_place,
     "arena_status": _tool_arena_status,
     "write_behavior": _tool_write_behavior,
     "behaviors": _tool_behaviors,
