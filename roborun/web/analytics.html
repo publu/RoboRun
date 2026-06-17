@@ -74,12 +74,12 @@ async function load(){
   const obs=d.observations||{}, runs=d.runs||{}, fleet=d.fleet||{};
   const kpi=(n,l)=>`<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`;
   $("#kpis").innerHTML=[
-    kpi(obs.total??0,"observations"),
-    kpi(obs.with_embeddings??0,"clip-indexed"),
-    kpi(runs.count??0,"sealed runs"),
-    kpi((((runs.total_bytes||0)/1e9).toFixed(2))+"G","recorded"),
+    kpi(obs.total??0,"things seen"),
+    kpi(obs.with_embeddings??0,"AI-searchable"),
+    kpi(runs.count??0,"saved runs"),
+    kpi((((runs.total_bytes||0)/1e9).toFixed(2))+"G","data recorded"),
     kpi(fleet.total??0,"robots"),
-    kpi((d.suites||[]).length,"suites"),
+    kpi((d.suites||[]).length,"test suites"),
   ].join("");
   bars($("#labels"), d.labels||[], "label","count",false);
   spark($("#sparkwrap"), d.over_time||[]);
@@ -92,7 +92,7 @@ async function load(){
       <div class="empty">${r.observations} obs · ${r.top_label||"—"}</div>
       <div class="empty">last seen ${r.last_seen?new Date(r.last_seen*1000).toLocaleString():"—"}</div>
     </div>`).join("")+`</div>`
-    : '<div class="empty">no robots have recorded data yet — connect one or run a sim</div>';
+    : '<div class="empty">No robots have recorded data yet — connect one with <code>roborun connect</code>, start a sim, or run <code>roborun demo</code>.</div>';
 }
 load(); setInterval(load, 5000);
 </script>
