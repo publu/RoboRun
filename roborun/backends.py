@@ -52,10 +52,11 @@ _REGISTRY: dict[str, dict[str, Any]] = {
                  "fleet": True, "determinism": "lockstep", "headless": True},
     },
     "isaac": {
-        "name": "Isaac Sim", "where": "isaac.py (planned, spec 03 P2)",
-        "kind": "sim", "base_status": "planned",
+        "name": "Isaac Sim", "where": "isaac.py:detect_world",
+        "kind": "sim", "base_status": "available",
         "caps": {"physics": True, "camera": True, "lidar": True,
-                 "fleet": True, "determinism": "lockstep", "headless": True},
+                 "fleet": True, "determinism": "lockstep", "headless": True,
+                 "photoreal": True},
     },
     "real": {
         "name": "Real robot (ROS)", "where": "transport/, ros_telemetry.py",
@@ -76,6 +77,9 @@ def _status(bid: str, meta: dict) -> str:
         if bid == "gazebo":
             from roborun import gz
             return "ready" if gz.detect_world() else "available"
+        if bid == "isaac":
+            from roborun import isaac
+            return "ready" if isaac.detect_world() else "available"
     except Exception:
         pass
     return base
