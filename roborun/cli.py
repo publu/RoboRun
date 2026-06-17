@@ -177,9 +177,12 @@ def dataset_cli(argv: list[str]) -> int:
     import argparse
     p = argparse.ArgumentParser(prog="roborun dataset",
                                 description="Curate a labeled dataset from a search.")
-    p.add_argument("query")
+    p.add_argument("query", nargs="?", default="",
+                   help="what to curate (optional for --by uncertain)")
     p.add_argument("out", help="output directory")
-    p.add_argument("--by", default="label", choices=["label", "clip", "near", "time"])
+    p.add_argument("--by", default="label",
+                   choices=["label", "clip", "near", "time", "uncertain"],
+                   help="'uncertain' = active learning: the examples worth labeling")
     p.add_argument("--k", type=int, default=500)
     p.add_argument("--since", type=float)
     a = p.parse_args(argv)

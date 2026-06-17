@@ -387,6 +387,28 @@ class SpatialMemoryStore:
                                                  matching_detections=matching))
             return results
 
+    def search_uncertain(self, label: str | None = None, lo: float = 0.3,
+                         hi: float = 0.6, top_k: int = 50,
+                         robot_id: str | None = None) -> list[dict]:
+        """Active learning: observations whose detections sit in the uncertain
+        confidence band [lo, hi] — confident enough to be real, unsure enough to be
+        worth a human label. 'Curate first, annotate smarter.'"""
+        with self._lock:
+            where = ["d.score >= ?", "d.score <= ?"]
+            params: list[Any] = [lo, hi]
+            if label:
+                where.append("d.label = ?"); params.append(label.lower().strip())
+            if robot_id:
+                where.append("o.robot_id = ?"); params.append(robot_id)
+            sql = (f"SELECT DISTINCT {', '.join('o.' + c.strip() for c in _OBS_COLS.split(','))}, "
+                   f"MIN(ABS(d.score - ?)) AS unc "
+                   f"FROM observations o JOIN detections d ON d.obs_id = o.id "
+                   f"WHERE {' AND '.join(where)} GROUP BY o.id ORDER BY unc ASC LIMIT ?")
+            mid = (lo + hi) / 2
+            rows = self._conn.execute(sql, [mid] + params + [top_k]).fetchall()
+            dets = self._fetch_detections([r["id"] for r in rows])
+            return [self._row_to_dict(r, dets.get(r["id"], [])) for r in rows]
+
     def search_nearby(
         self,
         x: float,
@@ -509,6 +531,11 @@ class SpatialMemoryStore:
         elif by == "time":
             rows = self.search_time(kw.get("since"), kw.get("until"),
                                     top_k=kk, robot_id=robot_id)
+        elif by == "uncertain":
+            rows = self.search_uncertain(label=(str(query) if query else None),
+                                         lo=float(kw.get("lo", 0.3)),
+                                         hi=float(kw.get("hi", 0.6)),
+                                         top_k=kk, robot_id=robot_id)
         elif by == "clip":
             import numpy as np
             emb = query
