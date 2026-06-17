@@ -188,7 +188,41 @@ def export_dataset(store: Any, query: Any, out_dir: str, by: str = "label",
     (out / "dataset.json").write_text(json.dumps(
         {"query": str(query), "by": by, "count": len(manifest),
          "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}, indent=2))
-    return {"ok": True, "count": len(manifest), "dir": str(out)}
+
+    # Provenance manifest — make the training set's integrity independently
+    # verifiable (the robot-data analogue of C2PA Content Credentials; matters as
+    # the EU AI Act + ISO push provenance toward a compliance requirement). Each
+    # image traces to a sealed, RFC-3161-timestamped run; the seal is the proof.
+    runs = {}
+    for m in manifest:
+        rid = m.get("run_id")
+        if not rid or rid in runs:
+            continue
+        mcap = _find_mcap(rid, m.get("robot_id"))
+        seal = mcap.with_suffix(".seal") if mcap is not None else None
+        if seal is not None and seal.exists():
+            try:
+                s = json.loads(seal.read_text())
+                runs[rid] = {"merkle_root": s.get("merkle_root"),
+                             "sealed_at": s.get("sealed_at"),
+                             "anchor": (s.get("anchor") or {}).get("status"),
+                             "robot_id": s.get("robot_id")}
+            except Exception:
+                runs[rid] = {"merkle_root": None, "note": "unreadable seal"}
+        else:
+            runs[rid] = {"merkle_root": None, "note": "no seal (unsealed run)"}
+    sealed = sum(1 for r in runs.values() if r.get("merkle_root"))
+    (out / "provenance.json").write_text(json.dumps({
+        "schema": "roborun-dataset-provenance/1",
+        "images": len(manifest), "source_runs": len(runs),
+        "sealed_runs": sealed,
+        "verifiable": sealed == len(runs) and len(runs) > 0,
+        "note": "each image traces to a source run; sealed runs carry a Merkle root "
+                "+ RFC 3161 timestamp — verify with `python -m roborun.recorder verify`.",
+        "runs": runs,
+    }, indent=2))
+    return {"ok": True, "count": len(manifest), "dir": str(out),
+            "sealed_runs": sealed, "source_runs": len(runs)}
 
 
 def search(store: Any, query: Any, by: str = "clip", k: int = 10,

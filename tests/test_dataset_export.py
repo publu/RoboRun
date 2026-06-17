@@ -42,3 +42,35 @@ def test_export_empty_query(tmp_path):
     store = SpatialMemoryStore(db_path=tmp_path / "m.db")
     r = export_dataset(store, "nothing", str(tmp_path / "ds"), by="label")
     assert r["ok"] and r["count"] == 0
+
+
+def test_export_writes_provenance_manifest(tmp_path, monkeypatch):
+    monkeypatch.setenv("ROBORUN_STATE_DIR", str(tmp_path))
+    import json, time
+    import numpy as np
+    from roborun.recorder import RunRecorder
+    from roborun.events import runs_root
+    from roborun.observations import StreamingExtractor
+    from roborun.spatial_memory import SpatialMemoryStore
+    from roborun.session import export_dataset
+
+    store = SpatialMemoryStore()
+    rec = RunRecorder(robot_id="r1", root=runs_root(), checkpoint_interval=0.05)
+    rec.extractor = StreamingExtractor(store, robot_id="r1", run_id=rec.run_id, source="production")
+    t0 = time.time()
+    for i in range(4):
+        rec.write_pose(i * 0.1, 0, 0, ts=t0 + i)
+        rec.write_detections([{"label": "pallet", "score": 1, "bbox": [0, 0, 1, 1]}], name="cam", ts=t0 + i)
+        rec.write_camera(b"\xff\xd8jpeg" + bytes([i]), name="cam", ts=t0 + i)
+    seal = rec.close(do_anchor=False)
+
+    out = tmp_path / "ds"
+    r = export_dataset(store, "pallet", str(out), by="label")
+    assert r["count"] >= 1 and r["source_runs"] == 1
+    prov = json.loads((out / "provenance.json").read_text())
+    assert prov["schema"] == "roborun-dataset-provenance/1"
+    assert prov["source_runs"] == 1 and prov["sealed_runs"] == 1
+    assert prov["verifiable"] is True
+    # each image's run traces to the sealed run's Merkle root
+    run_info = list(prov["runs"].values())[0]
+    assert run_info["merkle_root"] == seal["merkle_root"]
