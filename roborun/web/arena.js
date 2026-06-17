@@ -1302,7 +1302,9 @@ async function detectMode() {
     MODE = "wasm"; document.body.classList.add("wasm-mode"); bootWasm();
   }
   if (pinned === "sim") { enterSimCockpit(); return; }   // user pinned the sim
-  showStart();
+  // came from Setup with a chosen level (/sim?level=…)? it's already loaded —
+  // don't make the user pick a robot & task all over again.
+  if (!new URLSearchParams(location.search).get("level")) showStart();
 }
 
 /* ── robot mode: same arena, the world is the robot's telemetry ─────────
