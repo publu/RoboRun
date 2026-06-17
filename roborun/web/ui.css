@@ -44,7 +44,12 @@
 }
 
 /* ── app shell (shell.js) ──────────────────────────────────────────────── */
-.app-shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+/* the shell owns the page background so a page that forgets `body{background}`
+ * (or whose content is shorter than the viewport) never leaks white below. */
+html, body { background: var(--bg); color: var(--fg); }
+.app-shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh;
+  background: var(--bg); }
+.app-col { background: var(--bg); }
 .app-side { background: var(--bg-2); border-right: 1px solid var(--line);
   display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; }
 .app-brand { padding: 16px 18px 12px; font-size: 16px; color: var(--fg-2);
