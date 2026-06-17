@@ -102,11 +102,12 @@ class StreamingExtractor:
     and makes search live during a run."""
 
     def __init__(self, store, robot_id: str = "local", run_id: str | None = None,
-                 join_tol: float = JOIN_TOLERANCE) -> None:
+                 join_tol: float = JOIN_TOLERANCE, source: str = "stream") -> None:
         self.store = store
         self.robot_id = robot_id
         self.run_id = run_id
         self.join_tol = join_tol
+        self.source = source  # mode tag (sim/robot/production) for the index
         self._det: tuple[float, list] | None = None
         self._clip: tuple[float, Any] | None = None
         self._pose: tuple[float, tuple] | None = None
@@ -131,7 +132,7 @@ class StreamingExtractor:
         self.store.store(frame=None, embedding=emb, detections=dets,
                          x=x, y=y, z=z, robot_id=self.robot_id, ts=ts,
                          run_id=self.run_id, frame_topic=topic,
-                         frame_log_time=int(ts * 1e9), source="stream",
+                         frame_log_time=int(ts * 1e9), source=self.source,
                          source_id=source_id)
         self.inserted += 1
 

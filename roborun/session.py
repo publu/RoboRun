@@ -72,6 +72,10 @@ class PerceptionSession:
         self._stop = threading.Event()
         self._t: threading.Thread | None = None
         self.indexed = 0
+        # so the live index tags observations with the real mode (sim/robot/production)
+        ext = getattr(recorder, "extractor", None)
+        if ext is not None:
+            ext.source = mode
 
     @classmethod
     def for_mode(cls, mode: str, store: Any = None, source_id: str = "cam",
