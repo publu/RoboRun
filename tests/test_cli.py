@@ -46,3 +46,22 @@ def test_demo_cli_populates(capsys):
     from roborun.scenario import list_suites
     assert SpatialMemoryStore().stats()["total"] > 0
     assert any(s["suite"] == "demo" for s in list_suites())
+
+
+def test_status_cli_offline(capsys):
+    from roborun.cli import status_cli
+    assert status_cli([]) == 0
+    out = capsys.readouterr().out
+    assert "server:" in out and "data:" in out
+
+
+def test_ask_cli_clean_error_when_server_down(capsys, monkeypatch):
+    monkeypatch.setenv("ROBORUN_PORT", "59999")  # nothing listening
+    from roborun.cli import ask_cli
+    assert ask_cli(["go", "forward"]) == 1
+    assert "can't reach RoboRun" in capsys.readouterr().out
+
+
+def test_ask_cli_needs_a_message(capsys):
+    from roborun.cli import ask_cli
+    assert ask_cli([]) == 2

@@ -34,6 +34,74 @@ def search_cli(argv: list[str]) -> int:
     return 0
 
 
+def _base_url() -> str:
+    import os
+    return f"http://127.0.0.1:{os.environ.get('ROBORUN_PORT', '8765')}"
+
+
+def ask_cli(argv: list[str]) -> int:
+    """Send a natural-language instruction to the running robot's agent (it sees
+    the live camera and can move/act). `roborun ask "patrol the lobby"`.
+    Needs `roborun` running in another terminal."""
+    import json
+    import urllib.request
+    msg = " ".join(argv).strip()
+    if not msg:
+        print('usage: roborun ask "what you want the robot to do"'); return 2
+    req = urllib.request.Request(_base_url() + "/api/agent/chat",
+                                 data=json.dumps({"message": msg}).encode(),
+                                 headers={"Content-Type": "application/json"})
+    try:
+        resp = urllib.request.urlopen(req, timeout=120)
+    except Exception as exc:
+        print(f"can't reach RoboRun ({exc}). Start it with `roborun` first."); return 1
+    for raw in resp:
+        line = raw.decode().strip()
+        if not line.startswith("data:"):
+            continue
+        try:
+            ev = json.loads(line[5:].strip())
+        except Exception:
+            continue
+        if ev.get("type") == "text":
+            print(ev.get("text", ""), end="", flush=True)
+        elif ev.get("type") == "tool_use":
+            print(f"\n  · {ev.get('tool_name')}({json.dumps(ev.get('tool_input', {}))[:60]})", flush=True)
+        elif ev.get("type") == "error":
+            print(f"\n[agent error] {ev.get('error')}"); return 1
+        elif ev.get("type") == "done":
+            print(); return 0
+    print(); return 0
+
+
+def status_cli(argv: list[str]) -> int:
+    """Quick health: is the server up, what's connected, how much is recorded."""
+    import json
+    import urllib.request
+    up = False
+    try:
+        with urllib.request.urlopen(_base_url() + "/api/agent/status", timeout=3) as r:
+            json.loads(r.read()); up = True
+    except Exception:
+        pass
+    print(f"server:  {'up at ' + _base_url() if up else 'not running (start with `roborun`)'}")
+    try:
+        from roborun.spatial_memory import SpatialMemoryStore
+        from roborun.recorder import list_runs
+        from roborun.retention import status as st
+        s = SpatialMemoryStore().stats()
+        runs = list_runs()
+        ss = st()
+        print(f"data:    {s.get('total', 0)} things seen across {len(runs)} runs "
+              f"({ss.get('used_gb', 0)}/{ss.get('cap_gb', 0)} GB)")
+        from roborun.connect import saved_robot
+        rb = saved_robot()
+        print(f"robot:   {rb['host'] + ' (' + rb.get('type', '?') + ')' if rb else 'none connected — `roborun connect <ip>`'}")
+    except Exception as exc:
+        print(f"data:    (unavailable: {exc})")
+    return 0
+
+
 def demo_cli(argv: list[str]) -> int:
     """Seed a populated demo so a fresh install shows a live UI immediately:
     a recorded synthetic run (camera+detections+pose, indexed + searchable) and a
