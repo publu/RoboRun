@@ -507,8 +507,19 @@ body.cockpit #cockpit { display: flex; }
       </select>
       <button class="ck-btn" id="ck-policy-btn" title="edit the running behavior">⌨ POLICY</button>
       <button class="ck-btn danger" id="ck-hold" title="stop the behavior; robot holds">⏸ HOLD</button>
+      <span id="ck-views" style="position:relative">
+        <button class="ck-btn" id="ck-views-btn" title="dashboards">▤ VIEWS</button>
+        <span id="ck-views-menu" style="display:none;position:absolute;right:0;top:110%;z-index:50;background:#0d120c;border:1px solid #1e2a1f;border-radius:8px;padding:6px;min-width:140px">
+          <a href="/scenarios" style="display:block;padding:6px 10px;color:#7aaf90;text-decoration:none;font-size:12px">⊞ Scenarios</a>
+          <a href="/search" style="display:block;padding:6px 10px;color:#7aaf90;text-decoration:none;font-size:12px">🔍 Search over time</a>
+          <a href="/timeline" style="display:block;padding:6px 10px;color:#7aaf90;text-decoration:none;font-size:12px">🕓 Timeline</a>
+          <a href="/analytics" style="display:block;padding:6px 10px;color:#7aaf90;text-decoration:none;font-size:12px">📊 Analytics</a>
+          <a href="/fleet" style="display:block;padding:6px 10px;color:#7aaf90;text-decoration:none;font-size:12px">⬡ Fleet</a>
+        </span>
+      </span>
     </div>
   </div>
+  <script>(function(){var b=document.getElementById("ck-views-btn"),m=document.getElementById("ck-views-menu");if(b)b.onclick=function(e){e.stopPropagation();m.style.display=m.style.display==="none"?"block":"none";};document.addEventListener("click",function(){if(m)m.style.display="none";});})();</script>
 
   <!-- source picker: every robot/sim/camera this runtime can reach -->
   <div id="ck-sources">
