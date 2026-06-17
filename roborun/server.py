@@ -279,6 +279,7 @@ _HELP = """RoboRun — run robots, record everything, search it over time.
   roborun status          is it running, what's connected, how much is recorded
   roborun demo            load sample data so the dashboards aren't empty
   roborun ask "<task>"    tell the robot what to do in plain English (agent drives)
+  roborun stop            EMERGENCY STOP — halt all actuators + disable behaviors
   roborun connect <ip>    connect a real robot (ROS 1 or ROS 2, via rosbridge)
   roborun search <query>  find anything/anyone across every recorded run
   roborun scenarios       list / run scored behavior tests   (run <name> | suite <name>)
@@ -318,6 +319,9 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "status":
         from roborun.cli import status_cli
         raise SystemExit(status_cli(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "stop":
+        from roborun.cli import stop_cli
+        raise SystemExit(stop_cli(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] == "flag":
         from roborun.incidents import flag, list_incidents
         if len(sys.argv) > 2:

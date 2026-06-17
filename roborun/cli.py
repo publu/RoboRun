@@ -85,6 +85,28 @@ def ask_cli(argv: list[str]) -> int:
     return 1
 
 
+def stop_cli(argv: list[str]) -> int:
+    """Emergency stop: halt every actuator + disable behaviors. `roborun stop`."""
+    import json
+    import urllib.request
+    req = urllib.request.Request(_base_url() + "/api/estop", data=b"{}",
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            json.loads(r.read())
+        print("🛑 emergency stop sent — actuators halted, behaviors disabled.")
+        return 0
+    except Exception:
+        # server down: still try an in-process estop so the verb always does something
+        try:
+            from roborun.ros_mcp import handle_tool_call
+            handle_tool_call("estop", {})
+            print("🛑 estop sent in-process (server wasn't running).")
+            return 0
+        except Exception as exc:
+            print(f"couldn't send estop: {exc}"); return 1
+
+
 def status_cli(argv: list[str]) -> int:
     """Quick health: is the server up, what's connected, how much is recorded."""
     import json

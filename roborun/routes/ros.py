@@ -21,6 +21,25 @@ def _get_ros_client(host: str | None = None):
     return client
 
 
+@post("/api/estop")
+def estop(h, payload):
+    """Emergency stop — halt every live actuator now. The one command that's always
+    allowed; also disables all running behaviors so nothing re-commands motion.
+    Recorded into the sealed run as evidence the stop happened."""
+    from roborun.ros_mcp import handle_tool_call
+    res = handle_tool_call("estop", {})
+    try:
+        from roborun.behaviors import BehaviorRunner
+        for s in BehaviorRunner.get().statuses():
+            if s.get("enabled"):
+                BehaviorRunner.get().set_enabled(s["name"], False)
+    except Exception:
+        pass
+    from roborun.events import emit
+    emit("system", "estop", "EMERGENCY STOP — actuators halted, behaviors disabled", {})
+    send_json(h, 200, {"ok": True, "estop": res})
+
+
 @get("/api/ros/cloud")
 def cloud(h):
     """World-frame lidar point cloud + live pose, for the deck's SPATIAL
