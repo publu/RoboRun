@@ -132,6 +132,9 @@ class Handler(SimpleHTTPRequestHandler):
             self.path = "/analytics.html"
         if path_only == "/run":
             self.path = "/run.html"
+        # the sim cockpit + its levels: /sim?level=<name> (consistent with /run?id=)
+        if path_only == "/sim":
+            self.path = "/arena.html"
         super().do_GET()
 
     def do_OPTIONS(self) -> None:

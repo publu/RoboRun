@@ -917,20 +917,20 @@ function loadLevel(i) {
     w.order.map((id) => ({ id: `r${id}`, label: `ring ${id + 1}`, done: false })));
   postEvent("arena", `level loaded: ${LV.name}`, { robot: LV.robot });
   if (MODE === "robot" && levelGroup) levelGroup.visible = false;
-  // Route: reflect the level in the URL (#level-name) so it's bookmarkable and the
-  // browser BACK button steps between levels / out of the sim.
-  if (!window._navFromHistory) {
+  // Route: /sim?level=<name> — a path+query route, consistent with /run?id=<run>
+  // (NOT a #hash). Makes levels bookmarkable and the browser BACK button work.
+  if (!window._navFromHistory && MODE !== "wasm") {
     try {
-      const nm = encodeURIComponent(LV.name);
-      if (decodeURIComponent((location.hash || "").slice(1)) !== LV.name)
-        history.pushState({ level: levelIndex }, "", "#" + nm);
+      const cur = new URLSearchParams(location.search).get("level");
+      if (cur !== LV.name)
+        history.pushState({ level: levelIndex }, "", "/sim?level=" + encodeURIComponent(LV.name));
     } catch (_) {}
   }
 }
 levelSel.addEventListener("change", () => loadLevel(+levelSel.value));
 window.addEventListener("popstate", () => {
-  const nm = decodeURIComponent((location.hash || "").slice(1));
-  const idx = LEVELS.findIndex((l) => l.name === nm);
+  const nm = new URLSearchParams(location.search).get("level");
+  const idx = nm ? LEVELS.findIndex((l) => l.name === nm) : -1;
   if (idx >= 0 && idx !== levelIndex) {
     window._navFromHistory = true;
     try { loadLevel(idx); } finally { window._navFromHistory = false; }
@@ -2888,10 +2888,10 @@ function frame(now) {
 }
 
 await initPhysics();                       // rapier WASM, once per page
-// open the level named in the URL hash (#level-name) if present, else the first
+// open the level named in /sim?level=<name> if present, else the first
 {
-  const _h = decodeURIComponent((location.hash || "").slice(1));
-  const _hi = LEVELS.findIndex((l) => l.name === _h);
+  const _q = new URLSearchParams(location.search).get("level");
+  const _hi = _q ? LEVELS.findIndex((l) => l.name === _q) : -1;
   window._navFromHistory = true;
   try { loadLevel(_hi >= 0 ? _hi : 0); } finally { window._navFromHistory = false; }
 }
