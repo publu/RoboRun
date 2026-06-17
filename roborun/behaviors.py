@@ -65,6 +65,21 @@ _thoughts: dict[tuple[str, str], dict] = {}
 _thoughts_lock = threading.Lock()
 
 
+def _sim_backend():
+    """A SimBackend over the running MuJoCo sim, so pose()/lidar() sense the sim
+    through the handle when no arena is open (LOCAL_SIM_SPEC Phase 1). None if no
+    sim is running."""
+    try:
+        from roborun.routes._singletons import get_simulator
+        sim = get_simulator()
+        if getattr(sim, "is_running", False):
+            from roborun.sim_backend import SimBackend
+            return SimBackend(sim)
+    except Exception:
+        pass
+    return None
+
+
 def behavior(hz: float | None = None, every: float | None = None,
              name: str | None = None, autostart: bool = True) -> Callable:
     """Mark a function as a behavior loop. `hz` for control loops,
@@ -280,6 +295,11 @@ class Robot:
                 return a.pose()
         except Exception:
             pass
+        sb = _sim_backend()
+        if sb is not None:
+            p = sb.pose()
+            if p is not None:
+                return p
         try:
             from roborun.ros_telemetry import get_bridge
             return get_bridge().handle_pose()
@@ -524,6 +544,12 @@ class Robot:
                 return a.lidar()
         except Exception:
             pass
+        sb = _sim_backend()
+        if sb is not None:
+            try:
+                return sb.lidar()
+            except Exception:
+                pass
         try:
             from roborun.ros_telemetry import get_bridge
             return get_bridge().handle_lidar()

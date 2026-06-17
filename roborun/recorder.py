@@ -830,13 +830,24 @@ _active: RunRecorder | None = None
 _active_lock = threading.Lock()
 
 
-def start_recording(robot_id: str = "local", **kwargs) -> RunRecorder:
+def start_recording(robot_id: str = "local", stream_index: bool = False,
+                    **kwargs) -> RunRecorder:
+    """Open a run. `stream_index=True` wires a StreamingExtractor so Observations
+    are indexed live (search works mid-run, no close-time spike)."""
     global _active
     with _active_lock:
         if _active is not None and not _active._closed:
             return _active
         _active = RunRecorder(robot_id=robot_id, **kwargs)
         _active.attach_event_bus()
+        if stream_index:
+            try:
+                from roborun.observations import StreamingExtractor
+                from roborun.spatial_memory import SpatialMemoryStore
+                _active.extractor = StreamingExtractor(
+                    SpatialMemoryStore(), robot_id=robot_id, run_id=_active.run_id)
+            except Exception:
+                pass
         return _active
 
 
