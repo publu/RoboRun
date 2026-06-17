@@ -12,72 +12,153 @@
   header{ display:flex; align-items:center; gap:14px; padding:16px 24px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
   header h1{ font-size:15px; margin:0; } header nav{ margin-left:auto; display:flex; gap:14px; }
   header nav a{ color:var(--dim); text-decoration:none; font-size:12px; } header nav a.on{ color:var(--accent); }
-  header .live{ font-size:11px; color:var(--dim); }
-  header .live.on{ color:var(--accent); }
-  main{ padding:20px 24px; max-width:1100px; margin:0 auto; }
-  h2{ font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--dim); margin:18px 0 10px; }
+  .sub{ color:var(--dim); font-size:12px; }
+  .wrap{ display:grid; grid-template-columns:300px 1fr; min-height:calc(100vh - 58px); }
+  /* left rail — the per-run list (Antioch image 8) */
+  .rail{ border-right:1px solid var(--line); overflow-y:auto; }
+  .rail .filt{ display:flex; gap:6px; padding:12px 14px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .rail .filt button{ background:transparent; border:1px solid var(--line); color:var(--dim); border-radius:6px;
+     font:11px ui-monospace,monospace; padding:4px 9px; cursor:pointer; }
+  .rail .filt button.on{ border-color:var(--accent); color:var(--accent); }
+  .run{ display:block; padding:11px 14px; border-bottom:1px solid var(--line); cursor:pointer; text-decoration:none; color:var(--fg); }
+  .run:hover{ background:#0e120d; } .run.sel{ background:#0e1a12; border-left:2px solid var(--accent); }
+  .run .o{ font-size:11px; font-weight:600; } .run .o.passed{ color:var(--accent); } .run .o.failed{ color:var(--red); }
+  .run .nm{ font-size:13px; margin:2px 0; } .run .meta{ font-size:10px; color:var(--dim); }
+  .run .tags{ display:flex; gap:4px; flex-wrap:wrap; margin-top:3px; }
+  .run .tags span{ font-size:9px; background:#0c130c; border:1px solid var(--line); color:var(--dim); border-radius:4px; padding:1px 5px; }
+  /* right pane — the selected run's timeline */
+  .pane{ padding:22px 28px; overflow-y:auto; }
+  .pane h2{ font-size:13px; margin:0 0 2px; } .pane h2 .pill{ font-size:11px; padding:2px 8px; border-radius:5px; margin-left:8px; }
+  .pill.passed{ background:rgba(0,212,126,.15); color:var(--accent); } .pill.failed{ background:rgba(224,86,63,.15); color:var(--red); }
+  .acts{ display:flex; gap:10px; margin:10px 0 18px; }
+  .acts a{ font-size:12px; text-decoration:none; border:1px solid var(--line); border-radius:6px; padding:6px 12px; color:var(--accent); }
+  .acts a.primary{ background:var(--accent); color:#04120a; border-color:var(--accent); font-weight:600; }
+  h3{ font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--dim); margin:20px 0 8px; }
+  .kv{ display:grid; grid-template-columns:130px 1fr; gap:4px 14px; font-size:13px; }
+  .kv .k{ color:var(--dim); }
+  .chips{ display:flex; gap:6px; flex-wrap:wrap; }
+  .chips span{ font-size:11px; background:#0c130c; border:1px solid var(--line); border-radius:5px; padding:3px 8px; }
+  .feed{ border-left:2px solid var(--line); margin-left:6px; }
+  .ev{ position:relative; padding:7px 0 7px 18px; font-size:13px; }
+  .ev::before{ content:""; position:absolute; left:-5px; top:13px; width:8px; height:8px; border-radius:50%; background:var(--amber); }
+  .ev .ti{ color:var(--dim); font-size:11px; margin-right:8px; }
   .strip{ display:flex; gap:8px; overflow-x:auto; padding-bottom:8px; }
   .strip .f{ flex:0 0 auto; width:120px; }
   .strip img{ width:120px; height:84px; object-fit:cover; border-radius:6px; background:#070907; display:block; }
   .strip .t{ font-size:10px; color:var(--dim); margin-top:3px; }
-  .feed{ border-left:2px solid var(--line); margin-left:8px; }
-  .ev{ position:relative; padding:7px 0 7px 20px; font-size:13px; }
-  .ev::before{ content:""; position:absolute; left:-5px; top:13px; width:8px; height:8px; border-radius:50%; background:var(--accent); }
-  .ev.system::before{ background:var(--dim); } .ev.agent::before{ background:var(--blue); }
-  .ev.scenario::before{ background:var(--amber); } .ev.notify::before{ background:var(--red); }
-  .ev .ti{ color:var(--dim); font-size:11px; margin-right:8px; }
-  .ev .ty{ color:var(--dim); font-size:10px; text-transform:uppercase; }
-  .empty{ color:var(--dim); font-size:12px; padding:20px 0; }
+  .empty{ color:var(--dim); font-size:12px; padding:24px; }
 </style>
 </head>
 <body>
 <header>
   <h1>🕓 TIMELINE</h1>
-  <span class="live" id="live">○ connecting…</span>
+  <span class="sub">Pick a run to replay its timeline — every run is its own record.</span>
   <nav>
     <a href="/">cockpit</a><a href="/scenarios">scenarios</a>
     <a href="/timeline" class="on">timeline</a><a href="/analytics">analytics</a>
     <a href="/fleet">fleet lab</a><a href="/search">search</a>
   </nav>
 </header>
-<main>
-  <p style="color:var(--dim);font-size:13px;margin:0 0 18px">Everything happening right now, as it happens — recent camera snapshots and a live feed of what your robots and behaviors are doing.</p>
-  <h2>Recent sightings</h2>
-  <div class="strip" id="strip"><div class="empty">No camera snapshots yet — start a camera or sim, or run <code>roborun demo</code>.</div></div>
-  <h2>Event stream (live)</h2>
-  <div class="feed" id="feed"><div class="empty">Waiting for activity… events show up here the moment a behavior runs, a robot moves, or something is detected.</div></div>
-</main>
+<div class="wrap">
+  <div class="rail">
+    <div class="filt" id="filt">
+      <button data-o="" class="on">all</button>
+      <button data-o="passed">passed</button>
+      <button data-o="failed">failed</button>
+    </div>
+    <div id="runs"><div class="empty">loading runs…</div></div>
+  </div>
+  <div class="pane" id="pane"><div class="empty">Select a run on the left to see its timeline — metadata, scores, flagged moments, and a link to the full synced replay.</div></div>
+</div>
 <script>
 const $=s=>document.querySelector(s);
 const time=ts=>new Date((ts||0)*1000).toLocaleTimeString();
+const when=s=>(s||"").replace("T"," ").replace("Z","");
+let state={ outcome:"", sel:null, runs:[] };
 
-async function loadStrip(){
+async function j(u){ const r=await fetch(u); return r.json(); }
+
+async function loadRuns(){
+  const qs=new URLSearchParams({limit:"60"});
+  if(state.outcome) qs.set("outcome", state.outcome);
+  let d; try{ d=await j("/api/scenarios?"+qs.toString()); }catch(e){ return; }
+  state.runs=d.results||[];
+  const el=$("#runs");
+  if(!state.runs.length){ el.innerHTML='<div class="empty">No runs yet. Run a scenario (or <code>roborun demo</code>) and it shows up here.</div>'; return; }
+  el.innerHTML=state.runs.map(r=>{
+    const tags=(r.tags||[]).slice(0,3).map(t=>`<span>${t}</span>`).join("");
+    return `<a class="run ${r.run_id===state.sel?'sel':''}" data-id="${r.run_id||''}" data-key="${r.id||r.run_id||r.name}">
+      <div class="o ${r.outcome}">${(r.outcome||'·').toUpperCase()}</div>
+      <div class="nm">${r.name||'(run)'}</div>
+      <div class="meta">${r.suite?r.suite+' · ':''}${when(r.ended)}</div>
+      <div class="tags">${tags}</div></a>`;
+  }).join("");
+  el.querySelectorAll(".run").forEach(a=>a.onclick=e=>{ e.preventDefault(); select(a.dataset.id, a.dataset.key); });
+  // auto-select first / deep-linked run
+  const qid=new URLSearchParams(location.search).get("run");
+  if(qid){ select(qid, qid); }
+  else if(!state.sel && state.runs[0]){ const r=state.runs[0]; select(r.run_id||"", r.id||r.run_id||r.name); }
+}
+
+async function select(runId, key){
+  state.sel=runId||key;
+  document.querySelectorAll(".run").forEach(a=>a.classList.toggle("sel", a.dataset.id===runId || a.dataset.key===key));
+  if(runId) history.replaceState(null,"","/timeline?run="+encodeURIComponent(runId));
+  const r=state.runs.find(x=>(x.run_id===runId)||((x.id||x.run_id||x.name)===key));
+  if(!r){ $("#pane").innerHTML='<div class="empty">Run not found.</div>'; return; }
+  const metrics=Object.entries(r.metrics||{}).filter(([k])=>!k.startsWith("_"));
+  const evals=Object.entries(r.evaluation||{});
+  const replay = r.run_id
+    ? `<a class="primary" href="/run?id=${encodeURIComponent(r.run_id)}">▶ Open synced replay</a>`
+    : `<span class="sub">no recording for this run</span>`;
+  $("#pane").innerHTML=`
+    <h2>${r.name||'(run)'}<span class="pill ${r.outcome}">${r.outcome||''}</span></h2>
+    ${r.reason?`<div class="sub">${r.reason}</div>`:""}
+    <div class="acts">${replay}${r.run_id?`<a href="/run?id=${encodeURIComponent(r.run_id)}">flag a moment</a>`:""}</div>
+    <h3>Metadata</h3>
+    <div class="kv">
+      <div class="k">run id</div><div>${r.run_id||'—'}</div>
+      <div class="k">suite</div><div>${r.suite||'—'}</div>
+      <div class="k">seed</div><div>${r.seed??'—'}</div>
+      <div class="k">when</div><div>${when(r.ended)||'—'}</div>
+      ${(r.tags&&r.tags.length)?`<div class="k">tags</div><div class="chips">${r.tags.map(t=>`<span>${t}</span>`).join("")}</div>`:""}
+    </div>
+    ${metrics.length?`<h3>Measurements</h3><div class="chips">${metrics.map(([k,v])=>`<span>${k}: ${v}</span>`).join("")}</div>`:""}
+    ${evals.length?`<h3>Scores</h3><div class="chips">${evals.map(([g,vs])=>`<span>${g}: ${Object.entries(vs).map(([k,v])=>k+' '+v).join(', ')}</span>`).join("")}</div>`:""}
+    <h3>Flagged moments</h3><div id="flags"><div class="sub">…</div></div>
+    <h3>Camera snapshots</h3><div class="strip" id="strip"><div class="sub">…</div></div>`;
+  loadFlags(r.run_id); loadStrip(r.run_id);
+}
+
+async function loadFlags(runId){
+  const box=$("#flags"); if(!box) return;
+  if(!runId){ box.innerHTML='<div class="sub">no recording</div>'; return; }
   try{
-    const d=await (await fetch("/api/timeline?limit=20")).json();
-    const e=d.entries||[];
-    $("#strip").innerHTML = e.length? e.map(m=>`<div class="f">
-      <img loading="lazy" src="/api/memory/thumb/${m.id}" onerror="this.style.visibility='hidden'">
-      <div class="t">${time(m.ts)}</div></div>`).join("")
-      : '<div class="empty">No camera snapshots yet — start a camera or sim, or run <code>roborun demo</code>.</div>';
-  }catch(e){}
+    const d=await j("/api/incidents?run="+encodeURIComponent(runId));
+    const f=d.incidents||d.flags||[];
+    box.innerHTML=f.length? `<div class="feed">${f.map(x=>`<div class="ev"><span class="ti">${time(x.ts)}</span>${x.note||x.title||'flag'}</div>`).join("")}</div>`
+      : '<div class="sub">No flagged moments. Open the replay and hit ⚑ Flag to bookmark one.</div>';
+  }catch(e){ box.innerHTML='<div class="sub">—</div>'; }
 }
 
-const feed=$("#feed"); let count=0;
-function addEvent(ev){
-  if(count===0) feed.innerHTML="";
-  const div=document.createElement("div");
-  div.className="ev "+(ev.type||"");
-  div.innerHTML=`<span class="ti">${time(ev.ts)}</span><span class="ty">${ev.type||""}/${ev.source||""}</span> ${ev.title||""}`;
-  feed.prepend(div);
-  if(++count>200) feed.lastChild?.remove();
+async function loadStrip(runId){
+  const box=$("#strip"); if(!box) return;
+  try{
+    const d=await j("/api/timeline?limit=12"+(runId?("&run="+encodeURIComponent(runId)):""));
+    const e=d.entries||[];
+    box.innerHTML=e.length? e.map(m=>`<div class="f"><img loading="lazy" src="/api/memory/thumb/${m.id}" onerror="this.style.visibility='hidden'"><div class="t">${time(m.ts)}</div></div>`).join("")
+      : '<div class="sub">No snapshots for this run.</div>';
+  }catch(e){ box.innerHTML='<div class="sub">—</div>'; }
 }
-function connect(){
-  const es=new EventSource("/api/events/stream");
-  es.onopen=()=>{ $("#live").textContent="● live"; $("#live").classList.add("on"); };
-  es.onmessage=e=>{ try{ addEvent(JSON.parse(e.data)); }catch(_){} };
-  es.onerror=()=>{ $("#live").textContent="○ reconnecting…"; $("#live").classList.remove("on"); };
-}
-loadStrip(); setInterval(loadStrip, 5000); connect();
+
+$("#filt").querySelectorAll("button").forEach(b=>b.onclick=()=>{
+  state.outcome=b.dataset.o; state.sel=null;
+  $("#filt").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
+  loadRuns();
+});
+
+loadRuns();
+setInterval(loadRuns, 8000);
 </script>
 </body>
 </html>

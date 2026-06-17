@@ -587,7 +587,20 @@ body.cockpit #cockpit { display: flex; }
   <div class="sep"></div>
   <button id="btnConnect" class="accent">⚡ CONNECT AGENT</button>
   <button id="btnReset" title="restore default layout">reset</button>
+  <div class="sep" style="margin-left:auto"></div>
+  <span id="tb-views" style="position:relative">
+    <button id="tb-views-btn" title="go to a dashboard">▤ VIEWS ▾</button>
+    <span id="tb-views-menu" style="display:none;position:absolute;right:0;top:120%;z-index:60;background:#0d120c;border:1px solid #1e2a1f;border-radius:8px;padding:6px;min-width:150px;text-align:left">
+      <a href="/" style="display:block;padding:6px 9px;color:#00d47e;text-decoration:none;border-radius:5px">⌂ cockpit (home)</a>
+      <a href="/scenarios" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">scenarios</a>
+      <a href="/timeline" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">timeline</a>
+      <a href="/analytics" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">analytics</a>
+      <a href="/fleet" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">fleet lab</a>
+      <a href="/search" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">search</a>
+    </span>
+  </span>
 </div>
+<script>(function(){var b=document.getElementById("tb-views-btn"),m=document.getElementById("tb-views-menu");if(b)b.onclick=function(e){e.stopPropagation();m.style.display=m.style.display==="none"?"block":"none";};document.addEventListener("click",function(){if(m)m.style.display="none";});})();</script>
 
 <div class="panel" id="p-brief">
   <div class="p-head"><b>MISSION</b><select id="levelSel"></select><span class="x">✕</span></div>
