@@ -25,6 +25,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import time
 import uuid
@@ -211,7 +212,76 @@ class SpatialMemoryStore:
             self._cache_dirty = True
         return mid
 
-    # ── CLIP (numpy cosine; embedded ANN is the documented later step) ────
+    # ── CLIP: numpy cosine by default, sqlite-vec ANN past a threshold ────
+
+    def _ann_available(self) -> bool:
+        try:
+            import sqlite_vec  # noqa: F401
+            return True
+        except Exception:
+            return False
+
+    def _ann_threshold(self) -> int:
+        return int(os.environ.get("ROBORUN_ANN_THRESHOLD", "100000"))
+
+    def _ensure_vec_table(self, dim: int) -> bool:
+        """(Re)build the vec0 ANN index from observations (normalized → L2 on
+        unit vectors is monotonic with cosine). Returns True if usable."""
+        import numpy as np
+        import sqlite_vec
+        try:
+            self._conn.enable_load_extension(True)
+            sqlite_vec.load(self._conn)
+            self._conn.enable_load_extension(False)
+        except Exception:
+            return False
+        if getattr(self, "_vec_dim", None) != dim:
+            self._conn.execute("DROP TABLE IF EXISTS vec_obs")
+            self._conn.execute(
+                f"CREATE VIRTUAL TABLE vec_obs USING vec0(obs_id TEXT, emb float[{dim}])")
+            self._vec_dim = dim
+            self._vec_built = False
+        if not getattr(self, "_vec_built", False) or self._cache_dirty:
+            self._conn.execute("DELETE FROM vec_obs")
+            rows = self._conn.execute(
+                "SELECT id, embedding FROM observations WHERE embedding IS NOT NULL"
+            ).fetchall()
+            for r in rows:
+                v = np.frombuffer(r["embedding"], dtype=np.float32)
+                if v.shape[0] != dim:
+                    continue
+                n = np.linalg.norm(v) or 1.0
+                self._conn.execute("INSERT INTO vec_obs(obs_id, emb) VALUES (?, ?)",
+                                   (r["id"], (v / n).astype(np.float32).tobytes()))
+            self._conn.commit()
+            self._vec_built = True
+        return True
+
+    def _search_clip_ann(self, qvec, top_k: int, robot_id: str | None) -> list[dict]:
+        import numpy as np
+        q = qvec.astype(np.float32).flatten()
+        dim = q.shape[0]
+        if not self._ensure_vec_table(dim):
+            raise RuntimeError("vec table unavailable")
+        n = np.linalg.norm(q) or 1.0
+        q = (q / n).astype(np.float32)
+        hits = self._conn.execute(
+            "SELECT obs_id, distance FROM vec_obs WHERE emb MATCH ? "
+            "ORDER BY distance LIMIT ?", (q.tobytes(), top_k * 3)).fetchall()
+        ids = [h["obs_id"] for h in hits]
+        rows = self._fetch_rows(ids)
+        dets = self._fetch_detections(ids)
+        out = []
+        for h in hits:
+            row = rows.get(h["obs_id"])
+            if row is None or (robot_id and row["robot_id"] != robot_id):
+                continue
+            # L2 on unit vectors d² = 2(1-cos) → cos = 1 - d²/2
+            out.append(self._row_to_dict(row, dets.get(row["id"], []),
+                                         score=float(1.0 - h["distance"] ** 2 / 2)))
+            if len(out) >= top_k:
+                break
+        return out
 
     def _rebuild_cache(self) -> None:
         rows = self._conn.execute(
@@ -238,6 +308,16 @@ class SpatialMemoryStore:
         self, query_embedding: np.ndarray, top_k: int = 10, robot_id: str | None = None
     ) -> list[dict]:
         with self._lock:
+            # sqlite-vec ANN past the threshold; numpy is the guaranteed fallback.
+            count = self._conn.execute(
+                "SELECT COUNT(*) FROM observations WHERE embedding IS NOT NULL"
+            ).fetchone()[0]
+            if count >= self._ann_threshold() and self._ann_available():
+                try:
+                    return self._search_clip_ann(query_embedding, top_k, robot_id)
+                except Exception:
+                    pass  # fall through to numpy
+
             if self._cache_dirty:
                 self._rebuild_cache()
             if self._emb_cache is None or len(self._id_cache) == 0:

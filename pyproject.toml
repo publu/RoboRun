@@ -46,7 +46,10 @@ ros = ["cyclonedds>=0.10"]
 crypto = ["cryptography>=42.0"]
 anchor = ["asn1crypto>=1.5"]
 fleet = ["boto3>=1.28", "duckdb>=1.0"]
-all = ["ros-agent[vision,sim,depth,jepa,gemini,ros,crypto,anchor,fleet]"]
+ann = ["sqlite-vec>=0.1"]            # CLIP ANN past ~1M vectors
+video = ["av>=11.0"]                 # H.264 camera channel (10–50× vs JPEG)
+mjx = ["mujoco-mjx>=3.0", "jax>=0.4"]  # vectorized N-world sim (GPU-optional)
+all = ["ros-agent[vision,sim,depth,jepa,gemini,ros,crypto,anchor,fleet,ann,video,mjx]"]
 
 [project.scripts]
 roborun = "roborun.server:main"

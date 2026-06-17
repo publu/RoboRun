@@ -60,6 +60,15 @@ SCHEMAS: dict[str, dict] = {
             "format": {"type": "string"},
         },
     },
+    "foxglove.CompressedVideo": {
+        "type": "object",
+        "properties": {
+            "timestamp": {"type": "object"},
+            "frame_id": {"type": "string"},
+            "data": {"type": "string", "contentEncoding": "base64"},
+            "format": {"type": "string"},
+        },
+    },
     "foxglove.PoseInFrame": {
         "type": "object",
         "properties": {
@@ -231,6 +240,8 @@ class RunRecorder:
         self.started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         self.prev_run = _latest_sealed_run(self._root)
         self._closed = False
+        self._video: dict[str, Any] = {}  # per-camera H.264 encoders
+        self.extractor = None  # optional StreamingExtractor (live indexing)
 
         self._bus_queue: queue.Queue | None = None
         self._bus_thread: threading.Thread | None = None
@@ -279,6 +290,41 @@ class RunRecorder:
             "timestamp": _ts_obj(ts), "frame_id": frame_id,
             "data": base64.b64encode(jpeg).decode(), "format": "jpeg",
         }, ts)
+        if self.extractor is not None:
+            try:
+                self.extractor.on_camera(ts, f"/camera/{name}", source_id=name)
+            except Exception:
+                pass
+
+    def write_video(self, frame_bgr, name: str = "webcam", fps: int = 30,
+                    ts: float | None = None, frame_id: str = "camera") -> None:
+        """Encode a BGR frame to H.264 and write any resulting packets to the
+        `foxglove.CompressedVideo` channel — 10–50× smaller than per-frame JPEG.
+        Lazily spins up one encoder per camera. Needs the `av` extra."""
+        import numpy as np
+        ts = ts if ts is not None else time.time()
+        enc = self._video.get(name)
+        if enc is None:
+            from roborun.video import H264Encoder
+            h, w = frame_bgr.shape[:2]
+            enc = H264Encoder(w, h, fps=fps)
+            self._video[name] = enc
+        for pkt in enc.add(np.ascontiguousarray(frame_bgr)):
+            self.write_json(f"/camera/{name}", "foxglove.CompressedVideo", {
+                "timestamp": _ts_obj(ts), "frame_id": frame_id,
+                "data": base64.b64encode(pkt).decode(), "format": "h264",
+            }, ts)
+
+    def _flush_video(self) -> None:
+        for name, enc in list(getattr(self, "_video", {}).items()):
+            try:
+                for pkt in enc.flush():
+                    self.write_json(f"/camera/{name}", "foxglove.CompressedVideo", {
+                        "timestamp": _ts_obj(time.time()), "frame_id": "camera",
+                        "data": base64.b64encode(pkt).decode(), "format": "h264",
+                    })
+            except Exception:
+                pass
 
     def write_detections(self, detections: list[dict], name: str = "yolo",
                          ts: float | None = None) -> None:
@@ -286,6 +332,11 @@ class RunRecorder:
         self.write_json(f"/detections/{name}", "roborun.Detections", {
             "timestamp": _ts_obj(ts), "detections": detections,
         }, ts)
+        if self.extractor is not None:
+            try:
+                self.extractor.on_detections(ts, detections)
+            except Exception:
+                pass
 
     def write_clip(self, embedding, frame_topic: str = "/camera/webcam",
                    label: str | None = None, ts: float | None = None) -> None:
@@ -297,6 +348,11 @@ class RunRecorder:
             "vec": base64.b64encode(vec.tobytes()).decode(),
             "frame_topic": frame_topic, "label": label or "",
         }, ts)
+        if self.extractor is not None:
+            try:
+                self.extractor.on_clip(ts, vec)
+            except Exception:
+                pass
 
     def write_pose(self, x: float, y: float, z: float = 0.0,
                    orientation: dict | None = None, frame_id: str = "world",
@@ -311,6 +367,11 @@ class RunRecorder:
             "pose": {"position": {"x": x, "y": y, "z": z},
                      "orientation": orientation or {"x": 0, "y": 0, "z": 0, "w": 1}},
         }, ts)
+        if self.extractor is not None:
+            try:
+                self.extractor.on_pose(ts, x, y, z)
+            except Exception:
+                pass
 
     def write_cmd(self, forward: float = 0.0, strafe: float = 0.0,
                   turn: float = 0.0, climb: float = 0.0, grip: bool = False,
@@ -495,6 +556,7 @@ class RunRecorder:
             if self._closed:
                 return json.loads(self.seal_path.read_text())
             self._detach_event_bus()
+            self._flush_video()  # drain any pending H.264 packets first
             self._writer.finish()
             self._checkpoint_locked()  # footer bytes
             self._closed = True
