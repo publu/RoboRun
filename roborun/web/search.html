@@ -128,8 +128,8 @@
   <div class="console" id="console">
     <div class="primary">
       <div class="seg" id="mode" title="how to match — by meaning, by exact object, or the uncertain detections worth labeling (active learning)">
-        <button data-by="clip" class="on">by meaning</button>
-        <button data-by="label">by object</button>
+        <button data-by="label" class="on">by object</button>
+        <button data-by="clip" title="semantic search — needs camera frames with CLIP embeddings (sim/fleet detections are label-only)">by meaning</button>
         <button data-by="uncertain" title="the examples the model is unsure about — curate these to label and improve it">needs labeling</button>
       </div>
       <div class="q-wrap">
@@ -179,7 +179,7 @@
 </main>
 <script>
 const $=s=>document.querySelector(s);
-let by="clip";
+let by="label";   // default: by-object — instant + finds the label-only sim/fleet data
 $("#mode").querySelectorAll("button").forEach(b=>b.onclick=()=>{
   by=b.dataset.by; $("#mode").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
 });
