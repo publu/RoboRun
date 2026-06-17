@@ -402,8 +402,16 @@ def main() -> None:
 
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"\n  RoboRun is live: http://{HOST}:{PORT}")
-    print(f"  Telemetry WS:    ws://127.0.0.1:8766")
-    print(f"  MCP endpoint:    http://{HOST}:{PORT}/mcp\n")
+    print(f"  MCP endpoint:    http://{HOST}:{PORT}/mcp   ·   Telemetry WS: ws://127.0.0.1:8766")
+    # Quick-start: point new users at the dashboards + a one-command win.
+    try:
+        from roborun.spatial_memory import SpatialMemoryStore
+        if SpatialMemoryStore().stats().get("total", 0) == 0:
+            print(f"\n  New here? Run  roborun demo  in another terminal to load sample data,")
+            print(f"  then open http://{HOST}:{PORT}/search to find anything your robots have seen.")
+    except Exception:
+        pass
+    print(f"\n  Views: /search · /scenarios · /timeline · /analytics · /run   (or the cockpit's ▤ VIEWS menu)\n")
     from roborun.events import emit
     emit("system", "server", "roborun started", {"port": PORT})
     try:
