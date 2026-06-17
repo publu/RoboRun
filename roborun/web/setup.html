@@ -118,7 +118,7 @@
   <div class="wizsteps" id="wizsteps"></div>
 
   <section class="wstep" id="wzProject">
-    <h2><span class="stepn">1</span> Project <span class="hint">where the data lives</span></h2>
+    <h2>Project <span class="hint">where the data lives</span></h2>
     <p class="wstep-lead">Everything you record scopes to a project. Reuse one, make a new one, or use the throwaway <b>scratch</b> space.</p>
     <div class="row">
       <select id="proj"><option value="">scratch (throwaway)</option></select>
@@ -128,13 +128,13 @@
   </section>
 
   <section class="wstep" id="wzBackend" style="display:none">
-    <h2><span class="stepn">2</span> Backend <span class="hint">what drives it</span></h2>
+    <h2>Backend <span class="hint">what drives it</span></h2>
     <p class="wstep-lead">The engine that runs your robot — an in-browser sim, a headless sim, or your real hardware.</p>
     <div class="opts" id="backends"><div class="summary">loading backends…</div></div>
   </section>
 
   <section class="wstep" id="wzWhat" style="display:none">
-    <h2><span class="stepn">3</span> <span id="whatTitle">What to run</span> <span class="hint" id="whatHint">robot + task, or a fleet</span></h2>
+    <h2><span id="whatTitle">What to run</span> <span class="hint" id="whatHint">robot + task, or a fleet</span></h2>
     <div id="simStep">
       <p class="sublbl">Robot</p>
       <div class="opts" id="robots"></div>
@@ -149,7 +149,7 @@
   </section>
 
   <section class="wstep" id="wzEnv" style="display:none">
-    <h2><span class="stepn">4</span> Environment <span class="hint">name + persistence</span></h2>
+    <h2>Environment <span class="hint">name + persistence</span></h2>
     <p class="wstep-lead">A named space inside the project — its own map, cameras and retention. Scratch is auto-pruned; test/production are kept.</p>
     <div class="row">
       <input id="envName" placeholder="environment name" style="width:240px;max-width:100%">
@@ -233,12 +233,18 @@ function suggestName(){
 }
 function summary(){
   if(!$("#envName").value) $("#envName").placeholder=suggestName();
+  // only show the full launch summary on the FINAL step — earlier steps show a
+  // simple "Step X of 4" so it doesn't look like decisions are already made
+  if(typeof wi==="number" && wi!==WSTEPS.length-1){
+    $("#summary").textContent = `Step ${wi+1} of ${WSTEPS.length}`;
+    return;
+  }
   const real=!SIM_BACKENDS.has(S.backend);
   const proj=($("#newProj").value.trim()||$("#proj").value||"scratch");
   const env=$("#envName").value.trim()||suggestName();
   const what = real ? `connect a real robot via ROS` :
     S.fleet ? `warehouse fleet` : `${S.robot} · ${S.level}`;
-  $("#summary").textContent = `${what} on ${S.backend} → ${proj}/${env}`;
+  $("#summary").textContent = `Ready to launch — ${what} on ${S.backend} → ${proj}/${env}`;
 }
 // ── wizard: show one step at a time ───────────────────────────────────────
 const WSTEPS=["wzProject","wzBackend","wzWhat","wzEnv"];

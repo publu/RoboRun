@@ -57,6 +57,13 @@
   #toolbar button.accent { color: #e0c050; border-color: #4a3f1f; }
   #toolbar .sep { width: 1px; background: #1f2a33; margin: 0 2px; }
 
+  /* always-visible way back to the dashboard (the cockpit is full-screen, no shell) */
+  #ck-home { position: fixed; top: 10px; left: 12px; z-index: 56; text-decoration: none;
+             background: rgba(14,19,16,.92); color: #aebcc7; border: 1px solid #2a3a46;
+             border-radius: 7px; padding: 7px 13px; font-size: 13px; letter-spacing: .02em;
+             backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); transition: color .12s, border-color .12s; }
+  #ck-home:hover { color: #00d47e; border-color: #1f4434; }
+
   /* mission */
   #rooms { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
   .room-chip { border: 1px solid #2a3a46; border-radius: 4px; padding: 2px 8px; color: #6b7b88; }
@@ -563,6 +570,8 @@ body.cockpit #cockpit { display: flex; }
 </div>
 
 <div id="ck-net"></div>
+
+<a id="ck-home" href="/" title="back to the dashboard">← Dashboard</a>
 
 <div id="toolbar">
   <button id="btnLevels" title="pick a robot + task">⊞ LEVELS</button>
