@@ -146,6 +146,47 @@ class PerceptionSession:
             pass
 
 
+def export_dataset(store: Any, query: Any, out_dir: str, by: str = "label",
+                   k: int = 500, since: float | None = None,
+                   until: float | None = None) -> dict:
+    """Curate a labeled dataset from a search (Foxglove 'curate datasets to train
+    models', on our sealed substrate): search the all-time index, pull each hit's
+    full frame from its MCAP, write images/ + labels.jsonl + dataset.json. Every
+    image traces back to a sealed run, so the dataset's provenance is verifiable."""
+    import json
+    import time
+    from pathlib import Path
+    from roborun.observations import get_frame
+    from roborun.run_series import _find_mcap
+
+    hits = search(store, query, by=by, k=k, since=since, until=until)
+    out = Path(out_dir)
+    (out / "images").mkdir(parents=True, exist_ok=True)
+    manifest = []
+    for i, h in enumerate(hits):
+        img = None
+        fr = h.get("frame_ref")
+        if fr and fr.get("run_id") and fr.get("topic") and fr.get("log_time"):
+            mcap = _find_mcap(fr["run_id"], h.get("robot_id"))
+            if mcap is not None:
+                img = get_frame(mcap, fr["topic"], int(fr["log_time"]))
+        if img is None and h.get("id"):
+            img = store.get_thumbnail(h["id"])  # fall back to the stored thumb
+        if img is None:
+            continue
+        name = f"{i:05d}.jpg"
+        (out / "images" / name).write_bytes(img)
+        manifest.append({"image": f"images/{name}",
+                         "detections": h.get("detections"), "ts": h.get("ts"),
+                         "robot_id": h.get("robot_id"), "source": h.get("source"),
+                         "run_id": (fr or {}).get("run_id")})
+    (out / "labels.jsonl").write_text("\n".join(json.dumps(m) for m in manifest))
+    (out / "dataset.json").write_text(json.dumps(
+        {"query": str(query), "by": by, "count": len(manifest),
+         "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}, indent=2))
+    return {"ok": True, "count": len(manifest), "dir": str(out)}
+
+
 def search(store: Any, query: Any, by: str = "clip", k: int = 10,
            since: float | None = None, until: float | None = None,
            robot_id: str | None = None, source_id: str | None = None) -> list[dict]:

@@ -61,6 +61,7 @@
   <label class="src">until</label><input id="until" type="datetime-local">
   <input id="source" placeholder="camera/source (optional)" style="width:150px">
   <button class="go" onclick="run()">Search</button>
+  <button onclick="exportDs()" title="curate a labeled dataset from these hits">⤓ Dataset</button>
 </div>
 <main>
   <div class="meta" id="meta">Search across every recorded run — sim, robot, and production — over all of time.</div>
@@ -74,6 +75,14 @@ $("#mode").querySelectorAll("button").forEach(b=>b.onclick=()=>{
 });
 const toEpoch=v=> v? Math.floor(new Date(v).getTime()/1000): undefined;
 
+async function exportDs(){
+  const q=$("#q").value.trim(); if(!q){ $("#meta").textContent="Type a query to export."; return; }
+  $("#meta").textContent="Curating dataset…";
+  const body={query:q, by, since:toEpoch($("#since").value), until:toEpoch($("#until").value)};
+  try{ const r=await (await fetch("/api/search/export",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json();
+    $("#meta").textContent=`Dataset curated: ${r.count} images + labels.jsonl → ${r.dir}`;
+  }catch(e){ $("#meta").textContent="Export failed: "+e; }
+}
 async function run(){
   const body={ query:$("#q").value.trim(), by, k:60 };
   const s=toEpoch($("#since").value), u=toEpoch($("#until").value);

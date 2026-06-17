@@ -32,6 +32,27 @@ def search_history(h, payload):
     send_json(h, 200, {"ok": True, "results": rows, "total": len(rows)})
 
 
+@post("/api/search/export")
+def search_export(h, payload):
+    """Curate a labeled dataset from a search → datasets/<name>/. Body: {query,
+    by?, since?, until?, name?}."""
+    import time
+    from pathlib import Path
+    from roborun.session import export_dataset
+    try:
+        from roborun.routes._singletons import get_memory
+        store = get_memory()
+    except Exception:
+        from roborun.spatial_memory import SpatialMemoryStore
+        store = SpatialMemoryStore()
+    name = str(payload.get("name") or f"ds_{int(time.time())}")
+    out = Path("datasets") / name
+    r = export_dataset(store, payload.get("query", ""), str(out),
+                       by=str(payload.get("by", "label")),
+                       since=payload.get("since"), until=payload.get("until"))
+    send_json(h, 200, r)
+
+
 @post("/api/perception/start")
 def perception_start(h, payload):
     """Start the unified capture loop in a mode (sim|robot|production)."""

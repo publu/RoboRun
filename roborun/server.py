@@ -287,6 +287,9 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "scenarios":
         from roborun.cli import scenarios_cli
         raise SystemExit(scenarios_cli(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "dataset":
+        from roborun.cli import dataset_cli
+        raise SystemExit(dataset_cli(sys.argv[2:]))
     if not WEB_ROOT.exists():
         raise SystemExit(f"Missing web directory at {WEB_ROOT}")
     STATE_ROOT.mkdir(parents=True, exist_ok=True)

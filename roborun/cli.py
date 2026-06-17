@@ -34,6 +34,23 @@ def search_cli(argv: list[str]) -> int:
     return 0
 
 
+def dataset_cli(argv: list[str]) -> int:
+    import argparse
+    p = argparse.ArgumentParser(prog="roborun dataset",
+                                description="Curate a labeled dataset from a search.")
+    p.add_argument("query")
+    p.add_argument("out", help="output directory")
+    p.add_argument("--by", default="label", choices=["label", "clip", "near", "time"])
+    p.add_argument("--k", type=int, default=500)
+    p.add_argument("--since", type=float)
+    a = p.parse_args(argv)
+    from roborun.spatial_memory import SpatialMemoryStore
+    from roborun.session import export_dataset
+    r = export_dataset(SpatialMemoryStore(), a.query, a.out, by=a.by, k=a.k, since=a.since)
+    print(f"wrote {r['count']} images + labels.jsonl → {r['dir']}")
+    return 0
+
+
 def scenarios_cli(argv: list[str]) -> int:
     import roborun.demo_scenarios  # noqa: F401  (register built-ins)
     from roborun.scenario import list_suites
