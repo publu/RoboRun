@@ -596,7 +596,8 @@ body.cockpit #cockpit { display: flex; }
   <span id="tb-views" style="position:relative">
     <button id="tb-views-btn" title="go to a dashboard">▤ VIEWS ▾</button>
     <span id="tb-views-menu" style="display:none;position:absolute;right:0;top:120%;z-index:60;background:#0d120c;border:1px solid #1e2a1f;border-radius:8px;padding:6px;min-width:150px;text-align:left">
-      <a href="/" style="display:block;padding:6px 9px;color:#00d47e;text-decoration:none;border-radius:5px">⌂ cockpit (home)</a>
+      <a href="/" style="display:block;padding:6px 9px;color:#00d47e;text-decoration:none;border-radius:5px">⌂ Dashboard (home)</a>
+      <a href="/setup" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">set up a robot / sim</a>
       <a href="/projects" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">projects</a>
       <a href="/browser" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">data browser</a>
       <a href="/scenarios" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">scenarios</a>
@@ -703,22 +704,11 @@ fetch("/api/projects/active").then(function(r){return r.json();}).then(function(
 
 <div id="start"><div class="start-card">
   <button class="close" id="startClose">✕</button>
-  <h1>ROBORUN ARENA</h1>
-  <p class="tagline">Code a robot in Python, right here. Beat the chamber.
-  <b>The same file drives a real robot.</b></p>
-  <div class="start-steps">
-    <div><span>01 · WRITE</span>a ~10-line policy against <b>pose / lidar / see / move</b> —
-      or just press RUN, a starter is loaded</div>
-    <div><span>02 · WATCH</span>it drives the robot at 10 Hz through real physics —
-      camera, lidar cloud, live map</div>
-    <div><span>03 · SHIP</span><b>roborun connect &lt;robot-ip&gt;</b> runs the same file
-      on a Go2, a drone, anything ROS</div>
-  </div>
-  <p class="sub">Pick a robot, pick a task.
-  Grab the wheel anytime with <b>WASD</b> (counts as practice, not autonomous).</p>
+  <h1>PICK A ROBOT &amp; TASK</h1>
+  <p class="sub">Swap the sim level. Grab the wheel anytime with <b>WASD</b>.
+  Want to set up a project, connect a real robot, or run a fleet?
+  <a href="/setup" style="color:#00d47e">open Setup →</a> · <a href="/" style="color:#9fb0bd">← Dashboard</a></p>
   <div id="startGrid"></div>
-  <div class="start-foot">your policy is real python on a real robot handle —
-  <b>the same code drives ROS 1/2 robots</b> · every run is a merkle-sealed recording</div>
 </div></div>
 
 <div id="connect"><div class="card">

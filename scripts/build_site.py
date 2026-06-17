@@ -37,7 +37,9 @@ def main() -> None:
     dst.mkdir(parents=True, exist_ok=True)
     for name in PY_MODULES:
         shutil.copy(ROOT / "roborun" / name, dst / name)
-    shutil.copy(SITE / "arena.html", SITE / "index.html")
+    # dashboard everywhere: the Home dashboard is the landing; the playable
+    # in-browser cockpit stays reachable at /sim (arena.html, Pyodide).
+    shutil.copy(SITE / "home.html", SITE / "index.html")
     n = sum(1 for _ in SITE.rglob("*") if _.is_file())
     print(f"site/ assembled — {n} files")
 

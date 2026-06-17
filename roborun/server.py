@@ -116,8 +116,11 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Location", "/")
             self.end_headers()
             return
+        # the dashboard home is the entry; the immersive cockpit lives at /sim
         if path_only == "/":
-            self.path = "/arena.html"
+            self.path = "/home.html"
+        if path_only == "/setup":
+            self.path = "/setup.html"
         # the fleet comms sandbox is its own page; "/fleet" is the clean URL
         if path_only == "/fleet":
             self.path = "/fleet.html"

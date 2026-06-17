@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script src="./runtime-base.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoboRun · Home</title>
+<link rel="stylesheet" href="./ui.css">
+<script src="./shell.js"></script>
+<style>
+  *{ box-sizing:border-box; } body{ margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--mono); }
+  h2{ font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--fg-dim); margin:26px 0 12px; display:flex; align-items:baseline; gap:10px; }
+  h2 a{ margin-left:auto; font-size:11px; color:var(--accent); text-decoration:none; }
+  .hero{ background:linear-gradient(180deg,#0e1a12,#0c120e); border:1px solid var(--accent-dim); border-radius:var(--r); padding:20px 22px; }
+  .hero .scope{ font-size:13px; color:var(--fg-2); } .hero .scope b{ color:var(--accent); }
+  .hero h1{ font-size:20px; margin:6px 0 4px; }
+  .hero .acts{ display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
+  .grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; }
+  .ecard{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:14px 16px; cursor:pointer; transition:border-color .15s; }
+  .ecard:hover{ border-color:var(--accent); } .ecard.on{ border-color:var(--accent); }
+  .ecard .nm{ font-weight:600; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .ecard .meta{ color:var(--fg-dim); font-size:11px; }
+  .runrow{ display:flex; align-items:center; gap:12px; background:var(--panel); border:1px solid var(--line); border-radius:var(--r-sm); padding:10px 13px; text-decoration:none; color:var(--fg); margin-bottom:6px; }
+  .runrow:hover{ border-color:var(--accent); } .runrow .nm{ font-size:13px; font-weight:600; } .runrow .meta{ color:var(--fg-dim); font-size:11px; }
+  .runrow .grow{ flex:1; }
+  .empty{ color:var(--fg-dim); padding:22px; text-align:center; background:var(--panel); border:1px solid var(--line); border-radius:var(--r); }
+  .offline{ background:#1a160e; border:1px solid #3a3015; border-radius:var(--r); padding:18px 20px; color:var(--fg-2); }
+  .offline b{ color:var(--amber); } .offline code{ color:var(--fg); background:#0c0f0c; padding:1px 6px; border-radius:4px; }
+</style>
+</head>
+<body>
+<main>
+  <div id="hero"></div>
+  <h2>Environments <a href="/setup">+ new</a></h2>
+  <div id="envs" class="grid"><div class="empty">loading…</div></div>
+  <h2>Data overview</h2>
+  <div id="kpis" class="kpis"></div>
+  <h2>Recent runs <a href="/browser">browse all →</a></h2>
+  <div id="runs"></div>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const when=t=>t?new Date((typeof t==="number"?t*1000:Date.parse(t))).toLocaleString():"";
+async function j(u){ const r=await fetch(u); if(!r.ok) throw 0; return r.json(); }
+async function post(u,b){ return (await fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b||{})})).json(); }
+
+async function loadHero(){
+  let a=null; try{ a=await j("/api/projects/active"); }catch(e){ offline(); return; }
+  const act=a.active, env=a.environment;
+  $("#hero").innerHTML=`<div class="hero">
+    <div class="scope">${act?`project <b>${esc(act.project)}</b> · environment <b>${esc(act.environment)}</b>`:`<b>scratch</b> — unscoped default. Create a project to isolate your work.`}</div>
+    <h1>${act?"Welcome back":"Set up your first robot"}</h1>
+    <div class="acts">
+      <a class="btn accent" href="/setup">▣ New sim / robot</a>
+      <a class="btn" href="/fleet-sim">🐝 Fleet sim</a>
+      <a class="btn" href="/browser">⊞ Browse data</a>
+      <a class="btn" href="/sim">▦ Open cockpit</a>
+    </div></div>`;
+}
+function offline(){
+  $("#hero").innerHTML=`<div class="offline">○ <b>No local runtime.</b> Run <code>roborun</code> in your terminal to bring projects, recording and search online — this page upgrades automatically. Meanwhile you can <a href="/sim" style="color:var(--accent)">try the in-browser sim →</a></div>`;
+  $("#envs").innerHTML=""; $("#kpis").innerHTML=""; $("#runs").innerHTML="";
+}
+async function loadEnvs(){
+  let a; try{ a=await j("/api/projects/active"); }catch(e){ return; }
+  const proj=(a.active||{}).project;
+  const el=$("#envs");
+  if(!proj){ el.innerHTML=`<div class="empty">No project selected — you're in <b>scratch</b>. <a href="/setup" style="color:var(--accent)">Set up an environment →</a></div>`; return; }
+  let d; try{ d=await j("/api/environments?project="+encodeURIComponent(proj)); }catch(e){ return; }
+  if(!d.environments||!d.environments.length){ el.innerHTML=`<div class="empty">No environments yet. <a href="/setup" style="color:var(--accent)">Create one →</a></div>`; return; }
+  el.innerHTML=d.environments.map(e=>{
+    const on=a.active&&a.active.environment===e.id;
+    const surface = e.backend==="rapier"||e.backend==="gazebo"||e.backend==="isaac"||e.backend==="mujoco" ? "/sim" : "/sim";
+    return `<div class="ecard${on?' on':''}" data-p="${esc(proj)}" data-e="${esc(e.id)}" data-s="${surface}">
+      <div class="nm">${esc(e.name)} ${on?'<span class="pill ok">active</span>':''}</div>
+      <div class="meta">${esc(e.backend)} · ${esc(e.mode)} · ${e.runs||0} runs · ${(e.cameras||[]).length} cam</div>
+      <div style="margin-top:10px"><button class="btn sm accent">▶ open</button></div>
+    </div>`;
+  }).join("");
+  el.querySelectorAll(".ecard").forEach(c=>c.onclick=async()=>{
+    await post("/api/projects/active",{project:c.dataset.p,environment:c.dataset.e});
+    location.href=c.dataset.s;
+  });
+}
+async function loadKpis(){
+  let d; try{ d=await j("/api/analytics"); }catch(e){ return; }
+  const obs=d.observations||{}, runs=d.runs||{}, st=d.storage||{};
+  const kpi=(n,l)=>`<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`;
+  $("#kpis").innerHTML=[
+    kpi(runs.count??0,"runs"), kpi(obs.total??0,"things seen"),
+    kpi(obs.with_embeddings??0,"AI-searchable"),
+    kpi(st.used_gb!=null?st.used_gb+"G":"—","stored"),
+    kpi((d.suites||[]).length,"suites"),
+  ].join("");
+}
+async function loadRuns(){
+  let d; try{ d=await j("/api/runs"); }catch(e){ return; }
+  const el=$("#runs"); const rs=(d.runs||[]).slice(0,6);
+  if(!rs.length){ el.innerHTML='<div class="empty">No runs in this scope yet — record in the cockpit (press M), run a scenario, or start a fleet sim.</div>'; return; }
+  el.innerHTML=rs.map(r=>{ const m=r.manifest||{};
+    return `<a class="runrow" href="/run?id=${encodeURIComponent(r.run)}">
+      <span class="nm">${esc(r.run)}</span>
+      <span class="meta">${esc(r.robot_id||"")}${m.backend?" · "+esc(m.backend):""}</span>
+      <span class="grow"></span>
+      <span class="meta">${when(m.ended||m.started)}</span>
+      ${r.anchored?'<span class="pill ok">anchored</span>':r.sealed?'<span class="pill warn">sealed</span>':'<span class="pill">open</span>'}</a>`;
+  }).join("");
+}
+loadHero(); loadEnvs(); loadKpis(); loadRuns();
+</script>
+</body>
+</html>
