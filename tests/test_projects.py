@@ -135,3 +135,19 @@ def test_fleet_multirobot_into_one_environment(state):
     # all under the one environment root
     assert all(str(rr) in r["mcap"] for r in runs if r["robot_id"].startswith("robo-"))
     projects.clear_active()
+
+
+def test_manifest_records_channels_and_gps(state, tmp_path):
+    """Manifest carries the channel list incl. /gps (spec 01 P3)."""
+    from roborun import recorder as R, run_manifest
+    rec = R.start_recording(robot_id="ch")
+    rec.write_pose(1, 2)
+    rec.write_gps(37.77, -122.41, 10.0, status=1)
+    rec.write_camera(b"\xff\xd8\xff", name="front")
+    ch = rec.channels()
+    assert "/gps" in ch and "/pose" in ch and "/camera/front" in ch
+    run_manifest.write_start(rec.mcap_path, rec.run_id, "ch", backend="real")
+    seal = R.stop_recording(do_anchor=False)
+    run_manifest.finalize(rec.mcap_path, seal=seal, channels=ch)
+    m = run_manifest.read(rec.mcap_path)
+    assert "/gps" in m["channels"] and "/camera/front" in m["channels"]

@@ -540,6 +540,11 @@ class RunRecorder:
         with self._lock:
             self._checkpoint_locked()
 
+    def channels(self) -> list[str]:
+        """The topics written so far — the run manifest's channel list (spec 01)."""
+        with self._lock:
+            return sorted(self._channel_ids.keys())
+
     def status(self) -> dict[str, Any]:
         with self._lock:
             return {
@@ -547,6 +552,7 @@ class RunRecorder:
                 "mcap": str(self.mcap_path), "bytes": self._stream.offset,
                 "segments": len(self._segments),
                 "messages": dict(self._message_counts),
+                "channels": sorted(self._channel_ids.keys()),
                 "recording": not self._closed,
             }
 

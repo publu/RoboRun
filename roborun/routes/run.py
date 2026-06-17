@@ -136,13 +136,16 @@ def record_start(h, payload):
 
 @post("/api/run/record/stop")
 def record_stop(h, payload):
+    # capture the channel list before the recorder closes (manifest, spec 01)
+    _live = rec_mod.active_recorder()
+    _channels = _live.channels() if _live is not None else None
     seal = rec_mod.stop_recording(do_anchor=not payload.get("no_anchor", False))
     if seal is None:
         send_json(h, 200, {"ok": False, "error": "nothing is recording"})
         return
     mcap_path = rec_mod.runs_root() / seal["robot_id"] / f"{seal['run']}.mcap"
     from roborun import run_manifest
-    run_manifest.finalize(mcap_path, seal=seal)
+    run_manifest.finalize(mcap_path, seal=seal, channels=_channels)
     indexed = None
     try:
         from roborun.observations import extract_run

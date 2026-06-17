@@ -25,6 +25,9 @@ STANDARD_TOPICS = [
     ("/cmd_vel", "geometry_msgs/Twist"),
     ("/scan", "sensor_msgs/LaserScan"),
     ("/tf", "tf2_msgs/TFMessage"),
+    ("/gps/fix", "sensor_msgs/NavSatFix"),
+    ("/fix", "sensor_msgs/NavSatFix"),
+    ("/navsat/fix", "sensor_msgs/NavSatFix"),
 ]
 
 
@@ -254,6 +257,27 @@ class RosTelemetryBridge:
                     "temperature": msg.get("temperature", 0),
                 })
             return on_battery
+
+        if "NavSatFix" in msg_type:
+            def on_gps(msg: dict) -> None:
+                lat = msg.get("latitude", 0.0)
+                lon = msg.get("longitude", 0.0)
+                alt = msg.get("altitude", 0.0)
+                st = msg.get("status", 0)
+                if isinstance(st, dict):
+                    st = st.get("status", 0)
+                bus.push(robot_id, "gps", {"latitude": lat, "longitude": lon,
+                                           "altitude": alt, "status": st})
+                # fold GPS into the run's MCAP (spec 01 — /gps NavSatFix channel)
+                try:
+                    from roborun.recorder import active_recorder
+                    rec = active_recorder()
+                    if rec is not None:
+                        rec.write_gps(float(lat), float(lon), float(alt),
+                                      status=int(st or 0))
+                except Exception:
+                    pass
+            return on_gps
 
         if "Odometry" in msg_type:
             def on_odom(msg: dict) -> None:
