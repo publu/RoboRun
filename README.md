@@ -116,10 +116,15 @@ The cockpit's **▤ VIEWS** menu opens the dashboards (also `roborun demo` to po
 From the local runner, no browser needed:
 
 ```bash
+roborun demo                     # load sample data so the dashboards aren't empty
+roborun ask "patrol the lobby"   # tell the robot what to do in plain English
 roborun search "person"          # across every recorded run, all-time
 roborun scenarios run mjx_reach  # score a scenario (vectorized MuJoCo, sealed)
 roborun dataset "forklift" ./ds  # curate a labeled training set from a search
+roborun status                   # is it running, what's connected, how much recorded
 ```
+
+(`roborun help` lists every verb.)
 
 The robot handle gets it too: `robot.go_to_place("the charging dock")` navigates to where it last saw something (semantic memory), and the same `recall_place` is an MCP tool any agent can call.
 
