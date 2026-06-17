@@ -51,9 +51,10 @@
   </nav>
 </header>
 <div class="bar">
-  <div class="seg" id="mode" title="how to match — by meaning (AI understanding) or by exact object label">
+  <div class="seg" id="mode" title="how to match — by meaning, by exact object, or the uncertain detections worth labeling (active learning)">
     <button data-by="clip" class="on">by meaning</button>
     <button data-by="label">by object</button>
+    <button data-by="uncertain" title="the examples the model is unsure about — curate these to label and improve it">needs labeling</button>
   </div>
   <input id="q" placeholder="who/what to find — 'person in red', 'forklift', 'red mug'…"
          onkeydown="if(event.key==='Enter')run()">
@@ -88,7 +89,8 @@ async function run(){
   const s=toEpoch($("#since").value), u=toEpoch($("#until").value);
   if(s) body.since=s; if(u) body.until=u;
   if($("#source").value.trim()) body.source_id=$("#source").value.trim();
-  if(!body.query && by!=="time"){ $("#meta").textContent="Type something to find."; return; }
+  if(!body.query && by!=="time" && by!=="uncertain"){ $("#meta").textContent="Type something to find."; return; }
+  if(by==="uncertain" && !body.query){ $("#meta").textContent="Finding the examples the model is unsure about…"; }
   $("#meta").textContent="Searching…";
   let d; try{ d=await (await fetch("/api/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json(); }
   catch(e){ $("#meta").textContent="Search failed: "+e; return; }
