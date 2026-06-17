@@ -55,23 +55,34 @@ def ask_cli(argv: list[str]) -> int:
         resp = urllib.request.urlopen(req, timeout=120)
     except Exception as exc:
         print(f"can't reach RoboRun ({exc}). Start it with `roborun` first."); return 1
+    printed = False
+    buf = ""
     for raw in resp:
         line = raw.decode().strip()
         if not line.startswith("data:"):
+            buf += line          # non-SSE body (e.g. a plain JSON error)
             continue
         try:
             ev = json.loads(line[5:].strip())
         except Exception:
             continue
         if ev.get("type") == "text":
-            print(ev.get("text", ""), end="", flush=True)
+            print(ev.get("text", ""), end="", flush=True); printed = True
         elif ev.get("type") == "tool_use":
             print(f"\n  · {ev.get('tool_name')}({json.dumps(ev.get('tool_input', {}))[:60]})", flush=True)
         elif ev.get("type") == "error":
             print(f"\n[agent error] {ev.get('error')}"); return 1
         elif ev.get("type") == "done":
             print(); return 0
-    print(); return 0
+    if printed:
+        print(); return 0
+    # nothing streamed — surface a JSON error body (e.g. agent unavailable)
+    try:
+        err = json.loads(buf)
+        print(err.get("error", "the agent isn't available."))
+    except Exception:
+        print("the agent isn't available — set ANTHROPIC_API_KEY and restart `roborun`.")
+    return 1
 
 
 def status_cli(argv: list[str]) -> int:
