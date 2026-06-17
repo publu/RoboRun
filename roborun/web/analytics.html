@@ -89,13 +89,18 @@ async function load(){
   spark($("#sparkwrap"), d.over_time||[]);
   bars($("#suites"), (d.suites||[]).map(s=>({suite:s.suite,pct:Math.round(s.pass_rate*100)})), "suite","pct",true);
   bars($("#sources"), d.sources||[], "source","count",false);
-  const robots=d.robots||[];
+  const robots=d.robots||[]; const now=Date.now()/1000;
   $("#fleet").innerHTML = robots.length? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">`+
-    robots.map(r=>`<div style="border:1px solid var(--line);border-radius:8px;padding:10px">
-      <div style="color:var(--accent);font-weight:600">${r.robot_id}</div>
-      <div class="empty">${r.observations} obs · ${r.top_label||"—"}</div>
-      <div class="empty">last seen ${r.last_seen?new Date(r.last_seen*1000).toLocaleString():"—"}</div>
-    </div>`).join("")+`</div>`
+    robots.map(r=>{
+      const age = r.last_seen? now-r.last_seen : Infinity;
+      const active = age < 120;            // seen in the last 2 min → active
+      const dot = active? "#00d47e" : (age<3600? "#d4a030" : "#6b7b88");
+      const state = active? "active" : (age<3600? "idle" : "offline");
+      return `<div style="border:1px solid var(--line);border-radius:8px;padding:10px">
+      <div style="font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-right:6px"></span><span style="color:var(--accent)">${r.robot_id}</span> <span class="empty" style="float:right">${state}</span></div>
+      <div class="empty">${r.observations} seen · mostly ${r.top_label||"—"}</div>
+      <div class="empty">last active ${r.last_seen?new Date(r.last_seen*1000).toLocaleString():"—"}</div>
+    </div>`;}).join("")+`</div>`
     : '<div class="empty">No robots have recorded data yet — connect one with <code>roborun connect</code>, start a sim, or run <code>roborun demo</code>.</div>';
 }
 load(); setInterval(load, 5000);
