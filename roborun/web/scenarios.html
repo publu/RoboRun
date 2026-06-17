@@ -114,9 +114,12 @@ async function loadRuns(){
       .slice(0,4).map(([k,v])=>`${k}: ${v}`).join(" · ");
     const ev = Object.entries(r.evaluation||{}).map(([g,vs])=>
       `${g}{${Object.entries(vs).map(([k,v])=>k+":"+v).join(",")}}`).join(" ");
+    const nameCell = r.run_id
+      ? `<a href="/run?id=${encodeURIComponent(r.run_id)}" style="color:#00d47e;text-decoration:none">${r.name} ↗</a>`
+      : r.name;
     return `<tr>
       <td><span class="pill ${r.outcome}">${r.outcome}</span>${r.reason?`<div class="meta">${r.reason}</div>`:""}</td>
-      <td>${r.name}</td><td class="metrics">${r.suite||"—"}</td>
+      <td>${nameCell}</td><td class="metrics">${r.suite||"—"}</td>
       <td class="metrics">${r.seed??"—"}</td>
       <td class="metrics">${m||"—"}</td><td class="metrics">${ev||"—"}</td>
       <td class="metrics">${(r.ended||"").replace("T"," ").replace("Z","")}</td>

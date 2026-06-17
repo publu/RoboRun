@@ -130,6 +130,8 @@ class Handler(SimpleHTTPRequestHandler):
             self.path = "/timeline.html"
         if path_only == "/analytics":
             self.path = "/analytics.html"
+        if path_only == "/run":
+            self.path = "/run.html"
         super().do_GET()
 
     def do_OPTIONS(self) -> None:

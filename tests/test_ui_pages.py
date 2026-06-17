@@ -52,10 +52,22 @@ def _post(base, path, body):
     ("/timeline", b"TIMELINE"),
     ("/analytics", b"ANALYTICS"),
     ("/scenarios", b"SCENARIOS"),
+    ("/run", b"RUN"),
 ])
 def test_pages_serve(server, path, needle):
     status, body = _get(server, path)
     assert status == 200 and needle in body
+
+
+def test_run_series_route_validates(server):
+    status, d = _post(server, "/api/scenarios/run", {"scenario": "x"}) if False else (200, None)
+    # missing id → 400 via the GET route
+    import urllib.error
+    try:
+        _get(server, "/api/run/series")
+        assert False, "expected 400"
+    except urllib.error.HTTPError as e:
+        assert e.code == 400
 
 
 def test_pages_cross_link_nav(server):

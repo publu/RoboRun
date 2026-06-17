@@ -31,6 +31,20 @@ def _runs() -> list[Path]:
     return sorted([p for p in root.iterdir() if (p / "run.jsonl").exists()])
 
 
+@get("/api/run/series")
+def run_series_route(h):
+    """Per-run telemetry series for the Analyze panels. ?id=<run>&robot=<id>"""
+    from urllib.parse import parse_qs, urlparse
+    from roborun.run_series import run_series
+    q = parse_qs(urlparse(h.path).query)
+    run_id = (q.get("id") or q.get("run") or [""])[0]
+    robot = (q.get("robot") or [None])[0]
+    if not run_id:
+        send_json(h, 400, {"ok": False, "error": "id required"})
+        return
+    send_json(h, 200, run_series(run_id, robot))
+
+
 @get("/api/run/events")
 def run_events(h):
     """Events of a recorded run, for replay. ?run=<name>&limit=N"""
