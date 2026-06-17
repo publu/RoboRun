@@ -37,3 +37,13 @@ def test_determinism_same_seed():
     e3 = make_vec(SANITY_XML, n_envs=4); e3.reset(seed=8)
     o3 = np.asarray(e3.step(ctrl))
     assert not np.allclose(o1, o3)               # different seed → different jitter
+
+
+def test_measure_sps_and_rollout():
+    env = make_vec(SANITY_XML, n_envs=16)
+    r = env.measure_sps(steps=20)
+    assert r["sps"] > 0 and r["n_envs"] == 16
+
+    from roborun.mjx_env import rollout
+    obs = rollout(env, lambda o: np.zeros((16, env.nu), np.float32), steps=5, seed=1)
+    assert obs.shape[0] == 16

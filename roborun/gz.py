@@ -94,3 +94,38 @@ class GzClock:
 
     def reset(self, seed: int = 0) -> dict | None:
         return self._call("control", {"reset": {"all": True}, "seed": int(seed)})
+
+
+class GzRunner:
+    """Orchestrates a deterministic gz episode: detect the world, spawn a level,
+    own the clock. Degrades to a dry-run plan (no calls) when no world/transport,
+    so the flow is testable without ROS/gz."""
+
+    def __init__(self, transport: Any = None) -> None:
+        self.transport = transport
+        self.world = None
+        self.clock: GzClock | None = None
+
+    def attach(self) -> bool:
+        info = detect_world(self.transport)
+        if info is None:
+            return False
+        self.world = info["world"]
+        self.clock = GzClock(self.world, self.transport)
+        return True
+
+    def plan_level(self, level: dict, seed: int = 0) -> list[dict]:
+        """The spawn plan for a level (pure; what attach() would POST)."""
+        return level_to_spawns(level, seed)
+
+    def run_level(self, level: dict, seed: int = 0, steps: int = 100) -> dict:
+        """Spawn + step. Returns a report; status 'no-world' when offline."""
+        if not self.attach():
+            return {"status": "no-world", "plan": self.plan_level(level, seed)}
+        self.clock.reset(seed)
+        for sp in self.plan_level(level, seed):
+            self.transport.call_service(f"/world/{self.world}/{sp['service']}",
+                                        args=sp, timeout=5.0)
+        for _ in range(steps):
+            self.clock.step(1)
+        return {"status": "ran", "world": self.world, "steps": steps, "seed": seed}

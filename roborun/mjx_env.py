@@ -76,6 +76,33 @@ class MJXVecEnv:
         return jnp.concatenate([self._data.qpos, self._data.qvel], axis=1)
 
 
+    def measure_sps(self, steps: int = 100, seed: int = 0) -> dict:
+        """Steps-per-second on the present device (CPU here; GPU pays off). The
+        budget the LOCAL_SIM/PERF specs ask for — measured, not asserted."""
+        import time
+        import numpy as np
+        self.reset(seed)
+        ctrl = np.zeros((self.n, self.nu), np.float32)
+        self.step(ctrl)  # warm jit
+        t0 = time.time()
+        for _ in range(steps):
+            self.step(ctrl)
+        dt = time.time() - t0
+        sps = self.n * steps / dt if dt > 0 else 0.0
+        return {"n_envs": self.n, "steps": steps, "seconds": round(dt, 3),
+                "sps": int(sps)}
+
+
+def rollout(env: MJXVecEnv, policy_fn: Callable, steps: int, seed: int = 0):
+    """Run a vectorized rollout: policy_fn(obs)->ctrl[n,nu]. Returns the final
+    obs. Single code path whether n=1 (a CleanRL-style env) or n=10k."""
+    import numpy as np
+    obs = env.reset(seed)
+    for _ in range(steps):
+        obs = env.step(np.asarray(policy_fn(obs)))
+    return obs
+
+
 def make_vec(model_xml: str, n_envs: int = 256) -> MJXVecEnv:
     import mujoco
     model = mujoco.MjModel.from_xml_string(model_xml)

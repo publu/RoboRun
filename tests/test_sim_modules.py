@@ -93,3 +93,20 @@ def test_gz_level_to_spawns():
 def test_gz_detect_world_none_without_transport():
     assert gz.detect_world(transport=None) is None
     assert gz.GzClock("default", transport=None).step(1) is None
+
+
+# ── gz capability matrix + GzRunner dry-run (no ROS/gz needed) ───────────────
+
+def test_gazebo_in_capability_matrix():
+    from roborun.transport import CAPABILITY_MATRIX
+    assert "gazebo" in CAPABILITY_MATRIX
+    g = CAPABILITY_MATRIX["gazebo"]
+    assert g["clock_control"] and g["spawn"] and g["services"]
+
+
+def test_gz_runner_dry_run_without_world():
+    r = gz.GzRunner(transport=None)
+    assert r.attach() is False
+    out = r.run_level({"robot": "wheeled", "props": [{"kind": "box", "x": 1, "z": 1}]})
+    assert out["status"] == "no-world"
+    assert any(s["name"] == "robot" for s in out["plan"])
