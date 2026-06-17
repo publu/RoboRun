@@ -239,6 +239,21 @@ def get_result(scenario_id: str) -> dict[str, Any] | None:
         return None
 
 
+def find_by_run(run_id: str) -> dict[str, Any] | None:
+    """The scored scenario record whose run_id matches — the run-detail's
+    metadata/params/results/evaluation source. Newest-first file scan."""
+    if not run_id:
+        return None
+    for p in sorted(_scenarios_dir().glob("*.scenario.json"), reverse=True):
+        try:
+            row = json.loads(p.read_text())
+        except Exception:
+            continue
+        if row.get("run_id") == run_id:
+            return row
+    return None
+
+
 def list_suites() -> list[dict[str, Any]]:
     """Aggregate scored runs into suite cards — pass rate, run count, latest
     activity — the Antioch "Suites" view. Runs with no `suite` fall under

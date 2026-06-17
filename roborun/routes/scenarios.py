@@ -23,6 +23,17 @@ def list_scenarios(h):
     send_json(h, 200, {"ok": True, "results": rows, "total": len(rows)})
 
 
+@get("/api/scenarios/by-run")
+def scenario_by_run(h):
+    """The scored record for one run — metadata/params/results/evaluation for
+    the run-detail view. ?run=<run_id>."""
+    from urllib.parse import parse_qs, urlparse
+    from roborun.scenario import find_by_run
+    run = (parse_qs(urlparse(h.path).query).get("run") or [""])[0]
+    rec = find_by_run(run)
+    send_json(h, 200, {"ok": rec is not None, "result": rec})
+
+
 @get("/api/scenarios/suites")
 def list_suites(h):
     """Suite cards: pass-rate, run count, latest — the Antioch Suites view."""

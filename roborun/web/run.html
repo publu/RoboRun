@@ -5,39 +5,45 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RoboRun · Run</title>
+<link rel="stylesheet" href="./ui.css">
+<script src="./run-detail.js"></script>
 <style>
-  :root{ --bg:#0b0e0c; --panel:#11150f; --line:#1e2a1f; --fg:#e6f0e8; --dim:#7aaf90; --accent:#00d47e; --blue:#4090e0; --amber:#d4a030; }
   *{ box-sizing:border-box; } body{ margin:0; background:var(--bg); color:var(--fg);
-     font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+     font:14px/1.5 var(--mono); }
   header{ display:flex; align-items:center; gap:14px; padding:16px 24px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
-  header h1{ font-size:15px; margin:0; } header .id{ color:var(--dim); font-size:12px; }
-  header nav{ margin-left:auto; display:flex; gap:14px; } header nav a{ color:var(--dim); text-decoration:none; font-size:12px; }
-  main{ padding:20px 24px; max-width:1100px; margin:0 auto; }
-  .meta{ color:var(--dim); font-size:12px; margin-bottom:16px; }
+  header h1{ font-size:15px; margin:0; } header .id{ color:var(--fg-dim); font-size:12px; }
+  main{ padding:22px 24px; max-width:1100px; margin:0 auto; }
   .grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
   @media(max-width:760px){ .grid{ grid-template-columns:1fr; } }
-  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; }
-  .panel h2{ font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--dim); margin:0 0 10px; display:flex; justify-content:space-between; }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:14px; }
+  .panel h2{ font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--fg-dim); margin:0 0 10px; display:flex; justify-content:space-between; align-items:center; }
   svg{ width:100%; display:block; }
-  .empty{ color:var(--dim); font-size:12px; padding:20px; text-align:center; }
+  .empty{ color:var(--fg-dim); font-size:12px; padding:20px; text-align:center; }
+  #detail{ margin-bottom:20px; }
 </style>
 </head>
 <body>
 <header>
   <h1>RUN</h1><span class="id" id="rid"></span>
-  <nav><a href="/scenarios">← scenarios</a><a href="/analytics">analytics</a><a href="/search">search</a></nav>
+  <nav class="nav">
+    <a href="/">cockpit</a><a href="/scenarios">scenarios</a>
+    <a href="/timeline">timeline</a><a href="/analytics">analytics</a>
+    <a href="/fleet">fleet lab</a><a href="/search">search</a>
+  </nav>
 </header>
 <main>
-  <p style="color:var(--dim);font-size:13px;margin:0 0 14px">Replay a single run. Drag the slider to scrub through time — the camera frame, position, speed, and obstacle distance all move together. Hit <b>⚑ Flag</b> to bookmark a moment worth revisiting.</p>
-  <div class="meta" id="meta">loading…</div>
+  <div id="detail"><div class="empty">loading…</div></div>
+
   <div class="panel" id="player" style="margin-bottom:16px;display:none">
-    <h2>Synced playback <span id="ptime" style="color:var(--dim)"></span>
-      <button id="flag" title="flag this moment to revisit" style="background:#16210f;color:var(--amber);border:1px solid var(--line);border-radius:5px;padding:2px 10px;cursor:pointer;font:inherit;font-size:12px">⚑ Flag</button>
+    <h2>Synced replay <span id="ptime" style="color:var(--fg-dim)"></span>
+      <button id="flag" class="btn sm" title="flag this moment to revisit" style="color:var(--amber)">⚑ Flag</button>
     </h2>
     <img id="pframe" style="width:100%;max-height:340px;object-fit:contain;background:#070907;border-radius:6px" alt="frame">
     <input id="scrub" type="range" min="0" max="1000" value="0" style="width:100%;margin-top:10px;accent-color:var(--accent)">
     <div id="incidents" style="margin-top:8px"></div>
   </div>
+
+  <div class="seclabel" style="margin:4px 0 10px">Telemetry</div>
   <div class="grid">
     <div class="panel"><h2>Robot trajectory <span id="lblTraj"></span></h2><div id="traj"></div></div>
     <div class="panel"><h2>Velocity <span style="color:var(--accent)">linear</span> · <span style="color:var(--blue)">angular</span></h2><div id="vel"></div></div>
@@ -80,11 +86,19 @@ function scanChart(el, ranges, H=200){
     +`<polygon points="${pts}" fill="rgba(0,212,126,.12)" stroke="var(--accent)" stroke-width="1.5"/>`
     +`<circle cx="${cx}" cy="${cy}" r="3" fill="var(--accent)"/></svg>`;
 }
+async function loadRecord(){
+  // the scored record → metadata/params/results/evaluation/tags (Antioch detail)
+  try{
+    const d=await (await fetch("/api/scenarios/by-run?run="+encodeURIComponent(qid))).json();
+    const actions=`<a class="btn sm" href="/api/run/mcap/download?run=${encodeURIComponent(qid)}">↓ MCAP</a>`;
+    renderRunRecord($("#detail"), d.result, {actions});
+  }catch(e){ renderRunRecord($("#detail"), null, {}); }
+}
 async function load(){
-  if(!qid){ $("#meta").textContent="No run id. Open from /scenarios."; return; }
-  let d; try{ d=await (await fetch("/api/run/series?id="+encodeURIComponent(qid))).json(); }catch(e){ $("#meta").textContent="load failed"; return; }
-  if(!d.ok){ $("#meta").textContent=d.error||"run not found"; return; }
-  $("#meta").textContent=`robot ${d.robot_id} · ${d.duration_s}s · ${Object.entries(d.counts||{}).map(([k,v])=>k+":"+v).join("  ")}`;
+  if(!qid){ $("#detail").innerHTML='<div class="empty">No run id. Open one from /scenarios or /timeline.</div>'; return; }
+  loadRecord();
+  let d; try{ d=await (await fetch("/api/run/series?id="+encodeURIComponent(qid))).json(); }catch(e){ return; }
+  if(!d.ok){ return; }
   trajChart($("#traj"), d.trajectory||[]);
   lineChart($("#vel"), d.velocity||[], ["linear","angular"], ["var(--accent)","var(--blue)"]);
   lineChart($("#clear"), d.clearance||[], ["min"], ["var(--amber)"]);
@@ -116,7 +130,7 @@ function setupPlayer(d){
 async function loadIncidents(){
   try{ const d=await (await fetch("/api/incidents?run="+encodeURIComponent(qid))).json();
     const el=$("#incidents");
-    el.innerHTML=(d.incidents||[]).map(i=>`<span style="display:inline-block;margin:3px 6px 0 0;background:rgba(212,160,48,.15);color:var(--amber);border-radius:999px;padding:2px 9px;font-size:11px">⚑ ${i.note||i.tag}</span>`).join("");
+    el.innerHTML=(d.incidents||[]).map(i=>`<span class="chip" style="color:var(--amber);border-color:#3a3015">⚑ ${i.note||i.tag}</span>`).join("");
   }catch(e){}
 }
 load();

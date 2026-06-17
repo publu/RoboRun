@@ -5,59 +5,51 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RoboRun · Scenarios</title>
+<link rel="stylesheet" href="./ui.css">
 <style>
-  :root{ --bg:#0b0e0c; --panel:#11150f; --line:#1e2a1f; --fg:#e6f0e8; --dim:#7aaf90;
-         --accent:#00d47e; --red:#e0563f; --amber:#d4a030; }
   *{ box-sizing:border-box; }
-  body{ margin:0; background:var(--bg); color:var(--fg);
-        font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  body{ margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--mono); }
   header{ display:flex; align-items:baseline; gap:16px; padding:18px 24px;
           border-bottom:1px solid var(--line); flex-wrap:wrap; }
   header h1{ font-size:16px; margin:0; letter-spacing:.5px; }
-  header .sub{ color:var(--dim); font-size:12px; }
-  header a{ color:var(--dim); text-decoration:none; margin-left:auto; }
+  header .sub{ color:var(--fg-dim); font-size:12px; max-width:640px; }
   main{ padding:24px; max-width:1200px; margin:0 auto; }
-  h2{ font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--dim);
+  h2{ font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--fg-dim);
       margin:28px 0 12px; }
   .cards{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; }
-  .card{ background:var(--panel); border:1px solid var(--line); border-radius:10px;
-         padding:14px 16px; cursor:pointer; transition:border-color .15s; }
-  .card:hover{ border-color:var(--accent); }
-  .card.sel{ border-color:var(--accent); }
-  .card .name{ font-weight:600; margin-bottom:8px; word-break:break-word; }
-  .rate{ font-size:26px; font-weight:700; }
-  .rate small{ font-size:12px; color:var(--dim); font-weight:400; margin-left:6px; }
-  .bar{ height:5px; border-radius:3px; background:#23311f; margin:8px 0 6px; overflow:hidden; }
-  .bar i{ display:block; height:100%; background:var(--accent); }
-  .meta{ color:var(--dim); font-size:11px; }
+  /* runnable launch card */
+  .lcard{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:14px 16px; }
+  .lcard .name{ font-weight:600; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .lrow{ display:flex; justify-content:space-between; align-items:center; margin:5px 0; font-size:12px; color:var(--fg-2); }
+  /* suite card with donut */
+  .scard{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r);
+          padding:14px 16px; cursor:pointer; transition:border-color .15s; display:flex; gap:12px; align-items:center; }
+  .scard:hover{ border-color:var(--accent); } .scard.sel{ border-color:var(--accent); background:#0e150f; }
+  .scard .name{ font-weight:600; word-break:break-word; } .scard .sm{ color:var(--fg-dim); font-size:11px; margin-top:3px; }
+  /* suite detail */
+  #suiteDetail{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:18px; margin-top:12px; }
+  .sd-grid{ display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:16px; }
+  @media(max-width:760px){ .sd-grid{ grid-template-columns:1fr; } }
+  .srow{ display:flex; align-items:center; gap:12px; padding:7px 0; border-bottom:1px solid var(--line-soft); }
+  .srow .nm{ flex:1; font-size:12.5px; } .srow .rt{ color:var(--fg-2); font-size:12px; width:42px; text-align:right; font-variant-numeric:tabular-nums; }
+  /* runs table */
   table{ width:100%; border-collapse:collapse; }
-  th,td{ text-align:left; padding:8px 10px; border-bottom:1px solid var(--line);
-         font-size:12px; vertical-align:top; }
-  th{ color:var(--dim); font-weight:500; text-transform:uppercase; letter-spacing:.5px; }
-  .pill{ display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; }
-  .passed{ background:rgba(0,212,126,.15); color:var(--accent); }
-  .failed{ background:rgba(224,86,63,.15); color:var(--red); }
-  .error{ background:rgba(212,160,48,.15); color:var(--amber); }
-  .metrics{ color:var(--dim); }
-  .empty{ color:var(--dim); padding:40px; text-align:center; }
-  .filters{ display:flex; gap:8px; margin-bottom:12px; }
-  .filters button{ background:var(--panel); color:var(--dim); border:1px solid var(--line);
-        border-radius:6px; padding:4px 12px; cursor:pointer; font:inherit; font-size:12px; }
-  .filters button.on{ color:var(--accent); border-color:var(--accent); }
+  th,td{ text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); font-size:12px; vertical-align:top; }
+  th{ color:var(--fg-dim); font-weight:500; text-transform:uppercase; letter-spacing:.5px; }
+  td.metrics{ color:var(--fg-2); }
+  .filterbar{ display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  .empty{ color:var(--fg-dim); padding:40px; text-align:center; }
   @media(max-width:700px){ table{ display:block; overflow-x:auto; white-space:nowrap; } main{ padding:16px; } }
 </style>
 </head>
 <body>
 <header>
   <h1>SCENARIOS</h1>
-  <span class="sub">Test your robot's behaviors and see how they score. Click a scenario to run it — each run is recorded and tamper-proof.</span>
-  <nav style="margin-left:auto;display:flex;gap:14px;font-size:12px">
-    <a href="/" style="color:#7aaf90;text-decoration:none">cockpit</a>
-    <a href="/scenarios" style="color:#00d47e;text-decoration:none">scenarios</a>
-    <a href="/timeline" style="color:#7aaf90;text-decoration:none">timeline</a>
-    <a href="/analytics" style="color:#7aaf90;text-decoration:none">analytics</a>
-    <a href="/fleet" style="color:#7aaf90;text-decoration:none">fleet lab</a>
-    <a href="/search" style="color:#7aaf90;text-decoration:none">search</a>
+  <span class="sub">Test your robot's behaviors and see how they score. Click a scenario to run it — every run is recorded and tamper-proof.</span>
+  <nav class="nav">
+    <a href="/">cockpit</a><a href="/scenarios" class="on">scenarios</a>
+    <a href="/timeline">timeline</a><a href="/analytics">analytics</a>
+    <a href="/fleet">fleet lab</a><a href="/search">search</a>
   </nav>
 </header>
 <main>
@@ -66,14 +58,10 @@
 
   <h2>Suites</h2>
   <div id="suites" class="cards"><div class="empty">loading…</div></div>
+  <div id="suiteDetail" hidden></div>
 
   <h2 id="runsHead">Runs</h2>
-  <div class="filters" id="filters">
-    <button data-o="" class="on">all</button>
-    <button data-o="passed">passed</button>
-    <button data-o="failed">failed</button>
-    <button data-o="error">error</button>
-  </div>
+  <div class="filterbar" id="filterbar"></div>
   <table>
     <thead><tr><th>Result</th><th>Scenario</th><th>Suite</th>
       <th title="random seed — same seed reproduces the exact run">Seed</th>
@@ -83,19 +71,21 @@
 </main>
 <script>
 const $ = s => document.querySelector(s);
-let state = { suite:null, outcome:"" };
+let state = { suite:null, outcome:"", tag:null };
 
 async function j(u){ const r = await fetch(u); return r.json(); }
+const pct = x => Math.round((x||0)*100);
+const rateColor = p => p>=70 ? "var(--ok)" : p>=40 ? "var(--warn)" : "var(--bad)";
+const when = s => (s||"").replace("T"," ").replace("Z","").split(".")[0];
+const esc = s => String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
-function pct(x){ return Math.round((x||0)*100); }
-
+// ── launch ──────────────────────────────────────────────────────────────
 async function runScenario(name){ await post({scenario:name}); }
 async function runSuite(suite){ await post({suite}); }
 async function post(body){
-  const el=$("#runnable"); const prev=el.style.opacity; el.style.opacity=.5;
-  try{ await fetch("/api/scenarios/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); }
-  catch(e){}
-  el.style.opacity=prev||1; loadSuites(); loadRuns();
+  const el=$("#runnable"); el.style.opacity=.5;
+  try{ await fetch("/api/scenarios/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); }catch(e){}
+  el.style.opacity=1; loadSuites(); loadRuns(); if(state.suite) loadSuiteDetail();
 }
 async function loadRunnable(){
   let d; try{ d=await j("/api/scenarios/defs"); }catch(e){ return; }
@@ -103,65 +93,117 @@ async function loadRunnable(){
   if(!d.defs || !d.defs.length){ el.innerHTML='<div class="empty">No scenarios available. Built-in demos load automatically; add your own with <code>@scenario_def</code>.</div>'; return; }
   const bySuite={}; d.defs.forEach(x=>(bySuite[x.suite||"(none)"]=bySuite[x.suite||"(none)"]||[]).push(x));
   el.innerHTML=Object.entries(bySuite).map(([s,defs])=>`
-    <div class="card">
-      <div class="name">${s} <button onclick="runSuite('${s}')" style="float:right;background:#00d47e;color:#06120c;border:0;border-radius:5px;padding:2px 9px;cursor:pointer;font:inherit;font-size:11px">▶ suite</button></div>
-      ${defs.map(x=>`<div class="meta" style="display:flex;justify-content:space-between;align-items:center;margin:5px 0">
-        <span>${x.name}</span>
-        <button onclick="runScenario('${x.name}')" style="background:#16210f;color:#00d47e;border:1px solid #1e2a1f;border-radius:5px;padding:1px 8px;cursor:pointer;font:inherit;font-size:11px">run</button></div>`).join("")}
+    <div class="lcard">
+      <div class="name">${esc(s)} <button class="btn sm accent" onclick="runSuite('${esc(s)}')">▶ suite</button></div>
+      ${defs.map(x=>`<div class="lrow"><span>${esc(x.name)}</span>
+        <button class="btn sm" onclick="runScenario('${esc(x.name)}')">run</button></div>`).join("")}
     </div>`).join("");
 }
 
+// ── suites (donut cards) ────────────────────────────────────────────────
 async function loadSuites(){
   const d = await j("/api/scenarios/suites");
   const el = $("#suites");
-  if(!d.suites || !d.suites.length){ paint(el,'<div class="empty">No suites yet — click a scenario above to run it, and its results will appear here grouped by suite with a pass-rate.</div>'); return; }
-  if(!paint(el, d.suites.map(c => `
-    <div class="card ${state.suite===c.suite?'sel':''}" data-suite="${c.suite}">
-      <div class="name">${c.suite}</div>
-      <div class="rate">${pct(c.pass_rate)}%<small>${c.passed}/${c.runs} pass</small></div>
-      <div class="bar"><i style="width:${pct(c.pass_rate)}%"></i></div>
-      <div class="meta">${(c.scenarios||[]).slice(0,4).join(", ")}${c.scenarios&&c.scenarios.length>4?"…":""}</div>
-    </div>`).join(""))) return;
-  el.querySelectorAll(".card").forEach(card => card.onclick = () => {
-    state.suite = state.suite===card.dataset.suite ? null : card.dataset.suite;
-    loadSuites(); loadRuns();
-  });
+  if(!d.suites || !d.suites.length){ paint(el,'<div class="empty">No suites yet — run a scenario above and results appear here grouped by suite with a pass-rate.</div>'); return; }
+  if(paint(el, d.suites.map(c => { const p=pct(c.pass_rate); return `
+    <div class="scard ${state.suite===c.suite?'sel':''}" data-suite="${esc(c.suite)}">
+      <div class="donut" style="--p:${p};--c:${rateColor(p)}"><span>${p}%</span></div>
+      <div><div class="name">${esc(c.suite)}</div>
+        <div class="sm">${c.passed}/${c.runs} pass · ${(c.scenarios||[]).length} scenarios</div>
+        <div class="sm">${when(c.latest)||""}</div></div>
+    </div>`; }).join(""))){
+    el.querySelectorAll(".scard").forEach(card => card.onclick = () => {
+      state.suite = state.suite===card.dataset.suite ? null : card.dataset.suite;
+      loadSuites(); loadSuiteDetail(); loadRuns(); renderFilters();
+    });
+  }
 }
 
+// ── suite detail: KPIs + per-scenario pass/fail timelines ───────────────
+async function loadSuiteDetail(){
+  const box=$("#suiteDetail");
+  if(!state.suite){ box.hidden=true; return; }
+  box.hidden=false;
+  const d = await j("/api/scenarios?suite="+encodeURIComponent(state.suite)+"&limit=200");
+  const runs = d.results||[];
+  const passed = runs.filter(r=>r.outcome==="passed").length;
+  const rate = runs.length? Math.round(passed/runs.length*100):0;
+  const names = [...new Set(runs.map(r=>r.name))];
+  // group by scenario name, chronological (oldest→newest) for the dotted timeline
+  const groups = names.map(n=>{
+    const rs = runs.filter(r=>r.name===n).slice().reverse();
+    const p = rs.filter(r=>r.outcome==="passed").length;
+    return { name:n, runs:rs, rate: rs.length? Math.round(p/rs.length*100):0 };
+  });
+  const kpi=(n,l)=>`<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`;
+  const dots = rs => `<span class="dotrow">${rs.map(r=>
+    `<span class="dot ${r.outcome==='passed'?'pass':r.outcome==='failed'?'fail':'warn'}" title="${esc(r.name)} · ${esc(r.outcome)} · ${when(r.ended)}"></span>`).join("")}</span>`;
+  box.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span class="rd-title">${esc(state.suite)}</span>
+      <span class="pill ${rate>=70?'ok':rate>=40?'warn':'bad'}">${rate}% pass</span>
+      <a class="btn sm" style="margin-left:auto" href="#runsHead" onclick="state.outcome='';renderFilters();loadRuns()">view runs ↓</a>
+    </div>
+    <div class="kpis" style="margin-top:14px">
+      ${kpi(runs.length,"Total Runs")}${kpi(rate+"%","Pass Rate")}
+      ${kpi(names.length,"Scenarios")}${kpi(when(runs[0]&&runs[0].ended)||"—","Last Run")}
+    </div>
+    <div class="sd-grid">
+      <div>
+        <div class="seclabel">Pass-rate history</div>
+        <div class="hist">${groups.slice(0,8).map(g=>{
+          const r=g.rate; return `<div class="col"><div class="histbar">
+            <div class="pass" style="height:${r}%"></div><div class="fail" style="height:${100-r}%"></div></div>
+            <div class="cap">${esc(g.name)}</div></div>`; }).join("")}</div>
+      </div>
+      <div>
+        <div class="seclabel">Recent runs by scenario</div>
+        ${groups.map(g=>`<div class="srow"><span class="nm">${esc(g.name)}</span>${dots(g.runs.slice(-14))}<span class="rt">${g.rate}%</span></div>`).join("")||'<div class="rd-none">no runs</div>'}
+      </div>
+    </div>`;
+}
+
+// ── faceted filter bar (active chips + reset) ───────────────────────────
+function renderFilters(){
+  const bar=$("#filterbar");
+  const out=(o,l)=>`<button class="btn sm ${state.outcome===o?'on':''}" data-o="${o}">${l}</button>`;
+  let chips="";
+  if(state.suite) chips+=`<span class="chip">suite: <b>${esc(state.suite)}</b> <a href="#" data-clear="suite" style="color:var(--fg-dim);text-decoration:none">✕</a></span>`;
+  if(state.tag) chips+=`<span class="chip">tag: <b>${esc(state.tag)}</b> <a href="#" data-clear="tag" style="color:var(--fg-dim);text-decoration:none">✕</a></span>`;
+  const reset=(state.suite||state.outcome||state.tag)?`<button class="btn sm" id="reset">✕ Reset</button>`:"";
+  bar.innerHTML = out("","all")+out("passed","passed")+out("failed","failed")+out("error","error")
+    + (chips?`<span style="width:1px;height:18px;background:var(--line);margin:0 4px"></span>${chips}`:"") + reset;
+  bar.querySelectorAll("[data-o]").forEach(b=>b.onclick=()=>{ state.outcome=b.dataset.o; renderFilters(); loadRuns(); });
+  bar.querySelectorAll("[data-clear]").forEach(a=>a.onclick=e=>{ e.preventDefault(); state[a.dataset.clear]=null; loadSuites(); loadSuiteDetail(); renderFilters(); loadRuns(); });
+  const rb=$("#reset"); if(rb) rb.onclick=()=>{ state.suite=null; state.outcome=""; state.tag=null; loadSuites(); loadSuiteDetail(); renderFilters(); loadRuns(); };
+}
+
+// ── runs table ──────────────────────────────────────────────────────────
 async function loadRuns(){
   const qs = new URLSearchParams();
   if(state.suite) qs.set("suite", state.suite);
   if(state.outcome) qs.set("outcome", state.outcome);
+  if(state.tag) qs.set("tag", state.tag);
   const d = await j("/api/scenarios?"+qs.toString());
   $("#runsHead").textContent = "Runs" + (state.suite? " · "+state.suite : "") + ` (${d.total})`;
   const tb = $("#runs");
   if(!d.results || !d.results.length){ paint(tb,'<tr><td colspan="7" class="empty">No runs recorded yet. Run a scenario above (or <code>roborun demo</code>) to see scored results here.</td></tr>'); return; }
   paint(tb, d.results.map(r => {
-    const m = Object.entries(r.metrics||{}).filter(([k])=>!k.startsWith("_"))
-      .slice(0,4).map(([k,v])=>`${k}: ${v}`).join(" · ");
-    const ev = Object.entries(r.evaluation||{}).map(([g,vs])=>
-      `${g}{${Object.entries(vs).map(([k,v])=>k+":"+v).join(",")}}`).join(" ");
-    const nameCell = r.run_id
-      ? `<a href="/run?id=${encodeURIComponent(r.run_id)}" style="color:#00d47e;text-decoration:none">${r.name} ↗</a>`
-      : r.name;
+    const m = Object.entries(r.metrics||{}).filter(([k])=>!k.startsWith("_")).slice(0,4).map(([k,v])=>`${k}: ${v}`).join(" · ");
+    const ev = Object.entries(r.evaluation||{}).map(([g,vs])=>`${g}{${Object.entries(vs).map(([k,v])=>k+":"+v).join(",")}}`).join(" ");
+    const nameCell = r.run_id ? `<a href="/run?id=${encodeURIComponent(r.run_id)}" style="color:var(--accent);text-decoration:none">${esc(r.name)} ↗</a>` : esc(r.name);
     return `<tr>
-      <td><span class="pill ${r.outcome}">${r.outcome}</span>${r.reason?`<div class="meta">${r.reason}</div>`:""}</td>
-      <td>${nameCell}</td><td class="metrics">${r.suite||"—"}</td>
+      <td><span class="pill ${r.outcome}">${esc(r.outcome)}</span>${r.reason?`<div class="metrics">${esc(r.reason)}</div>`:""}</td>
+      <td>${nameCell}</td><td class="metrics">${esc(r.suite)||"—"}</td>
       <td class="metrics">${r.seed??"—"}</td>
-      <td class="metrics">${m||"—"}</td><td class="metrics">${ev||"—"}</td>
-      <td class="metrics">${(r.ended||"").replace("T"," ").replace("Z","")}</td>
+      <td class="metrics">${esc(m)||"—"}</td><td class="metrics">${esc(ev)||"—"}</td>
+      <td class="metrics">${when(r.ended)}</td>
     </tr>`;
   }).join(""));
 }
 
-$("#filters").querySelectorAll("button").forEach(b => b.onclick = () => {
-  state.outcome = b.dataset.o;
-  $("#filters").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
-  loadRuns();
-});
-
-loadRunnable(); loadSuites(); loadRuns();
-setInterval(()=>{ loadSuites(); loadRuns(); }, 5000);
+renderFilters(); loadRunnable(); loadSuites(); loadRuns();
+setInterval(()=>{ loadSuites(); loadRuns(); if(state.suite) loadSuiteDetail(); }, 5000);
 </script>
 </body>
 </html>

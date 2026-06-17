@@ -1429,7 +1429,7 @@ async function pollRobotDeck() {
     if (r.lidar && r.lidar.length) { lastLidar = r.lidar; integrateLidar(lastLidar); }
     cloudCommit(); drawMap();
     // status panel
-    $("teleOdo") && ($("teleOdo").textContent = `odometer ${odo.toFixed(1)} m`);
+    $("teleOdo") && ($("teleOdo").textContent = `${odo.toFixed(1)} m`);
     if ($("telePose")) $("telePose").textContent = bot.type === "drone"
       ? `x ${bot.pos.x.toFixed(1)} · z ${bot.pos.z.toFixed(1)} · alt ${bot.alt.toFixed(1)}`
       : `x ${bot.pos.x.toFixed(1)} · z ${bot.pos.z.toFixed(1)} · θ ${bot.heading.toFixed(2)}`;
@@ -2516,6 +2516,49 @@ document.getElementById("btnStop").addEventListener("click", async () => {
 /* ════════════════ telemetry ════════════════ */
 let odo = 0;
 const prevPos = new THREE.Vector3();
+
+/* live velocity sparkline (the SPEED panel) — sampled from the odometer
+   delta each telemetry tick (~8 Hz), held ~14 s. Antioch's velocity-under-
+   the-view, on our own loop. */
+const speedHist = [];           // m/s samples, newest last
+let _spkOdo = 0, _spkT = 0, _spdPeak = 0;
+function updateSpeedSpark() {
+  const now = performance.now();
+  if (_spkT) {
+    const sp = (odo - _spkOdo) / Math.max(0.001, (now - _spkT) / 1000);
+    const v = isFinite(sp) ? sp : 0;
+    speedHist.push(v);
+    if (speedHist.length > 120) speedHist.shift();
+    if (v > _spdPeak) _spdPeak = v;
+    const nowEl = document.getElementById("teleSpdNow");
+    if (nowEl) nowEl.textContent = v.toFixed(1);
+    const maxEl = document.getElementById("teleSpdMax");
+    if (maxEl) maxEl.textContent = _spdPeak.toFixed(1);
+  }
+  _spkOdo = odo; _spkT = now;
+  drawSpeedSpark();
+}
+function drawSpeedSpark() {
+  const cv = document.getElementById("teleSpark");
+  if (!cv || !cv.clientWidth) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight || 64;
+  if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const d = speedHist;
+  const max = Math.max(0.5, ...d);
+  g.strokeStyle = "rgba(120,175,144,.14)";
+  g.beginPath(); g.moveTo(0, h - 1); g.lineTo(w, h - 1); g.stroke();
+  if (d.length < 2) return;
+  const X = i => i / (d.length - 1) * w, Y = v => h - (v / max) * (h - 6) - 3;
+  g.beginPath();
+  d.forEach((v, i) => { const x = X(i), y = Y(v); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+  g.strokeStyle = "#00d47e"; g.lineWidth = 1.5; g.stroke();
+  g.lineTo(w, h); g.lineTo(0, h); g.closePath();
+  g.fillStyle = "rgba(0,212,126,.10)"; g.fill();
+}
 function currentRoom() {
   for (const r of LV.rooms || []) {
     const [x1, z1, x2, z2] = r.rect;
@@ -2527,16 +2570,17 @@ function updateTelemetry() {
   const it = document.getElementById("intent");
   it.textContent = serverIntent
     ? `▸ ${serverIntent.verb} — ${serverIntent.detail}` : "";
-  document.getElementById("teleRoom").textContent = `room ${currentRoom()}`;
-  document.getElementById("teleOdo").textContent = `odometer ${odo.toFixed(1)} m`;
+  document.getElementById("teleRoom").textContent = `${currentRoom()}`;
+  document.getElementById("teleOdo").textContent = `${odo.toFixed(1)} m`;
+  updateSpeedSpark();
   document.getElementById("telePose").textContent = bot.type === "drone"
     ? `x ${bot.pos.x.toFixed(1)} · z ${bot.pos.z.toFixed(1)} · alt ${bot.alt.toFixed(1)}`
     : `x ${bot.pos.x.toFixed(1)} · z ${bot.pos.z.toFixed(1)} · θ ${bot.heading.toFixed(2)}`;
 }
 
 /* ════════════════ panels ════════════════ */
-const LAYOUT_KEY = "arena-layout-v4";  // v4: reset stale/scattered saved layouts to the clean 2-rail default
-const PANEL_IDS = ["p-brief", "p-policy", "p-status", "p-map", "p-view1", "p-view2",
+const LAYOUT_KEY = "arena-layout-v5";  // v5: wider right rail + SPEED telemetry panel; reflow stale layouts
+const PANEL_IDS = ["p-brief", "p-policy", "p-status", "p-map", "p-tele", "p-view1", "p-view2",
                    "p-runs", "p-eyes"];
 let zTop = 100;
 function defaultLayout() {
@@ -2555,17 +2599,21 @@ function defaultLayout() {
   const w = innerWidth, h = innerHeight;
   const GAP = 10, TOP = 52;
   const L = Math.min(440, Math.max(340, Math.round(w * 0.3)));
-  const R = Math.min(290, Math.max(230, Math.round(w * 0.18)));
-  const briefH = 185, statusH = 168;
-  const mapH = Math.max(180, Math.round((h - TOP - statusH - 3 * GAP) * 0.45));
+  const R = Math.min(360, Math.max(300, Math.round(w * 0.2)));
+  const briefH = 185, statusH = 196, teleH = 136;
+  // right rail: status, map, speed, robot-cam — each readable, not cramped
+  const mapH = Math.max(170, Math.round((h - TOP - statusH - teleH - 4 * GAP) * 0.5));
+  const rTele = TOP + statusH + mapH + 2 * GAP;
+  const rView = rTele + teleH + GAP;
   return {
     "p-brief":  { l: GAP, t: TOP, w: L, h: briefH, hidden: false },
     "p-policy": { l: GAP, t: TOP + briefH + GAP, w: L,
                   h: h - TOP - briefH - 2 * GAP - 4, hidden: false },
     "p-status": { l: w - R - GAP, t: TOP, w: R, h: statusH, hidden: false },
     "p-map":    { l: w - R - GAP, t: TOP + statusH + GAP, w: R, h: mapH, hidden: false },
-    "p-view2":  { l: w - R - GAP, t: TOP + statusH + mapH + 2 * GAP, w: R,
-                  h: h - TOP - statusH - mapH - 3 * GAP - 4, hidden: false },
+    "p-tele":   { l: w - R - GAP, t: rTele, w: R, h: teleH, hidden: false },
+    "p-view2":  { l: w - R - GAP, t: rView, w: R,
+                  h: Math.max(150, h - rView - GAP - 4), hidden: false },
     "p-view1":  { l: Math.round(w / 2 - 170), t: h - 244, w: 340, h: 230, hidden: true },
     "p-runs":   { l: Math.round(w / 2 - 230), t: TOP + 30, w: 460,
                   h: Math.min(440, h - TOP - 60), hidden: true },
@@ -2881,7 +2929,7 @@ function frame(now) {
   orbitAngle += dt * 0.25;
 
   if (!won) clockEl.textContent = `${((now - t0) / 1000).toFixed(1)}s`;
-  cmdEl.textContent = `cmd f=${(cmd.forward || 0).toFixed(2)} t=${(cmd.turn || 0).toFixed(2)} · cam ${mainCamSel.value}`;
+  cmdEl.textContent = `f=${(cmd.forward || 0).toFixed(2)} t=${(cmd.turn || 0).toFixed(2)} · cam ${mainCamSel.value}`;
   renderViews();
   compositeRecordFrame();
   requestAnimationFrame(frame);

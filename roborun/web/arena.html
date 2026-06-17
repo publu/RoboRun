@@ -5,27 +5,27 @@
 <meta charset="utf-8">
 <title>RoboRun Arena</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./ui.css">
 <style>
   html, body { margin: 0; height: 100%; background: #0b0e11; overflow: hidden;
                font: 13px/1.4 ui-monospace, "SF Mono", Menlo, monospace; color: #d7e0e8; }
   canvas.webgl { position: fixed; inset: 0; z-index: 0; }
 
   /* ── panel system: drag by header, resize by corner, toggle from toolbar ── */
-  .panel { position: fixed; z-index: 10; background: rgba(11,14,17,.78);
-           backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-           border: 1px solid rgba(42,58,70,.55); border-radius: 10px;
-           box-shadow: 0 6px 24px rgba(0,0,0,.35); min-width: 180px;
+  .panel { position: fixed; z-index: 10; background: #0e1310;
+           border: 1px solid #243024; border-radius: 10px;
+           box-shadow: 0 8px 28px rgba(0,0,0,.5); min-width: 180px;
            min-height: 70px; resize: both; overflow: hidden;
            display: flex; flex-direction: column; }
   .panel.hidden { display: none; }
-  .p-head { display: flex; align-items: center; gap: 8px; padding: 5px 10px;
-            background: rgba(16,22,28,.9); border-bottom: 1px solid #1f2a33;
-            cursor: grab; user-select: none; font-size: 10px; letter-spacing: .14em;
-            color: #6b7b88; flex: none; }
-  .p-head b { color: #00d47e; }
-  .p-head .x { margin-left: auto; cursor: pointer; color: #4a5a66; }
-  .p-head .x:hover { color: #d84a4a; }
-  .p-body { flex: 1; padding: 8px 10px; overflow: auto; min-height: 0; }
+  .p-head { display: flex; align-items: center; gap: 8px; padding: 7px 11px;
+            background: #131a13; border-bottom: 1px solid #243024;
+            cursor: grab; user-select: none; font-size: 11px; letter-spacing: .12em;
+            color: #aebcc7; flex: none; }
+  .p-head b { color: #00d47e; font-weight: 600; }
+  .p-head .x { margin-left: auto; cursor: pointer; color: #6a7a86; font-size: 13px; }
+  .p-head .x:hover { color: #e0563f; }
+  .p-body { flex: 1; padding: 10px 12px; overflow: auto; min-height: 0; font-size: 12.5px; }
 
   /* view panels render the 3D scene through a transparent body */
   .view-panel .p-body { padding: 0; background: transparent; }
@@ -578,6 +578,7 @@ body.cockpit #cockpit { display: flex; }
   <button data-panel="p-view1">VIEW 1</button>
   <button data-panel="p-view2">VIEW 2</button>
   <button data-panel="p-eyes" id="btnEyes" style="display:none">EYES</button>
+  <button data-panel="p-tele">SPEED</button>
   <button data-panel="p-runs">RUNS</button>
   <div class="sep"></div>
   <select id="mainCamSel" class="camSel" title="main view camera — C cycles">
@@ -629,17 +630,28 @@ body.cockpit #cockpit { display: flex; }
 <div class="panel" id="p-status">
   <div class="p-head"><b>STATUS</b><span class="x">✕</span></div>
   <div class="p-body">
-    <div>⏱ <span id="clock">0.0s</span> <span class="rec" id="rec"></span></div>
+    <div class="st-top">⏱ <span id="clock">0.0s</span> <span class="rec" id="rec"></span></div>
     <div class="link off" id="link">behaviors: searching…</div>
     <div class="intent" id="intent"></div>
-    <button id="btnSeal" title="stop, seal, and store this run — recording restarts fresh"
-      style="margin-top:6px;background:#10161c;color:#00d47e;border:1px solid #1f4434;
-             border-radius:4px;font:inherit;font-size:11px;padding:2px 10px;cursor:pointer">
-      ✦ seal run → RUNS</button>
-    <div id="cmdline">cmd —</div>
-    <div class="tele" id="teleRoom">room —</div>
-    <div class="tele" id="teleOdo">odometer 0.0 m</div>
-    <div class="tele" id="telePose">x 0.0 · z 0.0</div>
+    <button id="btnSeal" class="btn sm" title="stop, seal, and store this run — recording restarts fresh"
+      style="margin:8px 0 10px;color:#00d47e">✦ seal run → RUNS</button>
+    <div class="kv">
+      <div class="k">cmd</div><div class="v" id="cmdline">—</div>
+      <div class="k">room</div><div class="v" id="teleRoom">—</div>
+      <div class="k">odometer</div><div class="v" id="teleOdo">0.0 m</div>
+      <div class="k">pose</div><div class="v" id="telePose">—</div>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="p-tele">
+  <div class="p-head"><b>SPEED</b><span style="color:#6a7a86">m/s · last 14s</span><span class="x">✕</span></div>
+  <div class="p-body" style="padding:8px 10px">
+    <canvas id="teleSpark" style="width:100%;height:64px;display:block"></canvas>
+    <div class="kv" style="margin-top:8px">
+      <div class="k">now</div><div class="v"><span id="teleSpdNow">0.0</span> m/s</div>
+      <div class="k">peak</div><div class="v"><span id="teleSpdMax">0.0</span> m/s</div>
+    </div>
   </div>
 </div>
 

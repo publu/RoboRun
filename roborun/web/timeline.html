@@ -5,6 +5,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RoboRun · Timeline</title>
+<link rel="stylesheet" href="./ui.css">
+<script src="./run-detail.js"></script>
 <style>
   :root{ --bg:#0b0e0c; --panel:#11150f; --line:#1e2a1f; --fg:#e6f0e8; --dim:#7aaf90; --accent:#00d47e; --amber:#d4a030; --blue:#4090e0; --red:#e0563f; }
   *{ box-sizing:border-box; } body{ margin:0; background:var(--bg); color:var(--fg);
@@ -112,27 +114,15 @@ async function select(runId, key){
   if(runId) history.replaceState(null,"","/timeline?run="+encodeURIComponent(runId));
   const r=state.runs.find(x=>(x.run_id===runId)||((x.id||x.run_id||x.name)===key));
   if(!r){ $("#pane").innerHTML='<div class="empty">Run not found.</div>'; return; }
-  const metrics=Object.entries(r.metrics||{}).filter(([k])=>!k.startsWith("_"));
-  const evals=Object.entries(r.evaluation||{});
   const replay = r.run_id
-    ? `<a class="primary" href="/run?id=${encodeURIComponent(r.run_id)}">▶ Open synced replay</a>`
-    : `<span class="sub">no recording for this run</span>`;
-  $("#pane").innerHTML=`
-    <h2>${r.name||'(run)'}<span class="pill ${r.outcome}">${r.outcome||''}</span></h2>
-    ${r.reason?`<div class="sub">${r.reason}</div>`:""}
-    <div class="acts">${replay}${r.run_id?`<a href="/run?id=${encodeURIComponent(r.run_id)}">flag a moment</a>`:""}</div>
-    <h3>Metadata</h3>
-    <div class="kv">
-      <div class="k">run id</div><div>${r.run_id||'—'}</div>
-      <div class="k">suite</div><div>${r.suite||'—'}</div>
-      <div class="k">seed</div><div>${r.seed??'—'}</div>
-      <div class="k">when</div><div>${when(r.ended)||'—'}</div>
-      ${(r.tags&&r.tags.length)?`<div class="k">tags</div><div class="chips">${r.tags.map(t=>`<span>${t}</span>`).join("")}</div>`:""}
-    </div>
-    ${metrics.length?`<h3>Measurements</h3><div class="chips">${metrics.map(([k,v])=>`<span>${k}: ${v}</span>`).join("")}</div>`:""}
-    ${evals.length?`<h3>Scores</h3><div class="chips">${evals.map(([g,vs])=>`<span>${g}: ${Object.entries(vs).map(([k,v])=>k+' '+v).join(', ')}</span>`).join("")}</div>`:""}
-    <h3>Flagged moments</h3><div id="flags"><div class="sub">…</div></div>
-    <h3>Camera snapshots</h3><div class="strip" id="strip"><div class="sub">…</div></div>`;
+    ? `<a class="btn sm accent" href="/run?id=${encodeURIComponent(r.run_id)}">▶ Open replay</a>`
+    : "";
+  // same run-detail component as /run — metadata/params/results/evaluation/tags
+  renderRunRecord($("#pane"), r, {actions: replay});
+  // timeline-only extras below the shared component
+  $("#pane").insertAdjacentHTML("beforeend",
+    `<div class="seclabel" style="margin-top:20px">Flagged moments</div><div id="flags"><div class="rd-none">…</div></div>`+
+    `<div class="seclabel" style="margin-top:20px">Camera snapshots</div><div class="strip" id="strip"><div class="rd-none">…</div></div>`);
   loadFlags(r.run_id); loadStrip(r.run_id);
 }
 
