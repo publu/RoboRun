@@ -19,6 +19,31 @@ def arena_cmd(h):
 
 
 _last_level: list[str] = [""]
+_last_index: list[float] = [0.0]   # throttle live store-indexing
+
+
+def _index_live(payload: dict) -> None:
+    """Doing stuff in rapier should GENERATE real, searchable data — not seeds.
+    Index the sim's detections into the spatial store (scoped to the active
+    project/environment), throttled, so /search, /api/spatial and /analytics
+    fill from real play. Best-effort; never blocks the sim."""
+    import time
+    dets = payload.get("detections") or []
+    if not dets:
+        return
+    now = time.time()
+    if now - _last_index[0] < 1.0:      # ~1 Hz is plenty for a searchable index
+        return
+    _last_index[0] = now
+    try:
+        from roborun.routes._singletons import get_memory
+        pose = payload.get("pose") or {}
+        robot = (payload.get("level") or {}).get("robot") or "sim"
+        get_memory().store(detections=dets, ts=now,
+                           x=pose.get("x", 0.0), y=-pose.get("z", 0.0),
+                           robot_id=f"{robot}-sim", source="sim", source_id="arena")
+    except Exception:
+        pass
 
 
 @post("/api/arena/state")
@@ -32,6 +57,7 @@ def arena_state(h, payload):
         sightings.reset()
     sightings.observe(payload.get("detections") or [],
                       pose=payload.get("pose"), source="arena")
+    _index_live(payload)   # real rapier play → real searchable data
     # the black box gets the full ROS-shaped view: /pose, /detections, /lidar
     try:
         from roborun import recorder as rec_mod

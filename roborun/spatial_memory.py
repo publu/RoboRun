@@ -50,8 +50,10 @@ def _default_db_path() -> Path:
             return dr / "spatial_memory.db"
     except Exception:
         pass
+    # Same root as the recorder (recorder.runs_root) so the searchable index and
+    # the MCAP runs live together — not split between CWD-relative and ~/.roborun.
     base = os.environ.get("ROBORUN_STATE_DIR")
-    return (Path(base) if base else Path(".roborun")) / "spatial_memory.db"
+    return (Path(base) if base else Path.home() / ".roborun") / "spatial_memory.db"
 
 
 DB_DIR = Path(".roborun")
