@@ -92,3 +92,39 @@
   if (document.body) badge();
   else document.addEventListener("DOMContentLoaded", badge);
 })();
+
+/* ── usage analytics (Vercel Web Analytics — events only, never video) ──
+ * Lives here, not in arena.js, so it survives arena rewrites and covers
+ * every page at once. Counts plays + connect-intent, broken down by
+ * visitor and country in the Vercel dashboard. No recording, no storage,
+ * no cost. Skipped on localhost so dev runs don't pollute the numbers.
+ */
+(() => {
+  const host = location.hostname;
+  if (host === "localhost" || host === "127.0.0.1" || host === "") return;
+
+  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+  const s = document.createElement("script");
+  s.defer = true;
+  s.src = "/_vercel/insights/script.js";
+  document.head.appendChild(s);
+
+  const ev = (name, data) => {
+    try { window.va("event", data ? { name, data } : { name }); } catch {}
+  };
+
+  const wire = () => {
+    document.getElementById("btnRun")
+      ?.addEventListener("click", () => ev("play"), true);
+    document.getElementById("btnConnect")
+      ?.addEventListener("click", () => ev("connect_intent"), true);
+    // start-screen task buttons are generated at runtime — catch by delegation
+    document.addEventListener("click", (e) => {
+      const b = e.target.closest?.("#startGrid button");
+      if (b) ev("level_start", { task: b.textContent.trim().slice(0, 40) });
+    }, true);
+  };
+  if (document.readyState === "loading")
+    document.addEventListener("DOMContentLoaded", wire);
+  else wire();
+})();
