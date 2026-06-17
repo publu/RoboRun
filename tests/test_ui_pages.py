@@ -47,16 +47,19 @@ def _post(base, path, body):
         return r.status, json.loads(r.read())
 
 
+# Dashboard pages are wrapped by the shared app shell (shell.js injects the
+# sidebar/top-bar nav), so assert each page loads the shell + keeps the element
+# ID its own JS drives — not the old bespoke header text the shell now owns.
 @pytest.mark.parametrize("path,needle", [
-    ("/search", b"SEARCH OVER TIME"),
-    ("/timeline", b"TIMELINE"),
-    ("/analytics", b"ANALYTICS"),
-    ("/scenarios", b"SCENARIOS"),
-    ("/run", b"RUN"),
+    ("/search", b'id="q"'),
+    ("/timeline", b'id="runs"'),
+    ("/analytics", b'id="kpis"'),
+    ("/scenarios", b'id="suites"'),
+    ("/run", b'id="detail"'),
 ])
 def test_pages_serve(server, path, needle):
     status, body = _get(server, path)
-    assert status == 200 and needle in body
+    assert status == 200 and needle in body and b"shell.js" in body
 
 
 def test_run_series_route_validates(server):
@@ -70,13 +73,19 @@ def test_run_series_route_validates(server):
         assert e.code == 400
 
 
-def test_pages_cross_link_nav(server):
-    # every dashboard links to the others — one connected UI
-    for path in ("/search", "/timeline", "/analytics"):
+def test_shell_carries_nav(server):
+    # nav is centralized in the app shell now (one connected UI), not duplicated
+    # per page. The shell links to every dashboard.
+    status, shell = _get(server, "/shell.js")
+    assert status == 200
+    for target in (b'"/scenarios"', b'"/timeline"', b'"/analytics"',
+                   b'"/search"', b'"/fleet"', b'"/browser"', b'"/projects"', b'"/setup"'):
+        assert target in shell, f"shell.js missing {target}"
+    # and every dashboard page loads the shell
+    for path in ("/search", "/timeline", "/analytics", "/scenarios", "/browser",
+                 "/projects", "/fleet", "/fleet-sim", "/run", "/setup"):
         _, body = _get(server, path)
-        for target in (b'href="/scenarios"', b'href="/timeline"',
-                       b'href="/analytics"', b'href="/search"', b'href="/fleet"'):
-            assert target in body, f"{path} missing {target}"
+        assert b"shell.js" in body, f"{path} not on the shell"
 
 
 def test_analytics_api_aggregates(server):
