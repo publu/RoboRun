@@ -1493,10 +1493,18 @@ function enterCockpit(src) {
     // stream = the robot camera, polled one frame at a time (deterministic)
     let camSource = "robot";
     $("ck-src").addEventListener("change", (e) => { camSource = e.target.value; });
+    // Honest feed state: operators must know if the video is live or frozen
+    // (teleop UX — a stale feed at >300ms is unsafe to drive against).
+    const setLive = (ok) => {
+      const el = $("ck-live"); if (!el) return;
+      const dot = el.querySelector(".dot"), txt = el.querySelector("span:last-child");
+      if (dot) dot.style.background = ok ? "#00d47e" : "#d4a030";
+      if (txt) txt.textContent = ok ? "LIVE" : "NO SIGNAL";
+    };
     (function pumpCam() {
       const img = new Image();
-      img.onload = () => { $("ck-cam").src = img.src; setTimeout(pumpCam, 90); };
-      img.onerror = () => setTimeout(pumpCam, 400);
+      img.onload = () => { $("ck-cam").src = img.src; setLive(true); setTimeout(pumpCam, 90); };
+      img.onerror = () => { setLive(false); setTimeout(pumpCam, 400); };
       img.src = `${RT_BASE()}/api/camera/frame?source=${camSource}&t=${Date.now()}`;
     })();
     fetch("/api/sources").then((r) => r.json()).then((s) => {
