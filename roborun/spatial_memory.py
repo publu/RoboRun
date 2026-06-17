@@ -440,8 +440,9 @@ class SpatialMemoryStore:
         `source_id` filters to one camera angle. Returns Observation dicts
         (frame_ref → pull full frame from MCAP)."""
         by = (by or "clip").lower()
-        # over-fetch when filtering by camera so k results survive the filter
-        kk = k * 4 if source_id else k
+        since, until = kw.pop("since", None), kw.pop("until", None)
+        # over-fetch when post-filtering (camera / time window) so k survive it
+        kk = k * 4 if (source_id or since is not None or until is not None) else k
         if by == "label":
             rows = self.search_yolo(str(query), top_k=kk, robot_id=robot_id)
         elif by == "near":
@@ -460,9 +461,13 @@ class SpatialMemoryStore:
             rows = self.search_clip(emb, top_k=kk, robot_id=robot_id)
         else:
             raise ValueError(f"unknown recall mode {by!r} (clip|label|near|time)")
+        if since is not None:
+            rows = [r for r in rows if (r.get("ts") or 0) >= since]
+        if until is not None:
+            rows = [r for r in rows if (r.get("ts") or 0) <= until]
         if source_id:
-            rows = [r for r in rows if r.get("source_id") == source_id][:k]
-        return rows
+            rows = [r for r in rows if r.get("source_id") == source_id]
+        return rows[:k]
 
     def list_memories(
         self, limit: int = 50, robot_id: str | None = None, since: float | None = None,
