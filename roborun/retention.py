@@ -37,6 +37,27 @@ def dir_bytes(root: Path) -> int:
     return sum(p.stat().st_size for p in root.rglob("*") if p.is_file())
 
 
+def status(root: Path | None = None, max_gb: float | None = None) -> dict[str, Any]:
+    """Storage footprint + retention picture for fleet-cost awareness (robots make
+    30–100 GB/shift; local-first + GC keeps cost sane). Read-only; evicts nothing."""
+    root = root or runs_root()
+    cap_gb = DEFAULT_MAX_GB if max_gb is None else max_gb
+    if not root.exists():
+        return {"used_bytes": 0, "used_gb": 0.0, "cap_gb": cap_gb, "pct": 0.0,
+                "runs": 0, "sealed": 0, "uploaded": 0, "evictable_bytes": 0}
+    bodies = _mcap_bodies(root)
+    used = dir_bytes(root)
+    sealed = sum(1 for m in bodies if _is_sealed(m))
+    uploaded = sum(1 for m in bodies if _is_uploaded(m))
+    evictable = sum(m.stat().st_size for m in bodies
+                    if _is_sealed(m) and _is_uploaded(m))
+    return {"used_bytes": used, "used_gb": round(used / (1 << 30), 3),
+            "cap_gb": cap_gb, "pct": round(used / (cap_gb * (1 << 30)) * 100, 1) if cap_gb else 0.0,
+            "runs": len(bodies), "sealed": sealed, "uploaded": uploaded,
+            "evictable_bytes": evictable,
+            "evictable_gb": round(evictable / (1 << 30), 3)}
+
+
 def enforce(root: Path | None = None, max_gb: float | None = None,
             require_uploaded: bool = True) -> dict[str, Any]:
     """Evict oldest evictable MCAP bodies until total ≤ max_gb. Returns a report.

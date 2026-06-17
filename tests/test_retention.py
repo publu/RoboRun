@@ -40,3 +40,14 @@ def test_never_evicts_unsealed_or_unuploaded(tmp_path):
     out = retention.enforce(tmp_path, max_gb=1 / 1024)  # 1 MB cap, way over
     assert out["evicted"] == []
     assert out["kept_over_cap"] is True  # honestly reports it couldn't get under
+
+
+def test_status_reports_footprint(tmp_path):
+    from roborun import retention
+    _run(tmp_path, "r", "a", 2, sealed=True, uploaded=True)
+    _run(tmp_path, "r", "b", 3, sealed=True, uploaded=False)
+    st = retention.status(tmp_path, max_gb=1.0)
+    assert st["runs"] == 2 and st["sealed"] == 2 and st["uploaded"] == 1
+    assert st["used_gb"] > 0 and st["cap_gb"] == 1.0
+    # only the sealed+uploaded run is evictable
+    assert st["evictable_bytes"] == 2 * 1024 * 1024

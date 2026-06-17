@@ -71,13 +71,17 @@ function spark(el,pts){
 }
 async function load(){
   let d; try{ d=await (await fetch("/api/analytics")).json(); }catch(e){ return; }
-  const obs=d.observations||{}, runs=d.runs||{}, fleet=d.fleet||{};
-  const kpi=(n,l)=>`<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`;
+  const obs=d.observations||{}, runs=d.runs||{}, fleet=d.fleet||{}, st=d.storage||{};
+  const kpi=(n,l,t)=>`<div class="kpi" ${t?`title="${t}"`:""}><div class="n">${n}</div><div class="l">${l}</div></div>`;
+  const stored = st.used_gb!=null
+    ? kpi(`${st.used_gb}G`, `of ${st.cap_gb}G used (${st.pct||0}%)`,
+          `Local storage. ${st.evictable_gb||0}G is sealed + backed up and can be auto-freed (${st.runs||0} runs, ${st.sealed||0} sealed). Robots make 30–100 GB/shift — RoboRun stays local-first and keeps the tiny proofs even after freeing space.`)
+    : kpi((((runs.total_bytes||0)/1e9).toFixed(2))+"G","data recorded");
   $("#kpis").innerHTML=[
     kpi(obs.total??0,"things seen"),
     kpi(obs.with_embeddings??0,"AI-searchable"),
     kpi(runs.count??0,"saved runs"),
-    kpi((((runs.total_bytes||0)/1e9).toFixed(2))+"G","data recorded"),
+    stored,
     kpi(fleet.total??0,"robots"),
     kpi((d.suites||[]).length,"test suites"),
   ].join("");

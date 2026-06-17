@@ -121,6 +121,11 @@ def analytics(h):
     except Exception:
         out["runs"] = {"count": 0}
     try:
+        from roborun.retention import status as storage_status
+        out["storage"] = storage_status()
+    except Exception:
+        out["storage"] = {}
+    try:
         from roborun.routes.fleet import _load_fleet
         fleet = _load_fleet()
         out["fleet"] = {"total": len(fleet),
