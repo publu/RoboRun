@@ -9,6 +9,7 @@
  * top-down canvas per floor renders the true physics positions.
  */
 import RAPIER from "@dimforge/rapier3d-compat";
+import * as THREE from "three";
 import { initPhysics } from "./physics.js";
 
 const $ = (s) => document.querySelector(s);
@@ -68,7 +69,8 @@ async function build() {
   S.world = w;
   S.ctl = w.createCharacterController(0.02);
   S.ctl.setApplyImpulsesToDynamicBodies(false);
-  buildCanvases();
+  init3D();
+  buildScene();
   spawnRobots();
   S.ready = true;
 }
@@ -87,6 +89,7 @@ function spawnRobots() {
                  heading: Math.random() * 6.28, seen: 0, trail: [], inElev: 0, dest: null, target: null };
     pickTarget(rb); S.robots.push(rb);
   }
+  build3DRobots();
 }
 
 function pickTarget(rb) {
@@ -155,58 +158,145 @@ function stepOnce() {
   S.world.step();
 }
 
-// ── render: one top-down canvas per floor (true physics positions) ─────────
-function buildCanvases() {
-  const host = $("#floors"); if (!host) return;
-  host.innerHTML = ""; S.canvases = [];
+// ── render: a real 3D warehouse (three.js), same world as the cockpit ───────
+// The Rapier world is already 3D (x,z floor plane, y up, floors stacked
+// FLOOR_GAP apart). We render the true physics positions in three.js with an
+// orbit camera — no flat 2D top-down. Items light up green on detection.
+const V = { scene: null, camera: null, renderer: null, statics: null, robots: null,
+            itemMeshes: [], center: new THREE.Vector3(), theta: 0.9, phi: 1.04, r: 78,
+            drag: false, px: 0, py: 0, idle: 0, inited: false };
+const GREEN = 0x00d47e, DIM = 0x35563f;
+
+function init3D() {
+  if (V.inited) return;
+  const cv = $("#stage"); if (!cv) return;
+  V.renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true });
+  V.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  V.scene = new THREE.Scene();
+  V.scene.background = new THREE.Color(0x070a07);
+  V.scene.fog = new THREE.Fog(0x070a07, 120, 260);
+  V.camera = new THREE.PerspectiveCamera(46, 1, 0.5, 600);
+  V.scene.add(new THREE.AmbientLight(0xb8d8c4, 0.7));
+  V.scene.add(new THREE.HemisphereLight(0x88c0a0, 0x0a140d, 0.5));
+  const key = new THREE.DirectionalLight(0xffffff, 1.0); key.position.set(40, 90, 20); V.scene.add(key);
+  const fill = new THREE.DirectionalLight(0x4a90e0, 0.4); fill.position.set(-30, 40, -25); V.scene.add(fill);
+  V.statics = new THREE.Group(); V.scene.add(V.statics);
+  V.robots = new THREE.Group(); V.scene.add(V.robots);
+  // orbit controls (manual — no addons needed)
+  cv.addEventListener("pointerdown", e => { V.drag = true; V.px = e.clientX; V.py = e.clientY; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener("pointerup", e => { V.drag = false; try { cv.releasePointerCapture(e.pointerId); } catch {} });
+  cv.addEventListener("pointermove", e => {
+    if (!V.drag) return; V.idle = 0;
+    V.theta -= (e.clientX - V.px) * 0.006; V.py != null && (V.phi = Math.max(0.18, Math.min(1.45, V.phi - (e.clientY - V.py) * 0.006)));
+    V.px = e.clientX; V.py = e.clientY;
+  });
+  cv.addEventListener("wheel", e => { e.preventDefault(); V.r = Math.max(42, Math.min(190, V.r * (1 + e.deltaY * 0.0012))); }, { passive: false });
+  V.inited = true;
+}
+
+function buildScene() {
+  if (!V.statics) return;
+  V.statics.clear(); V.itemMeshes = [];
+  const sz = S.size, c = sz / 2;
+  // aim a touch above the lower floors so the whole stack sits centred in frame
+  V.center.set(c, floorY(Math.max(0, S.floors - 1)) * 0.3 + 1, c);
+  V.r = 64 + sz * 0.62;
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x3c5a45, transparent: true, opacity: 0.72, roughness: 0.85 });
+  const slabMat = new THREE.MeshStandardMaterial({ color: 0x0d160f, transparent: true, opacity: 0.55, roughness: 1 });
   for (let f = 0; f < S.floors; f++) {
-    const div = document.createElement("div"); div.className = "floorp";
-    div.innerHTML = `<h3><span>Floor ${f}</span><b id="fb${f}"></b></h3>`;
-    const cv = document.createElement("canvas"); cv.width = 520; cv.height = 520;
-    div.appendChild(cv); host.appendChild(div); S.canvases[f] = cv;
+    const fy = floorY(f), fd = S.floorData[f];
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(sz, 0.2, sz), slabMat);
+    slab.position.set(c, fy - 0.1, c); V.statics.add(slab);
+    const grid = new THREE.GridHelper(sz, 12, 0x244031, 0x18271d);
+    grid.position.set(c, fy + 0.02, c); grid.material.transparent = true; grid.material.opacity = 0.5; V.statics.add(grid);
+    for (const [x1, z1, x2, z2] of fd.walls) {
+      const cx = (x1 + x2) / 2, cz = (z1 + z2) / 2;
+      const hx = Math.max(Math.abs(x2 - x1), 0.24), hz = Math.max(Math.abs(z2 - z1), 0.24);
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(hx, 1.4, hz), wallMat);
+      wall.position.set(cx, fy + 0.7, cz); V.statics.add(wall);
+    }
+    const itemRow = [];
+    for (let k = 0; k < fd.items.length; k++) {
+      const it = fd.items[k];
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.7, 8),
+        new THREE.MeshStandardMaterial({ color: DIM, roughness: 0.8 }));
+      m.position.set(it.x, fy + 0.35, it.z); V.statics.add(m); itemRow.push(m);
+    }
+    V.itemMeshes[f] = itemRow;
+    for (const e of elevatorsOn(f)) {
+      if (e.from !== f) continue;                         // draw the shaft once, spanning the two floors
+      const span = FLOOR_GAP;
+      const shaft = new THREE.Mesh(new THREE.BoxGeometry(3.4, span, 3.4),
+        new THREE.MeshStandardMaterial({ color: 0x4a90e0, transparent: true, opacity: 0.16, roughness: 0.4 }));
+      shaft.position.set(e.x, fy + span / 2, e.z); V.statics.add(shaft);
+      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(shaft.geometry),
+        new THREE.LineBasicMaterial({ color: 0x4a90e0, transparent: true, opacity: 0.55 }));
+      edges.position.copy(shaft.position); V.statics.add(edges);
+    }
+  }
+  renderFloorTags();
+}
+
+function build3DRobots() {
+  if (!V.robots) return;
+  V.robots.clear();
+  for (const rb of S.robots) {
+    const col = new THREE.Color(rb.color);
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.55, 0.8, 4, 10),
+      new THREE.MeshStandardMaterial({ color: col, roughness: 0.45, emissive: col, emissiveIntensity: 0.4 }));
+    body.rotation.z = Math.PI / 2;                        // lie the capsule along heading
+    g.add(body);
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.95, 10),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: col, emissiveIntensity: 0.7 }));
+    nose.rotation.z = -Math.PI / 2; nose.position.x = 1.05; g.add(nose);
+    V.robots.add(g); rb.mesh = g;
   }
 }
+
 function draw() {
-  for (let f = 0; f < S.floors; f++) {
-    const cv = S.canvases[f]; if (!cv) continue;
-    const box = cv.clientWidth || 500, dpr = window.devicePixelRatio || 1;
-    if (cv.width !== Math.round(box * dpr)) { cv.width = Math.round(box * dpr); cv.height = Math.round(box * dpr); }
-    const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const W = box, P = 12, sc = (W - 2 * P) / S.size, X = x => P + x * sc, Y = z => P + z * sc;
-    g.clearRect(0, 0, W, W); g.fillStyle = "#080b08"; g.fillRect(0, 0, W, W);
-    const fd = S.floorData[f];
-    g.strokeStyle = "rgba(120,175,144,.08)"; g.lineWidth = 1;
-    for (const rm of fd.rooms) g.strokeRect(X(rm.x), Y(rm.z), rm.w * sc, rm.h * sc);
-    g.strokeStyle = "#2c3b2c"; g.lineWidth = 2.5; g.lineCap = "round"; g.beginPath();
-    for (const [x1, z1, x2, z2] of fd.walls) { g.moveTo(X(x1), Y(z1)); g.lineTo(X(x2), Y(z2)); }
-    g.stroke();
-    for (let k = 0; k < fd.items.length; k++) {
-      const it = fd.items[k], on = S.detected.has(f + ":" + k);
-      g.fillStyle = on ? "rgba(0,212,126,.95)" : "rgba(120,175,144,.32)";
-      g.beginPath(); g.arc(X(it.x), Y(it.z), on ? 4 : 2.4, 0, 6.28); g.fill();
-      if (on) { g.fillStyle = "rgba(0,212,126,.7)"; g.font = "9px ui-monospace,monospace"; g.fillText(it.label, X(it.x) + 6, Y(it.z) + 3); }
-    }
-    for (const e of elevatorsOn(f)) {
-      g.strokeStyle = "#4090e0"; g.fillStyle = "rgba(64,144,224,.14)"; g.lineWidth = 1.5;
-      const s = 3.4 * sc; g.fillRect(X(e.x) - s / 2, Y(e.z) - s / 2, s, s); g.strokeRect(X(e.x) - s / 2, Y(e.z) - s / 2, s, s);
-      g.fillStyle = "#4090e0"; g.font = "11px ui-monospace,monospace"; g.fillText("⇅", X(e.x) - 4, Y(e.z) + 4);
-    }
-    let cnt = 0;
-    for (const rb of S.robots) {
-      if (rb.floor !== f || rb.inElev > 0) continue; cnt++;
-      if (rb.trail.length > 1) {
-        g.strokeStyle = rb.color + "33"; g.lineWidth = 1.5; g.beginPath();
-        rb.trail.forEach((t, i) => i ? g.lineTo(X(t.x), Y(t.z)) : g.moveTo(X(t.x), Y(t.z))); g.stroke();
-      }
-      const t = rb.body.translation(), x = X(t.x), y = Y(t.z), h = rb.heading;
-      g.fillStyle = rb.color; g.beginPath();
-      g.moveTo(x + Math.cos(h) * 7, y + Math.sin(h) * 7);
-      g.lineTo(x + Math.cos(h + 2.5) * 5.5, y + Math.sin(h + 2.5) * 5.5);
-      g.lineTo(x + Math.cos(h - 2.5) * 5.5, y + Math.sin(h - 2.5) * 5.5);
-      g.closePath(); g.fill();
-    }
-    const fb = document.getElementById("fb" + f); if (fb) fb.textContent = cnt + " bots";
+  if (!V.renderer) return;
+  // keep the drawing buffer matched to the element size
+  const cv = V.renderer.domElement, w = cv.clientWidth || 800, h = cv.clientHeight || 560;
+  if (cv.width !== Math.round(w * V.renderer.getPixelRatio()) || cv.height !== Math.round(h * V.renderer.getPixelRatio())) {
+    V.renderer.setSize(w, h, false); V.camera.aspect = w / h; V.camera.updateProjectionMatrix();
   }
+  // robots → true physics transforms (hidden while inside the elevator shaft)
+  for (const rb of S.robots) {
+    if (!rb.mesh) continue;
+    const t = rb.body.translation();
+    rb.mesh.position.set(t.x, t.y + 0.05, t.z);
+    rb.mesh.rotation.y = -rb.heading + Math.PI / 2;
+    rb.mesh.visible = rb.inElev <= 0;
+  }
+  // items light up green once detected
+  for (let f = 0; f < S.floors; f++) {
+    const row = V.itemMeshes[f] || [];
+    for (let k = 0; k < row.length; k++) {
+      const on = S.detected.has(f + ":" + k), mat = row[k].material;
+      const want = on ? GREEN : DIM;
+      if (mat.color.getHex() !== want) {
+        mat.color.setHex(want); mat.emissive = new THREE.Color(on ? GREEN : 0x000000);
+        mat.emissiveIntensity = on ? 0.6 : 0; row[k].scale.setScalar(on ? 1.35 : 1);
+      }
+    }
+  }
+  // orbit camera (gentle auto-rotate when the user isn't dragging)
+  if (!V.drag) { V.idle++; if (V.idle > 90) V.theta += 0.0016; }
+  const sp = V.phi, st = V.theta;
+  V.camera.position.set(
+    V.center.x + V.r * Math.sin(sp) * Math.cos(st),
+    V.center.y + V.r * Math.cos(sp),
+    V.center.z + V.r * Math.sin(sp) * Math.sin(st));
+  V.camera.lookAt(V.center);
+  V.renderer.render(V.scene, V.camera);
+}
+
+function renderFloorTags() {
+  const host = $("#floorTags"); if (!host) return;
+  let html = "";
+  for (let f = S.floors - 1; f >= 0; f--) html += `<div class="fr">Floor <b>${f}</b> <span id="fb${f}"></span></div>`;
+  host.innerHTML = html;
 }
 function hud() {
   const cov = S.totalItems ? Math.round(S.found / S.totalItems * 100) : 0;
@@ -214,6 +304,9 @@ function hud() {
   const tile = (n, l) => `<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`;
   $("#kpis").innerHTML = tile(S.robots.length, "robots") + tile(S.found + "/" + S.totalItems, "found") +
     tile(cov + "%", "coverage") + tile(el.toFixed(0) + "s", "elapsed");
+  const cnt = new Array(S.floors).fill(0);
+  for (const rb of S.robots) if (rb.inElev <= 0) cnt[rb.floor]++;
+  for (let f = 0; f < S.floors; f++) { const fb = document.getElementById("fb" + f); if (fb) fb.textContent = "· " + cnt[f] + " bots"; }
 }
 
 let last = performance.now(), acc = 0;
@@ -246,6 +339,7 @@ function wire() {
 }
 
 wire();
+window.__fleet = { S, V };                 // harness hook (status/positions for tests)
 build().then(() => requestAnimationFrame(loop)).catch(e => {
   const s = $("#scope"); if (s) s.innerHTML = `<span style="color:var(--bad)">Rapier failed to load: ${e}</span>`;
 });

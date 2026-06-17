@@ -18,8 +18,8 @@
       { icon: "⌕", label: "Search", href: "/search" },
       { icon: "📊", label: "Analytics", href: "/analytics" }] },
     { group: "Fleet", items: [
-      { icon: "◈", label: "Swarm Lab", href: "/fleet" },          // layer 1: coordination algorithms
-      { icon: "🐝", label: "Fleet Sim", href: "/fleet-sim" }] },   // layer 2: real Rapier physics
+      { icon: "◈", label: "Swarm Lab", href: "/fleet" },             // layer 1: coordination algorithms (abstract)
+      { icon: "🐝", label: "Fleet Sim · 3D", href: "/fleet-sim" }] }, // layer 2: real Rapier physics (3D)
     { items: [{ icon: "⚙", label: "Projects", href: "/projects" }] },
   ];
   const isActive = (href) => href === "/" ? PATH === "/" :
