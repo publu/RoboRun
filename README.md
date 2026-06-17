@@ -55,6 +55,7 @@ Want real eyes instead of the sim? `pip install 'ros-agent[vision]'` (YOLO + CLI
 | `robot.delegate("fix my search pattern")` | async LLM **with tools** — it can call any MCP tool, including rewriting the running policy (hot reload applies it live) |
 | `robot.tool("navigate", x=2, y=3)` | call any MCP tool from inside the policy |
 | `robot.lidar()` | 360° ranges in meters, `[0]` = straight ahead |
+| `robot.go_to_place("the charging dock")` | semantic navigation — recall where it last saw something, then drive there |
 | `robot.remember(k, v)` / `robot.recall(k)` | memory that survives restarts |
 | `robot.state` | dict that survives across loop ticks |
 
