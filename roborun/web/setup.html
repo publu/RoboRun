@@ -77,6 +77,32 @@
   .sumcard .summary{ color:var(--fg-2); }
   .hide{ display:none; }
 
+  /* ── wizard: one step at a time ──────────────────────────────────────────── */
+  .wizsteps{ display:flex; align-items:center; gap:0; margin:0 0 18px; max-width:560px; }
+  .wdot{ width:30px; height:30px; border-radius:50%; display:grid; place-items:center;
+    font-size:12px; font-weight:700; color:var(--fg-dim); background:var(--panel-2);
+    border:1px solid var(--line); flex:none; transition:all .15s; }
+  .wdot.on{ color:#06120a; background:var(--accent); border-color:var(--accent); }
+  .wdot.done{ color:var(--accent); background:#0e1a12; border-color:var(--accent-dim); cursor:pointer; }
+  .wbar{ flex:1; height:2px; background:var(--line); min-width:20px; }
+  .wbar.done{ background:var(--accent-dim); }
+  .wstep{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r);
+    padding:22px 24px; margin-bottom:8px; animation:wfade .18s ease-out; }
+  @keyframes wfade{ from{ opacity:0; transform:translateY(4px); } }
+  .wstep h2{ display:flex; align-items:center; gap:11px; font-size:15px; text-transform:none;
+    letter-spacing:.01em; color:var(--fg); margin:0 0 6px; font-weight:600; }
+  .wstep h2 .stepn{ position:static; width:25px; height:25px; color:#06120a;
+    background:var(--accent); border-color:var(--accent); flex:none; }
+  .wstep h2 .hint{ margin-left:auto; text-transform:none; letter-spacing:0; font-size:11px;
+    color:var(--fg-dim); font-weight:400; }
+  .wstep-lead{ color:var(--fg-2); font-size:12.5px; margin:0 0 16px; max-width:62ch; line-height:1.55; }
+  .wstep-lead b{ color:var(--fg); }
+  .wiznav{ position:sticky; bottom:0; z-index:20; margin-top:14px; background:var(--bg);
+    padding:16px 0 10px; border-top:1px solid var(--line); display:flex; align-items:center; gap:16px; }
+  .wiznav .sumcard{ flex:1; min-width:0; }
+  #wzNext, #launch{ font-size:14px; padding:10px 20px; flex:none; }
+  #launch:disabled{ opacity:.6; cursor:default; }
+
   @media (max-width:560px){
     .step{ padding-left:20px; padding-top:48px; }
     .stepn{ left:18px; top:14px; }
@@ -87,53 +113,55 @@
 </head>
 <body>
 <main>
-  <p class="intro">Set up a robot or simulation in four steps. Pick <b>where the data lives</b>, the <b>backend</b> that drives it, and <b>what to run</b> — then launch. Everything you record scopes to this environment.</p>
+  <p class="intro">Set up a robot or simulation in four quick steps — one at a time.</p>
 
-  <div class="step active">
-    <span class="stepn">1</span>
-    <h2>Project<span class="hint">where the data lives</span></h2>
+  <div class="wizsteps" id="wizsteps"></div>
+
+  <section class="wstep" id="wzProject">
+    <h2><span class="stepn">1</span> Project <span class="hint">where the data lives</span></h2>
+    <p class="wstep-lead">Everything you record scopes to a project. Reuse one, make a new one, or use the throwaway <b>scratch</b> space.</p>
     <div class="row">
       <select id="proj"><option value="">scratch (throwaway)</option></select>
       <span class="sep">or</span>
       <input id="newProj" placeholder="new project name">
     </div>
-  </div>
+  </section>
 
-  <div class="step active">
-    <span class="stepn">2</span>
-    <h2>Backend<span class="hint">what drives it</span></h2>
+  <section class="wstep" id="wzBackend" style="display:none">
+    <h2><span class="stepn">2</span> Backend <span class="hint">what drives it</span></h2>
+    <p class="wstep-lead">The engine that runs your robot — an in-browser sim, a headless sim, or your real hardware.</p>
     <div class="opts" id="backends"><div class="summary">loading backends…</div></div>
-  </div>
+  </section>
 
-  <div class="step active" id="simStep">
-    <span class="stepn">3</span>
-    <h2>What to run<span class="hint">robot + task, or a fleet</span></h2>
-    <p class="sublbl">Robot</p>
-    <div class="opts" id="robots"></div>
-    <div class="gap"></div>
-    <p class="sublbl">Task / world</p>
-    <div class="opts tight" id="tasks"></div>
-  </div>
+  <section class="wstep" id="wzWhat" style="display:none">
+    <h2><span class="stepn">3</span> <span id="whatTitle">What to run</span> <span class="hint" id="whatHint">robot + task, or a fleet</span></h2>
+    <div id="simStep">
+      <p class="sublbl">Robot</p>
+      <div class="opts" id="robots"></div>
+      <div class="gap"></div>
+      <p class="sublbl">Task / world</p>
+      <div class="opts tight" id="tasks"></div>
+    </div>
+    <div id="realStep" style="display:none">
+      <p class="wstep-lead">Runs the same Python on a Go2 / drone / any ROS robot over rosbridge.</p>
+      <div class="row"><input id="ip" placeholder="rosbridge IP — e.g. 192.168.1.42" style="width:280px;max-width:100%"></div>
+    </div>
+  </section>
 
-  <div class="step active hide" id="realStep" style="display:none">
-    <span class="stepn">3</span>
-    <h2>Connect a real robot<span class="hint">same Python, your hardware</span></h2>
-    <div class="row"><input id="ip" placeholder="rosbridge IP — e.g. 192.168.1.42" style="width:280px;max-width:100%"></div>
-    <p class="summary" style="margin:10px 0 0">Runs the same Python on a Go2 / drone / any ROS robot over rosbridge.</p>
-  </div>
-
-  <div class="step active">
-    <span class="stepn">4</span>
-    <h2>Environment<span class="hint">name + persistence</span></h2>
+  <section class="wstep" id="wzEnv" style="display:none">
+    <h2><span class="stepn">4</span> Environment <span class="hint">name + persistence</span></h2>
+    <p class="wstep-lead">A named space inside the project — its own map, cameras and retention. Scratch is auto-pruned; test/production are kept.</p>
     <div class="row">
       <input id="envName" placeholder="environment name" style="width:240px;max-width:100%">
       <select id="mode"><option value="scratch">scratch (ephemeral)</option><option value="test">test (kept)</option><option value="production">production</option></select>
     </div>
-  </div>
+  </section>
 
-  <div class="launch">
-    <button class="btn accent" id="launch">▶ Launch</button>
-    <div class="sumcard"><span class="summary">Ready —</span><span class="summary" id="summary"></span></div>
+  <div class="wiznav">
+    <button class="btn" id="wzBack" style="visibility:hidden">← Back</button>
+    <div class="sumcard"><span class="summary" id="summary"></span></div>
+    <button class="btn accent" id="wzNext">Next →</button>
+    <button class="btn accent" id="launch" style="display:none">▶ Launch</button>
   </div>
 </main>
 <script>
@@ -180,6 +208,8 @@ function renderWhat(){
   const real=!SIM_BACKENDS.has(S.backend);
   $("#simStep").style.display=real?"none":"block";
   $("#realStep").style.display=real?"block":"none";
+  $("#whatTitle").textContent = real ? "Connect a real robot" : "What to run";
+  $("#whatHint").textContent = real ? "same Python, your hardware" : "robot + task, or a fleet";
   if(!real){
     $("#robots").innerHTML=ROBOTS.map(([id,t,d])=>`<div class="opt ${id===S.robot?'sel':''}" data-r="${id}"><div class="t">${t}</div><div class="d">${d}</div></div>`).join("")
       +`<div class="opt ${S.fleet?'sel':''}" data-fleet="1"><div class="t">🐝 Warehouse Fleet</div><div class="d">N robots, floors, elevators</div></div>`;
@@ -210,6 +240,32 @@ function summary(){
     S.fleet ? `warehouse fleet` : `${S.robot} · ${S.level}`;
   $("#summary").textContent = `${what} on ${S.backend} → ${proj}/${env}`;
 }
+// ── wizard: show one step at a time ───────────────────────────────────────
+const WSTEPS=["wzProject","wzBackend","wzWhat","wzEnv"];
+let wi=0;
+function renderStepper(){
+  let h="";
+  for(let i=0;i<WSTEPS.length;i++){
+    const cls=i===wi?"on":i<wi?"done":"";
+    h+=`<span class="wdot ${cls}" data-i="${i}">${i<wi?"✓":i+1}</span>`;
+    if(i<WSTEPS.length-1) h+=`<span class="wbar ${i<wi?"done":""}"></span>`;
+  }
+  $("#wizsteps").innerHTML=h;
+  $("#wizsteps").querySelectorAll(".wdot").forEach(d=>d.onclick=()=>{ if(+d.dataset.i<wi) showStep(+d.dataset.i); });
+}
+function showStep(i){
+  wi=Math.max(0,Math.min(WSTEPS.length-1,i));
+  WSTEPS.forEach((s,k)=>$("#"+s).style.display=(k===wi)?"block":"none");
+  $("#wzBack").style.visibility=wi===0?"hidden":"visible";
+  const last=wi===WSTEPS.length-1;
+  $("#wzNext").style.display=last?"none":"inline-block";
+  $("#launch").style.display=last?"inline-block":"none";
+  renderStepper(); summary();
+  window.scrollTo(0,0);
+}
+$("#wzNext").onclick=()=>showStep(wi+1);
+$("#wzBack").onclick=()=>showStep(wi-1);
+
 $("#launch").onclick=async()=>{
   const projName=$("#newProj").value.trim(), proj=projName||$("#proj").value;
   const real=!SIM_BACKENDS.has(S.backend);
@@ -231,7 +287,7 @@ $("#launch").onclick=async()=>{
 $("#envName").oninput=summary;
 $("#newProj").oninput=summary;
 $("#proj").onchange=summary;
-loadProjects().then(summary); loadBackends();
+loadProjects().then(summary); loadBackends(); showStep(0);
 </script>
 </body>
 </html>
