@@ -462,24 +462,32 @@ function step(dt) {
 }
 
 /* ── view transform ──────────────────────────────────────────────────── */
+// The canvas fills #canvas-wrap inside the app shell (it is NOT the full
+// viewport), so the view is sized from the canvas's own client box. The world
+// square is centred within that box; ox/oy/s carry the device-pixel scale.
 const dpr = () => Math.min(2, devicePixelRatio || 1);
 let VIEW = { s: 1, ox: 0, oy: 0 };
 function resize() {
   const k = dpr();
-  cv.width = innerWidth * k; cv.height = innerHeight * k;
-  cv.style.width = innerWidth + "px"; cv.style.height = innerHeight + "px";
-  const leftPad = innerWidth > 1000 ? 310 : 254, rightPad = innerWidth > 1000 ? 368 : 274;
-  const availW = Math.max(120, innerWidth - leftPad - rightPad), availH = innerHeight - 80 - 40;
-  const s = Math.max(5, Math.min(availW, availH) / WORLD);
+  const cw = cv.clientWidth || 120, ch = cv.clientHeight || 120;
+  cv.width = Math.round(cw * k); cv.height = Math.round(ch * k);
+  const pad = 18;                                   // breathing room inside the stage
+  const availW = Math.max(60, cw - pad * 2), availH = Math.max(60, ch - pad * 2);
+  const s = Math.max(4, Math.min(availW, availH) / WORLD);
   VIEW.s = s * k;
-  VIEW.ox = (leftPad + (availW - WORLD * s) / 2) * k;
-  VIEW.oy = (80 + (availH - WORLD * s) / 2) * k;
+  VIEW.ox = (pad + (availW - WORLD * s) / 2) * k;
+  VIEW.oy = (pad + (availH - WORLD * s) / 2) * k;
 }
 addEventListener("resize", resize);
+// keep the canvas matched to its container as the layout reflows
+if (typeof ResizeObserver !== "undefined") new ResizeObserver(resize).observe(cv);
 const wx = (x) => VIEW.ox + x * VIEW.s, wy = (y) => VIEW.oy + y * VIEW.s;
+// pointer events arrive in viewport coords → subtract the canvas box origin
 const screenToWorld = (clientX, clientY) => {
   const k = dpr();
-  return { x: (clientX * k - VIEW.ox) / VIEW.s, y: (clientY * k - VIEW.oy) / VIEW.s };
+  const rect = cv.getBoundingClientRect();
+  return { x: ((clientX - rect.left) * k - VIEW.ox) / VIEW.s,
+           y: ((clientY - rect.top) * k - VIEW.oy) / VIEW.s };
 };
 
 /* ── rendering ───────────────────────────────────────────────────────── */
@@ -619,7 +627,7 @@ function updateInspector() {
   let lx = hoverXY.x + 18, ly = hoverXY.y + 14;
   if (lx + w > innerWidth - pad) lx = hoverXY.x - w - 18;
   if (ly + 200 > innerHeight - pad) ly = innerHeight - 210;
-  el.style.left = Math.max(pad, lx) + "px"; el.style.top = Math.max(70, ly) + "px";
+  el.style.left = Math.max(pad, lx) + "px"; el.style.top = Math.max(pad, ly) + "px";
 }
 
 /* ── HUD ─────────────────────────────────────────────────────────────── */

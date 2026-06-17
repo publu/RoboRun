@@ -9,102 +9,174 @@
 <script src="./shell.js"></script>
 <script src="./run-detail.js"></script>
 <style>
-  *{ box-sizing:border-box; } body{ margin:0; background:var(--bg); color:var(--fg);
-     font:14px/1.5 var(--mono); }
-  header{ display:flex; align-items:center; gap:14px; padding:16px 24px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
-  header h1{ font-size:15px; margin:0; } header .id{ color:var(--fg-dim); font-size:12px; }
-  main{ padding:22px 24px; max-width:1100px; margin:0 auto; }
-  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-  @media(max-width:760px){ .grid{ grid-template-columns:1fr; } }
-  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:14px; }
-  .panel h2{ font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--fg-dim); margin:0 0 10px; display:flex; justify-content:space-between; align-items:center; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--mono); }
   svg{ width:100%; display:block; }
-  .empty{ color:var(--fg-dim); font-size:12px; padding:20px; text-align:center; }
-  #detail{ margin-bottom:20px; }
+  .empty{ color:var(--fg-dim); font-size:12px; padding:24px; text-align:center; }
+
+  /* page header (the breadcrumb / id line above the detail) */
+  .run-head{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+  .run-head .crumb{ font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:var(--fg-dim); }
+  .run-head .rid{ font-size:12px; color:var(--fg-2); background:var(--panel-2); border:1px solid var(--line);
+    border-radius:999px; padding:3px 11px; }
+
+  #detail{ margin-bottom:22px; }
+
+  /* ── panels ──────────────────────────────────────────────────────────── */
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:14px 14px 12px; }
+  .panel > h2{ font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:var(--fg-dim);
+    margin:0 0 12px; display:flex; align-items:center; gap:8px; min-height:18px; }
+  .panel > h2 .meta{ margin-left:auto; color:var(--fg-dim); font-weight:400; font-size:10.5px;
+    letter-spacing:.04em; text-transform:none; }
+  .panel > h2 .lg{ font-size:10px; text-transform:none; letter-spacing:0; color:var(--fg-2);
+    display:inline-flex; align-items:center; gap:4px; }
+  .panel > h2 .lg::before{ content:""; width:9px; height:2px; border-radius:2px; background:currentColor; }
+
+  /* ── replay player ───────────────────────────────────────────────────── */
+  .player{ display:grid; grid-template-columns:minmax(0,1.35fr) minmax(220px,1fr); gap:16px; align-items:start; }
+  @media(max-width:780px){ .player{ grid-template-columns:1fr; } }
+  .player .stage{ position:relative; }
+  #pframe{ width:100%; max-height:360px; object-fit:contain; background:#070907;
+    border:1px solid var(--line); border-radius:var(--r-sm); display:block; }
+  .player .scrubrow{ display:flex; align-items:center; gap:12px; margin-top:12px; }
+  .player .scrubrow .clock{ font-variant-numeric:tabular-nums; color:var(--fg-2); font-size:12px;
+    white-space:nowrap; min-width:108px; text-align:right; }
+  #scrub{ flex:1; accent-color:var(--accent); cursor:pointer; }
+  .player .side{ display:flex; flex-direction:column; gap:12px; }
+  .player .controls{ display:flex; gap:8px; flex-wrap:wrap; }
+  .player .controls .btn{ flex:1; justify-content:center; display:inline-flex; align-items:center; gap:6px; }
+  .player .hint{ font-size:11px; color:var(--fg-dim); line-height:1.5; }
+  #incidents:not(:empty){ display:flex; flex-wrap:wrap; gap:6px; padding-top:2px;
+    border-top:1px solid var(--line-soft); margin-top:2px; }
+
+  /* ── telemetry grid ──────────────────────────────────────────────────── */
+  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media(max-width:760px){ .grid{ grid-template-columns:1fr; } }
+
+  /* shared playhead over the time-series charts */
   .phwrap{ position:relative; }
-  .ph{ position:absolute; top:0; bottom:0; width:1px; background:var(--accent); opacity:.7; pointer-events:none; display:none; }
-  .evlog{ max-height:200px; overflow:auto; font-size:12px; }
-  .evlog .ev{ display:flex; gap:10px; padding:3px 0; border-bottom:1px solid var(--line-soft); color:var(--fg-2); }
-  .evlog .ev.cur{ color:var(--fg); background:#0e150f; }
-  .evlog .ev .t{ color:var(--fg-dim); width:64px; flex:none; }
+  .ph{ position:absolute; top:0; bottom:0; width:1px; background:var(--accent);
+    box-shadow:0 0 6px rgba(0,212,126,.6); pointer-events:none; display:none; z-index:2; }
+  .ph::before{ content:""; position:absolute; top:-1px; left:-3px; width:7px; height:7px;
+    border-radius:50%; background:var(--accent); }
+
+  /* ── event log ───────────────────────────────────────────────────────── */
+  .evlog{ max-height:260px; overflow:auto; }
+  .evlog .ev{ display:grid; grid-template-columns:74px auto 1fr; align-items:baseline; gap:10px;
+    padding:5px 8px; border-radius:var(--r-sm); color:var(--fg-2); font-size:12px;
+    border-left:2px solid transparent; }
+  .evlog .ev + .ev{ border-top:1px solid var(--line-soft); }
+  .evlog .ev:hover{ background:#0e150f; }
+  .evlog .ev.cur{ color:var(--fg); background:#0e1a12; border-left-color:var(--accent);
+    border-top-color:transparent; }
+  .evlog .ev .t{ color:var(--fg-dim); font-variant-numeric:tabular-nums; }
+  .evlog .ev .tag{ color:var(--fg-2); font-size:10.5px; padding:1px 7px; border:1px solid var(--line);
+    border-radius:999px; background:var(--panel-2); white-space:nowrap; align-self:center; }
+  .evlog .ev .ttl{ color:inherit; min-width:0; overflow:hidden; text-overflow:ellipsis; }
 </style>
 </head>
 <body>
-<header>
-  <h1>RUN</h1><span class="id" id="rid"></span>
-  <nav class="nav">
-    <a href="/">cockpit</a><a href="/browser">browser</a><a href="/projects">projects</a><a href="/scenarios">scenarios</a>
-    <a href="/timeline">timeline</a><a href="/analytics">analytics</a>
-    <a href="/fleet">fleet lab</a><a href="/search">search</a>
-  </nav>
-</header>
 <main>
-  <div id="detail"><div class="empty">loading…</div></div>
-
-  <div class="panel" id="player" style="margin-bottom:16px;display:none">
-    <h2>Synced replay <span id="ptime" style="color:var(--fg-dim)"></span>
-      <span style="margin-left:auto;display:flex;gap:8px">
-        <button id="play" class="btn sm accent" title="play / pause — every panel moves together">▶ play</button>
-        <button id="flag" class="btn sm" title="flag this moment to revisit" style="color:var(--amber)">⚑ Flag</button>
-      </span>
-    </h2>
-    <img id="pframe" style="width:100%;max-height:340px;object-fit:contain;background:#070907;border-radius:6px" alt="frame">
-    <input id="scrub" type="range" min="0" max="1000" value="0" style="width:100%;margin-top:10px;accent-color:var(--accent)">
-    <div id="incidents" style="margin-top:8px"></div>
+  <div class="run-head">
+    <span class="crumb">Run replay</span>
+    <span class="rid" id="rid"></span>
   </div>
 
-  <div class="seclabel" style="margin:4px 0 10px">Telemetry — one clock across every panel</div>
+  <div id="detail"><div class="empty">loading…</div></div>
+
+  <div class="panel" id="player" style="margin-bottom:18px;display:none">
+    <h2>Synced replay
+      <span class="meta" id="ptime"></span>
+    </h2>
+    <div class="player">
+      <div class="stage">
+        <img id="pframe" alt="camera frame">
+        <div class="scrubrow">
+          <input id="scrub" type="range" min="0" max="1000" value="0">
+        </div>
+      </div>
+      <div class="side">
+        <div class="controls">
+          <button id="play" class="btn sm accent" title="play / pause — every panel moves on one clock">▶ Play</button>
+          <button id="flag" class="btn sm" title="flag this moment to revisit" style="color:var(--amber)">⚑ Flag</button>
+        </div>
+        <div class="hint">One clock drives the camera, the velocity / clearance playheads, and the event log — scrub or play to move them together.</div>
+        <div id="incidents"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="seclabel" style="margin:2px 0 10px">Telemetry — one clock across every panel</div>
   <div class="grid">
-    <div class="panel"><h2>Robot trajectory <span id="lblTraj"></span></h2><div id="traj" class="phwrap"></div></div>
-    <div class="panel"><h2>Velocity <span style="color:var(--accent)">linear</span> · <span style="color:var(--blue)">angular</span></h2><div id="vel" class="phwrap"></div></div>
-    <div class="panel"><h2>Obstacle clearance (m)</h2><div id="clear" class="phwrap"></div></div>
-    <div class="panel"><h2>LiDAR scan</h2><div id="scan"></div></div>
-    <div class="panel" style="grid-column:1/-1"><h2>Event log <span id="evcount" style="color:var(--fg-dim)"></span></h2><div id="events" class="evlog"></div></div>
+    <div class="panel"><h2>Robot trajectory <span class="meta" id="lblTraj"></span></h2><div id="traj" class="phwrap"></div></div>
+    <div class="panel"><h2>Velocity <span class="lg" style="color:var(--accent)">linear</span> <span class="lg" style="color:var(--blue)">angular</span></h2><div id="vel" class="phwrap"></div></div>
+    <div class="panel"><h2>Obstacle clearance <span class="meta">metres</span></h2><div id="clear" class="phwrap"></div></div>
+    <div class="panel"><h2>LiDAR scan <span class="meta">latest sweep</span></h2><div id="scan"></div></div>
+    <div class="panel" style="grid-column:1/-1"><h2>Event log <span class="meta" id="evcount"></span></h2><div id="events" class="evlog"></div></div>
   </div>
 </main>
 <script>
 const $=s=>document.querySelector(s);
 const qid=new URLSearchParams(location.search).get("id")||new URLSearchParams(location.search).get("run")||"";
-$("#rid").textContent=qid;
+$("#rid").textContent=qid||"—";
 
-function lineChart(el, series, keys, colors, H=160){
-  const all=series.flatMap(p=>keys.map(k=>p[k]||0));
+// ── charts ───────────────────────────────────────────────────────────────
+// time-series line chart with baseline, axis labels and a faint y-grid.
+function lineChart(el, series, keys, colors, opts={}){
   if(!series.length){ el.innerHTML='<div class="empty">no data on this channel</div>'; return; }
-  const W=460, min=Math.min(0,...all), max=Math.max(1e-6,...all), span=max-min||1;
-  const X=i=>i/(series.length-1||1)*W, Y=v=>H-((v-min)/span)*(H-12)-6;
-  const paths=keys.map((k,ki)=>`<path fill="none" stroke="${colors[ki]}" stroke-width="2" d="${series.map((p,i)=>`${i?'L':'M'}${X(i).toFixed(1)},${Y(p[k]||0).toFixed(1)}`).join(" ")}"/>`).join("");
-  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${paths}</svg>`;
+  const H=opts.H||160, W=460, padL=4, padR=4, top=10, bot=18, unit=opts.unit||"";
+  const all=series.flatMap(p=>keys.map(k=>+p[k]||0));
+  const min=Math.min(0,...all), max=Math.max(1e-6,...all), span=max-min||1;
+  const X=i=>padL+i/(series.length-1||1)*(W-padL-padR);
+  const Y=v=>top+(1-(v-min)/span)*(H-top-bot);
+  const grid=[0,.5,1].map(f=>{ const v=min+span*f, y=Y(v);
+    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W-padR}" y2="${y.toFixed(1)}" stroke="var(--line-soft)"/>`
+      +`<text x="${W-padR}" y="${(y-3).toFixed(1)}" text-anchor="end" fill="var(--fg-dim)" font-size="9">${v.toFixed(v>=10?0:1)}${unit}</text>`; }).join("");
+  const zero=(min<0&&max>0)?`<line x1="${padL}" y1="${Y(0).toFixed(1)}" x2="${W-padR}" y2="${Y(0).toFixed(1)}" stroke="var(--line)"/>`:"";
+  const paths=keys.map((k,ki)=>`<path fill="none" stroke="${colors[ki]}" stroke-width="1.75" stroke-linejoin="round" d="${series.map((p,i)=>`${i?'L':'M'}${X(i).toFixed(1)},${Y(+p[k]||0).toFixed(1)}`).join(" ")}"/>`).join("");
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${grid}${zero}${paths}</svg>`;
 }
-function trajChart(el, pts, H=200){
+function trajChart(el, pts, H=204){
   if(!pts.length){ el.innerHTML='<div class="empty">no pose recorded</div>'; return; }
   const xs=pts.map(p=>p[0]), zs=pts.map(p=>p[1]);
   const minX=Math.min(...xs),maxX=Math.max(...xs),minZ=Math.min(...zs),maxZ=Math.max(...zs);
-  const W=460, sx=(maxX-minX)||1, sz=(maxZ-minZ)||1, pad=14;
+  const W=460, sx=(maxX-minX)||1, sz=(maxZ-minZ)||1, pad=16;
   const X=x=>pad+((x-minX)/sx)*(W-2*pad), Y=z=>pad+((z-minZ)/sz)*(H-2*pad);
   const d=pts.map((p,i)=>`${i?'L':'M'}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" ");
-  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}"><path fill="none" stroke="var(--accent)" stroke-width="2" d="${d}"/>`
-    +`<circle cx="${X(pts[0][0])}" cy="${Y(pts[0][1])}" r="4" fill="var(--amber)"/>`
-    +`<circle cx="${X(pts.at(-1)[0])}" cy="${Y(pts.at(-1)[1])}" r="4" fill="var(--accent)"/></svg>`;
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">`
+    +`<rect x="1" y="1" width="${W-2}" height="${H-2}" fill="none" stroke="var(--line-soft)" rx="6"/>`
+    +`<path fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" d="${d}"/>`
+    +`<circle cx="${X(pts[0][0]).toFixed(1)}" cy="${Y(pts[0][1]).toFixed(1)}" r="4" fill="var(--amber)"/>`
+    +`<circle cx="${X(pts.at(-1)[0]).toFixed(1)}" cy="${Y(pts.at(-1)[1]).toFixed(1)}" r="4" fill="var(--accent)"/>`
+    +`<text x="${X(pts[0][0]).toFixed(1)}" y="${(Y(pts[0][1])-7).toFixed(1)}" fill="var(--amber)" font-size="9" text-anchor="middle">start</text>`
+    +`<text x="${X(pts.at(-1)[0]).toFixed(1)}" y="${(Y(pts.at(-1)[1])-7).toFixed(1)}" fill="var(--accent)" font-size="9" text-anchor="middle">end</text></svg>`;
   $("#lblTraj").textContent=`${pts.length} pts`;
 }
-function scanChart(el, ranges, H=200){
+function scanChart(el, ranges, H=204){
   const v=ranges.filter(r=>r>0);
   if(!v.length){ el.innerHTML='<div class="empty">no lidar</div>'; return; }
-  const W=460, cx=W/2, cy=H/2, R=Math.min(W,H)/2-10, max=Math.max(...v);
+  const W=460, cx=W/2, cy=H/2, R=Math.min(W,H)/2-14, max=Math.max(...v);
+  const rings=[.33,.66,1].map(f=>`<circle cx="${cx}" cy="${cy}" r="${(R*f).toFixed(1)}" fill="none" stroke="var(--line-soft)"/>`).join("");
+  const axes=[0,90,180,270].map(a=>{ const r=a*Math.PI/180;
+    return `<line x1="${cx}" y1="${cy}" x2="${(cx+Math.cos(r)*R).toFixed(1)}" y2="${(cy-Math.sin(r)*R).toFixed(1)}" stroke="var(--line-soft)"/>`; }).join("");
   const pts=ranges.map((r,i)=>{ const a=i/ranges.length*2*Math.PI; const rr=(r>0?r:max)/max*R;
     return `${(cx+Math.cos(a)*rr).toFixed(1)},${(cy-Math.sin(a)*rr).toFixed(1)}`; }).join(" ");
-  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}"><circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--line)"/>`
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">`
+    +`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--line)"/>${rings}${axes}`
     +`<polygon points="${pts}" fill="rgba(0,212,126,.12)" stroke="var(--accent)" stroke-width="1.5"/>`
-    +`<circle cx="${cx}" cy="${cy}" r="3" fill="var(--accent)"/></svg>`;
+    +`<circle cx="${cx}" cy="${cy}" r="3" fill="var(--accent)"/>`
+    +`<text x="${(cx+R+2).toFixed(1)}" y="${cy+3}" fill="var(--fg-dim)" font-size="9">${max.toFixed(1)}m</text></svg>`;
 }
+
+// ── record (Antioch detail) ───────────────────────────────────────────────
 async function loadRecord(){
-  // the scored record → metadata/params/results/evaluation/tags (Antioch detail)
   try{
     const d=await (await fetch("/api/scenarios/by-run?run="+encodeURIComponent(qid))).json();
     const actions=`<a class="btn sm" href="/api/run/mcap/download?run=${encodeURIComponent(qid)}">↓ MCAP</a>`;
     renderRunRecord($("#detail"), d.result, {actions});
   }catch(e){ renderRunRecord($("#detail"), null, {}); }
 }
+
 async function load(){
   if(!qid){ $("#detail").innerHTML='<div class="empty">No run id. Open one from /scenarios or /timeline.</div>'; return; }
   loadRecord();
@@ -112,10 +184,12 @@ async function load(){
   if(!d.ok){ return; }
   trajChart($("#traj"), d.trajectory||[]);
   lineChart($("#vel"), d.velocity||[], ["linear","angular"], ["var(--accent)","var(--blue)"]);
-  lineChart($("#clear"), d.clearance||[], ["min"], ["var(--amber)"]);
+  lineChart($("#clear"), d.clearance||[], ["min"], ["var(--amber)"], {unit:"m"});
   scanChart($("#scan"), d.scan||[]);
   setupPlayer(d);
 }
+
+// ── synced replay player ──────────────────────────────────────────────────
 let EVENTS=[];
 function mkPlayhead(host){ const d=document.createElement("div"); d.className="ph"; host.appendChild(d); return d; }
 function setupPlayer(d){
@@ -123,13 +197,14 @@ function setupPlayer(d){
   const hasFrames=(d.frames||[]).length && t0!=null;
   if(t0==null){ return; }
   $("#player").style.display="block";
-  if(!hasFrames){ $("#pframe").style.display="none"; }
+  if(!hasFrames) $("#pframe").style.display="none";
   const scrub=$("#scrub");
   const phVel=mkPlayhead($("#vel")), phClr=mkPlayhead($("#clear"));
   let curT=t0, timer=null;
+  const fmt=s=>`${Math.floor(s/60)}:${(s%60).toFixed(1).padStart(4,"0")}`;
   const show=()=>{
     const frac=scrub.value/1000; curT=t0+span*frac;
-    $("#ptime").textContent=`t=${(curT-t0).toFixed(1)}s / ${span.toFixed(1)}s`;
+    $("#ptime").textContent=`${fmt(curT-t0)} / ${fmt(span)}`;
     if(hasFrames) $("#pframe").src=`/api/run/frame?id=${encodeURIComponent(qid)}&t=${curT}`;
     // shared playhead across the time-series panels
     [phVel,phClr].forEach(p=>{ p.style.display="block"; p.style.left=(frac*100).toFixed(2)+"%"; });
@@ -148,8 +223,8 @@ function setupPlayer(d){
       if(+scrub.value>=1000){ stop(); return; } }
     last=now; raf=requestAnimationFrame(tick);
   };
-  const play=()=>{ playing=true; last=0; $("#play").textContent="⏸ pause"; raf=requestAnimationFrame(tick); };
-  const stop=()=>{ playing=false; $("#play").textContent="▶ play"; if(raf)cancelAnimationFrame(raf); };
+  const play=()=>{ if(+scrub.value>=1000) scrub.value=0; playing=true; last=0; $("#play").textContent="⏸ Pause"; $("#play").classList.add("on"); raf=requestAnimationFrame(tick); };
+  const stop=()=>{ playing=false; $("#play").textContent="▶ Play"; $("#play").classList.remove("on"); if(raf)cancelAnimationFrame(raf); };
   $("#play").onclick=()=>{ playing?stop():play(); };
   scrub.value=0; show();
   $("#flag").onclick=async()=>{
@@ -159,21 +234,26 @@ function setupPlayer(d){
   };
   loadIncidents(); loadEvents();
 }
+
+// ── event log ─────────────────────────────────────────────────────────────
 async function loadEvents(){
   try{
     const d=await (await fetch("/api/run/events?run="+encodeURIComponent(qid)+"&limit=500")).json();
     EVENTS=(d.events||[]).filter(e=>e.ts).sort((a,b)=>a.ts-b.ts);
-    $("#evcount").textContent=EVENTS.length?`(${EVENTS.length})`:"";
+    $("#evcount").textContent=EVENTS.length?`${EVENTS.length} events`:"";
+    const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
     const tm=ts=>new Date(ts*1000).toLocaleTimeString();
-    $("#events").innerHTML=EVENTS.length? EVENTS.map(e=>
-      `<div class="ev"><span class="t">${tm(e.ts)}</span><span>${(e.type||"")}/${(e.source||"")} · ${e.title||""}</span></div>`).join("")
+    $("#events").innerHTML=EVENTS.length? EVENTS.map(e=>{
+      const tag=[e.type,e.source].filter(Boolean).join("/");
+      return `<div class="ev"><span class="t">${tm(e.ts)}</span><span class="tag">${esc(tag||"—")}</span><span class="ttl">${esc(e.title||"")}</span></div>`;
+    }).join("")
       : '<div class="empty">No events recorded for this run.</div>';
   }catch(e){ $("#events").innerHTML='<div class="empty">—</div>'; }
 }
 async function loadIncidents(){
   try{ const d=await (await fetch("/api/incidents?run="+encodeURIComponent(qid))).json();
-    const el=$("#incidents");
-    el.innerHTML=(d.incidents||[]).map(i=>`<span class="chip" style="color:var(--amber);border-color:#3a3015">⚑ ${i.note||i.tag}</span>`).join("");
+    const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    $("#incidents").innerHTML=(d.incidents||[]).map(i=>`<span class="chip" style="color:var(--amber);border-color:#3a3015">⚑ ${esc(i.note||i.tag)}</span>`).join("");
   }catch(e){}
 }
 load();

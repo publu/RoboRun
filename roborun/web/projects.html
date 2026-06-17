@@ -8,54 +8,128 @@
 <link rel="stylesheet" href="./ui.css">
 <script src="./shell.js"></script>
 <style>
-  *{ box-sizing:border-box; } body{ margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--mono); }
-  header{ display:flex; align-items:baseline; gap:16px; padding:18px 24px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
-  header h1{ font-size:16px; margin:0; } header .sub{ color:var(--fg-dim); font-size:12px; max-width:620px; }
-  main{ padding:24px; max-width:1100px; margin:0 auto; }
-  h2{ font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--fg-dim); margin:26px 0 12px; }
-  .active-banner{ background:#0e1a12; border:1px solid var(--accent-dim); border-radius:var(--r); padding:12px 16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-  .active-banner .lab{ color:var(--fg-dim); font-size:11px; text-transform:uppercase; letter-spacing:.08em; }
-  .active-banner b{ color:var(--accent); }
-  .plist{ display:flex; flex-direction:column; gap:10px; }
-  .pcard{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:14px 16px; }
-  .pcard.active{ border-color:var(--accent); }
-  .pcard .top{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-  .pcard .nm{ font-weight:600; font-size:14px; } .pcard .meta{ color:var(--fg-dim); font-size:11px; margin-left:auto; }
-  .envs{ margin-top:10px; display:flex; flex-direction:column; gap:6px; }
-  .env{ display:flex; align-items:center; gap:10px; padding:7px 10px; background:var(--bg-2); border:1px solid var(--line-soft); border-radius:var(--r-sm); }
-  .env .nm{ font-size:12.5px; } .env .meta{ color:var(--fg-dim); font-size:11px; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--mono); }
+
+  /* ── page intro ──────────────────────────────────────────────────────── */
+  .intro{ margin:0 0 18px; }
+  .intro h1{ font-size:16px; margin:0 0 6px; letter-spacing:.02em; }
+  .intro p{ color:var(--fg-dim); font-size:12px; max-width:680px; margin:0; }
+  .intro b{ color:var(--fg-2); }
+
+  /* ── active banner ───────────────────────────────────────────────────── */
+  .active-banner{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r);
+    padding:13px 16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .active-banner.scoped{ background:#0e1a12; border-color:var(--accent-dim); }
+  .active-banner .lab{ color:var(--fg-dim); font-size:10px; text-transform:uppercase; letter-spacing:.12em; }
+  .active-banner .scope{ display:flex; align-items:baseline; gap:8px; font-size:15px; }
+  .active-banner b{ color:var(--accent); font-weight:600; }
+  .active-banner .sep{ color:var(--fg-dim); }
+  .active-banner .env{ color:var(--fg); }
+  .active-banner .note{ color:var(--fg-dim); font-size:12px; }
+
+  /* ── section heads ───────────────────────────────────────────────────── */
+  .sec{ margin-top:28px; }
+  .sec-h{ display:flex; align-items:baseline; gap:10px; margin:0 0 12px; }
+  .sec-h h2{ font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:var(--fg-dim); margin:0; }
+  .sec-h .hint{ font-size:11px; color:var(--fg-dim); }
+
+  /* ── forms ───────────────────────────────────────────────────────────── */
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:14px 16px; }
+  form{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:0; }
+  input,select{ background:var(--panel-2); color:var(--fg); border:1px solid var(--line);
+    border-radius:var(--r-sm); font:inherit; font-size:12.5px; padding:7px 9px; min-height:30px; }
+  input::placeholder{ color:var(--fg-dim); }
+  input:focus,select:focus{ outline:none; border-color:var(--accent); }
+  .field{ display:flex; flex-direction:column; gap:4px; }
+  .field > .fl{ font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--fg-dim); }
+
+  /* ── project cards ───────────────────────────────────────────────────── */
+  .plist{ display:flex; flex-direction:column; gap:14px; }
+  .pcard{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r); overflow:hidden; }
+  .pcard.active{ border-color:var(--accent-dim); box-shadow:inset 3px 0 0 var(--accent); }
+  .pcard .top{ display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:13px 16px; border-bottom:1px solid var(--line-soft); }
+  .pcard .nm{ font-weight:600; font-size:14px; }
+  .pcard .top .meta{ color:var(--fg-dim); font-size:11px; margin-left:auto; font-variant-numeric:tabular-nums; }
+
+  /* ── environment rows ────────────────────────────────────────────────── */
+  .envs{ padding:6px 16px; display:flex; flex-direction:column; }
+  .env-block + .env-block{ border-top:1px solid var(--line-soft); }
+  .env{ display:flex; align-items:center; gap:10px; padding:11px 0 6px; }
+  .env .nm{ font-size:13px; font-weight:600; color:var(--fg); }
+  .env .meta{ color:var(--fg-dim); font-size:11px; font-variant-numeric:tabular-nums; }
   .env .grow{ flex:1; }
-  .cams{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:4px 0 10px 10px; padding-left:10px; border-left:2px solid var(--line-soft); }
-  .cams .lab{ color:var(--fg-dim); font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; }
-  .newCam input{ padding:4px 6px; }
-  form{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px; }
-  input,select{ background:var(--panel-2); color:var(--fg); border:1px solid var(--line); border-radius:var(--r-sm); font:inherit; font-size:12.5px; padding:6px 9px; }
-  .empty{ color:var(--fg-dim); padding:24px; }
+
+  /* ── camera area ─────────────────────────────────────────────────────── */
+  .cams{ display:flex; flex-direction:column; gap:8px; margin:2px 0 12px;
+    padding:10px 12px; background:var(--bg-2); border:1px solid var(--line-soft); border-radius:var(--r-sm); }
+  .cams .lab{ color:var(--fg-dim); font-size:10px; text-transform:uppercase; letter-spacing:.08em; }
+  .cams .camlist{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .cams .camlist .meta{ color:var(--fg-dim); font-size:11px; }
+  .newCam{ gap:6px; }
+  .newCam input{ padding:5px 7px; min-height:28px; }
+  .newCam input.coord{ width:46px; text-align:center; }
+  .newCam .coords{ display:inline-flex; gap:4px; padding:0 4px; }
+  .newCam .glab{ color:var(--fg-dim); font-size:10px; align-self:center; }
+
+  /* ── new-env footer ──────────────────────────────────────────────────── */
+  .pcard .newEnv{ padding:11px 16px; border-top:1px solid var(--line-soft); background:var(--bg-2); }
+
+  /* ── empty / loading ─────────────────────────────────────────────────── */
+  .empty{ color:var(--fg-2); padding:30px 20px; text-align:center;
+    border:1px dashed var(--line); border-radius:var(--r); background:var(--panel); }
+  .empty .big{ font-size:13px; color:var(--fg); margin-bottom:6px; }
+  .empty .sub{ font-size:12px; color:var(--fg-dim); max-width:440px; margin:0 auto 14px; }
+  .empty .acts{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+  .empty b{ color:var(--fg-2); }
+  .loading{ color:var(--fg-dim); padding:18px; font-size:12px; }
+  .envs .meta.loading-line{ padding:10px 0; }
 </style>
 </head>
 <body>
-<header>
-  <h1>PROJECTS</h1>
-  <span class="sub">A project owns its data and timeline and can span environments. Pick one and everything you record — cockpit, scenarios, search — scopes to it. <b>scratch</b> is the throwaway default so playing around never muddles real work.</span>
-  <nav class="nav">
-    <a href="/">cockpit</a><a href="/projects" class="on">projects</a>
-    <a href="/browser">browser</a><a href="/scenarios">scenarios</a><a href="/timeline">timeline</a>
-    <a href="/analytics">analytics</a><a href="/search">search</a>
-  </nav>
-</header>
 <main>
+  <div class="intro">
+    <h1>Projects &amp; environments</h1>
+    <p>A project owns its data and timeline and can span environments. The active scope (set here or from the top bar) decides where everything you record — cockpit, scenarios, search — gets stored. <b>scratch</b> is the throwaway default so playing around never muddles real work.</p>
+  </div>
+
   <div id="active"></div>
 
-  <h2>New project</h2>
-  <form id="newProj">
-    <input id="pName" placeholder="project name — e.g. warehouse-pilot" size="32">
-    <select id="pMode"><option value="scratch">scratch (ephemeral)</option><option value="test">test</option><option value="production">production</option></select>
-    <select id="pBackend"><option value="rapier">rapier</option><option value="gazebo">gazebo</option><option value="isaac">isaac</option><option value="real">real robot</option></select>
-    <button class="btn accent" type="submit">+ create</button>
-  </form>
+  <div class="sec">
+    <div class="sec-h">
+      <h2>New project</h2>
+      <span class="hint">creates a project and switches you into it</span>
+    </div>
+    <div class="panel">
+      <form id="newProj">
+        <div class="field" style="flex:1; min-width:220px;">
+          <span class="fl">name</span>
+          <input id="pName" placeholder="e.g. warehouse-pilot">
+        </div>
+        <div class="field">
+          <span class="fl">mode</span>
+          <select id="pMode"><option value="scratch">scratch (ephemeral)</option><option value="test">test</option><option value="production">production</option></select>
+        </div>
+        <div class="field">
+          <span class="fl">backend</span>
+          <select id="pBackend"><option value="rapier">rapier</option><option value="gazebo">gazebo</option><option value="isaac">isaac</option><option value="real">real robot</option></select>
+        </div>
+        <div class="field">
+          <span class="fl">&nbsp;</span>
+          <button class="btn accent" type="submit">+ create</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
-  <h2>Your projects</h2>
-  <div id="plist" class="plist"><div class="empty">loading…</div></div>
+  <div class="sec">
+    <div class="sec-h">
+      <h2>Your projects</h2>
+      <span class="hint" id="projCount"></span>
+    </div>
+    <div id="plist" class="plist"><div class="loading">loading…</div></div>
+  </div>
 </main>
 <script>
 const $=s=>document.querySelector(s);
@@ -69,17 +143,31 @@ async function load(){
   const a=await j("/api/projects/active"); active=a.active;
   const banner=$("#active");
   if(active){
-    banner.innerHTML=`<div class="active-banner"><span class="lab">active</span>
-      <b>${esc(active.project)}</b> <span style="color:var(--fg-dim)">/</span> ${esc(active.environment)}
+    banner.innerHTML=`<div class="active-banner scoped">
+      <span class="lab">active scope</span>
+      <span class="scope"><b>${esc(active.project)}</b> <span class="sep">/</span> <span class="env">${esc(active.environment)}</span></span>
       ${a.environment?`<span class="chip">${esc(a.environment.backend||'—')} · ${esc(a.environment.mode||'—')}</span>`:""}
       <button class="btn sm" style="margin-left:auto" onclick="clearActive()">use scratch (clear)</button></div>`;
   } else {
-    banner.innerHTML=`<div class="active-banner"><span class="lab">active</span>
-      <b>scratch</b> <span style="color:var(--fg-dim)">— default; data is unscoped/ephemeral. Create or select a project to isolate it.</span></div>`;
+    banner.innerHTML=`<div class="active-banner">
+      <span class="lab">active scope</span>
+      <span class="scope"><b style="color:var(--fg-2)">scratch</b></span>
+      <span class="note">default — data is unscoped &amp; ephemeral. Create or select a project to isolate it.</span></div>`;
   }
   const d=await j("/api/projects");
   const el=$("#plist");
-  if(!d.projects||!d.projects.length){ el.innerHTML='<div class="empty">No projects yet. Create one above — until then, everything records to the unscoped <b>scratch</b> pile.</div>'; return; }
+  const count=(d.projects||[]).length;
+  $("#projCount").textContent=count?`${count} project${count===1?'':'s'}`:"";
+  if(!count){
+    el.innerHTML=`<div class="empty">
+      <div class="big">No projects yet</div>
+      <div class="sub">Until you create one, everything records to the unscoped <b>scratch</b> pile. Spin up a project to isolate its data, timeline, and environments — or set up a sim/robot first.</div>
+      <div class="acts">
+        <button class="btn accent" onclick="document.getElementById('pName').focus()">+ create a project</button>
+        <a class="btn" href="/setup">go to /setup</a>
+      </div></div>`;
+    return;
+  }
   el.innerHTML="";
   for(const p of d.projects){
     const isActive=active&&active.project===p.id;
@@ -88,9 +176,10 @@ async function load(){
     card.innerHTML=`<div class="top">
         <span class="nm">${esc(p.name)}</span>
         <span class="pill ${p.mode_default==='production'?'ok':p.mode_default==='test'?'warn':''}">${esc(p.mode_default||'scratch')}</span>
+        ${isActive?'<span class="pill ok">active</span>':''}
         <span class="meta">${p.runs||0} runs · ${(p.environments||[]).length} envs</span>
       </div>
-      <div class="envs" data-envs="${esc(p.id)}"><div class="meta">loading envs…</div></div>
+      <div class="envs" data-envs="${esc(p.id)}"><div class="meta loading-line">loading envs…</div></div>
       <form class="newEnv" data-proj="${esc(p.id)}">
         <input class="eName" placeholder="new environment — e.g. DC-3" size="22">
         <select class="eBackend"><option value="rapier">rapier</option><option value="gazebo">gazebo</option><option value="isaac">isaac</option><option value="real">real</option></select>
@@ -110,11 +199,11 @@ async function load(){
 
 async function loadEnvs(pid, box){
   const d=await j("/api/environments?project="+encodeURIComponent(pid));
-  if(!d.environments||!d.environments.length){ box.innerHTML='<div class="meta">no environments — add one below</div>'; return; }
+  if(!d.environments||!d.environments.length){ box.innerHTML='<div class="meta loading-line">no environments — add one below</div>'; return; }
   box.innerHTML=d.environments.map(e=>{
     const sel=active&&active.project===pid&&active.environment===e.id;
     const cams=(e.cameras||[]).map(c=>`<span class="chip" title="${esc(JSON.stringify(c.placement||{}))}">📷 ${esc(c.source_id)} · ${esc(c.kind)}</span>`).join("");
-    return `<div class="env">
+    return `<div class="env-block"><div class="env">
       <span class="nm">${esc(e.name)}</span>
       <span class="chip">${esc(e.backend)}</span><span class="chip">${esc(e.mode)}</span>
       <span class="meta">${e.runs||0} runs · ${(e.cameras||[]).length} cam</span>
@@ -122,15 +211,18 @@ async function loadEnvs(pid, box){
       ${sel?'<span class="pill ok">active</span>':`<button class="btn sm" onclick="select('${esc(pid)}','${esc(e.id)}')">select</button>`}
     </div>
     <div class="cams">
-      <span class="lab">cameras (spec 09 — tag where each looks):</span>
-      ${cams||'<span class="meta">none tagged</span>'}
+      <span class="lab">cameras — tag where each looks (spec 09)</span>
+      <div class="camlist">${cams||'<span class="meta">none tagged</span>'}</div>
       <form class="newCam" onsubmit="return addCam(this)" data-proj="${esc(pid)}" data-env="${esc(e.id)}">
         <input class="cId" placeholder="camera id" size="10" required>
-        <input class="cx" placeholder="x" size="2"><input class="cy" placeholder="y" size="2"><input class="cz" placeholder="z" size="2"><input class="cyaw" placeholder="yaw" size="3">
+        <span class="coords">
+          <span class="glab">pose</span>
+          <input class="cx coord" placeholder="x"><input class="cy coord" placeholder="y"><input class="cz coord" placeholder="z"><input class="cyaw coord" placeholder="yaw">
+        </span>
         <select class="cKind"><option value="robot">robot</option><option value="fixed">fixed</option></select>
         <button class="btn sm" type="submit">+ tag camera</button>
       </form>
-    </div>`;
+    </div></div>`;
   }).join("");
 }
 

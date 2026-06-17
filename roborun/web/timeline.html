@@ -9,70 +9,98 @@
 <script src="./shell.js"></script>
 <script src="./run-detail.js"></script>
 <style>
-  :root{ --bg:#0b0e0c; --panel:#11150f; --line:#1e2a1f; --fg:#e6f0e8; --dim:#7aaf90; --accent:#00d47e; --amber:#d4a030; --blue:#4090e0; --red:#e0563f; }
-  *{ box-sizing:border-box; } body{ margin:0; background:var(--bg); color:var(--fg);
-     font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
-  header{ display:flex; align-items:center; gap:14px; padding:16px 24px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
-  header h1{ font-size:15px; margin:0; } header nav{ margin-left:auto; display:flex; gap:14px; }
-  header nav a{ color:var(--dim); text-decoration:none; font-size:12px; } header nav a.on{ color:var(--accent); }
-  .sub{ color:var(--dim); font-size:12px; }
-  .wrap{ display:grid; grid-template-columns:300px 1fr; min-height:calc(100vh - 58px); }
-  /* left rail — the per-run list (Antioch image 8) */
-  .rail{ border-right:1px solid var(--line); overflow-y:auto; }
-  .rail .filt{ display:flex; gap:6px; padding:12px 14px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
-  .rail .filt button{ background:transparent; border:1px solid var(--line); color:var(--dim); border-radius:6px;
-     font:11px ui-monospace,monospace; padding:4px 9px; cursor:pointer; }
-  .rail .filt button.on{ border-color:var(--accent); color:var(--accent); }
-  .run{ display:block; padding:11px 14px; border-bottom:1px solid var(--line); cursor:pointer; text-decoration:none; color:var(--fg); }
-  .run:hover{ background:#0e120d; } .run.sel{ background:#0e1a12; border-left:2px solid var(--accent); }
-  .run .o{ font-size:11px; font-weight:600; } .run .o.passed{ color:var(--accent); } .run .o.failed{ color:var(--red); }
-  .run .nm{ font-size:13px; margin:2px 0; } .run .meta{ font-size:10px; color:var(--dim); }
-  .run .tags{ display:flex; gap:4px; flex-wrap:wrap; margin-top:3px; }
-  .run .tags span{ font-size:9px; background:#0c130c; border:1px solid var(--line); color:var(--dim); border-radius:4px; padding:1px 5px; }
-  /* right pane — the selected run's timeline */
-  .pane{ padding:22px 28px; overflow-y:auto; }
-  .pane h2{ font-size:13px; margin:0 0 2px; } .pane h2 .pill{ font-size:11px; padding:2px 8px; border-radius:5px; margin-left:8px; }
-  .pill.passed{ background:rgba(0,212,126,.15); color:var(--accent); } .pill.failed{ background:rgba(224,86,63,.15); color:var(--red); }
-  .acts{ display:flex; gap:10px; margin:10px 0 18px; }
-  .acts a{ font-size:12px; text-decoration:none; border:1px solid var(--line); border-radius:6px; padding:6px 12px; color:var(--accent); }
-  .acts a.primary{ background:var(--accent); color:#04120a; border-color:var(--accent); font-weight:600; }
-  h3{ font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--dim); margin:20px 0 8px; }
-  .kv{ display:grid; grid-template-columns:130px 1fr; gap:4px 14px; font-size:13px; }
-  .kv .k{ color:var(--dim); }
-  .chips{ display:flex; gap:6px; flex-wrap:wrap; }
-  .chips span{ font-size:11px; background:#0c130c; border:1px solid var(--line); border-radius:5px; padding:3px 8px; }
-  .feed{ border-left:2px solid var(--line); margin-left:6px; }
-  .ev{ position:relative; padding:7px 0 7px 18px; font-size:13px; }
-  .ev::before{ content:""; position:absolute; left:-5px; top:13px; width:8px; height:8px; border-radius:50%; background:var(--amber); }
-  .ev .ti{ color:var(--dim); font-size:11px; margin-right:8px; }
-  .strip{ display:flex; gap:8px; overflow-x:auto; padding-bottom:8px; }
-  .strip .f{ flex:0 0 auto; width:120px; }
-  .strip img{ width:120px; height:84px; object-fit:cover; border-radius:6px; background:#070907; display:block; }
-  .strip .t{ font-size:10px; color:var(--dim); margin-top:3px; }
-  .empty{ color:var(--dim); font-size:12px; padding:24px; }
+  /* Tokens + components live in ui.css; this page only lays out its two panes.
+   * The app shell (shell.js) injects the sidebar + top bar and wraps <main>. */
+  *{ box-sizing:border-box; }
+
+  /* two-pane browser, sized to the shell's content column */
+  .tl{ display:grid; grid-template-columns:316px minmax(0,1fr);
+       gap:18px; align-items:start; }
+
+  /* ── left rail — the per-run list ─────────────────────────────────────── */
+  .rail{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r);
+         overflow:hidden; position:sticky; top:0;
+         display:flex; flex-direction:column; max-height:calc(100vh - 116px); }
+  .rail-head{ padding:12px 14px 10px; border-bottom:1px solid var(--line);
+              background:var(--panel-head); }
+  .rail-title{ font-size:12px; font-weight:600; color:var(--fg);
+               display:flex; align-items:center; gap:8px; }
+  .rail-title .ct{ margin-left:auto; font-size:11px; color:var(--fg-dim);
+                   font-variant-numeric:tabular-nums; }
+  .rail-sub{ font-size:11px; color:var(--fg-dim); margin-top:3px; }
+  .filt{ display:flex; gap:6px; margin-top:10px; }
+  .filt button{ flex:1; }            /* .btn.sm comes from ui.css */
+  .runlist{ overflow-y:auto; flex:1; }
+
+  .run{ display:block; padding:11px 14px 11px 16px; border-bottom:1px solid var(--line-soft);
+        cursor:pointer; text-decoration:none; color:var(--fg); position:relative;
+        border-left:2px solid transparent; transition:background .12s, border-color .12s; }
+  .run:last-child{ border-bottom:none; }
+  .run:hover{ background:var(--bg-2); }
+  .run.sel{ background:#0e1a12; border-left-color:var(--accent); }
+  .run .o{ display:inline-flex; align-items:center; gap:6px;
+           font-size:10px; font-weight:700; letter-spacing:.06em; }
+  .run .o::before{ content:""; width:7px; height:7px; border-radius:50%;
+                   background:var(--fg-dim); flex:none; }
+  .run .o.passed{ color:var(--ok); } .run .o.passed::before{ background:var(--ok); }
+  .run .o.failed{ color:var(--bad); } .run .o.failed::before{ background:var(--bad); }
+  .run .nm{ font-size:13px; color:var(--fg); margin:3px 0 2px;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .run .meta{ font-size:10.5px; color:var(--fg-dim); font-variant-numeric:tabular-nums; }
+  .run .tags{ display:flex; gap:4px; flex-wrap:wrap; margin-top:6px; }
+  .run .tags span{ font-size:9.5px; background:var(--panel-2); border:1px solid var(--line);
+                   color:var(--fg-2); border-radius:4px; padding:1px 6px; line-height:1.5; }
+
+  /* ── right pane — the selected run's record + timeline extras ─────────── */
+  .pane{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r);
+         padding:22px 24px; min-height:calc(100vh - 116px); }
+
+  /* flagged-moments feed */
+  .feed{ border-left:2px solid var(--line); margin-left:5px; }
+  .ev{ position:relative; padding:7px 0 7px 18px; font-size:13px; color:var(--fg); }
+  .ev::before{ content:""; position:absolute; left:-5px; top:12px; width:8px; height:8px;
+               border-radius:50%; background:var(--amber);
+               box-shadow:0 0 0 3px var(--panel); }
+  .ev .ti{ color:var(--fg-dim); font-size:11px; margin-right:8px;
+           font-variant-numeric:tabular-nums; }
+
+  /* camera snapshot strip */
+  .strip{ display:flex; gap:8px; overflow-x:auto; padding-bottom:6px; }
+  .strip .f{ flex:0 0 auto; width:124px; }
+  .strip img{ width:124px; height:86px; object-fit:cover; border-radius:var(--r-sm);
+              background:var(--bg); display:block; border:1px solid var(--line); }
+  .strip .t{ font-size:10px; color:var(--fg-dim); margin-top:4px;
+             font-variant-numeric:tabular-nums; }
+
+  /* shared empty / loading state */
+  .empty{ color:var(--fg-dim); font-size:12.5px; line-height:1.7; padding:26px 24px; }
+  .empty code{ color:var(--fg-2); }
+  .sub{ color:var(--fg-dim); font-size:12px; }
+
+  @media (max-width: 820px){
+    .tl{ grid-template-columns:1fr; }
+    .rail{ position:static; max-height:none; }
+    .runlist{ max-height:340px; }
+    .pane{ min-height:0; }
+  }
 </style>
 </head>
 <body>
-<header>
-  <h1>🕓 TIMELINE</h1>
-  <span class="sub">Pick a run to replay its timeline — every run is its own record.</span>
-  <nav>
-    <a href="/">cockpit</a><a href="/browser">browser</a><a href="/projects">projects</a><a href="/scenarios">scenarios</a>
-    <a href="/timeline" class="on">timeline</a><a href="/analytics">analytics</a>
-    <a href="/fleet">fleet lab</a><a href="/search">search</a>
-  </nav>
-</header>
-<div class="wrap">
-  <div class="rail">
-    <div class="filt" id="filt">
-      <button data-o="" class="on">all</button>
-      <button data-o="passed">passed</button>
-      <button data-o="failed">failed</button>
+<main class="tl">
+  <aside class="rail">
+    <div class="rail-head">
+      <div class="rail-title">🕓 Runs <span class="ct" id="runct"></span></div>
+      <div class="rail-sub">Every run is its own record — pick one to replay.</div>
+      <div class="filt" id="filt">
+        <button class="btn sm on" data-o="">all</button>
+        <button class="btn sm" data-o="passed">passed</button>
+        <button class="btn sm" data-o="failed">failed</button>
+      </div>
     </div>
-    <div id="runs"><div class="empty">loading runs…</div></div>
-  </div>
-  <div class="pane" id="pane"><div class="empty">Select a run on the left to see its timeline — metadata, scores, flagged moments, and a link to the full synced replay.</div></div>
-</div>
+    <div class="runlist" id="runs"><div class="empty">Loading runs…</div></div>
+  </aside>
+  <section class="pane" id="pane"><div class="empty">Select a run on the left to see its timeline — metadata, scores, flagged moments, and a link to the full synced replay.</div></section>
+</main>
 <script>
 const $=s=>document.querySelector(s);
 const time=ts=>new Date((ts||0)*1000).toLocaleTimeString();
@@ -87,14 +115,15 @@ async function loadRuns(){
   let d; try{ d=await j("/api/scenarios?"+qs.toString()); }catch(e){ return; }
   state.runs=d.results||[];
   const el=$("#runs");
-  if(!state.runs.length){ paint(el,'<div class="empty">No runs yet. Run a scenario (or <code>roborun demo</code>) and it shows up here.</div>'); return; }
+  const ct=$("#runct"); if(ct) ct.textContent=state.runs.length? state.runs.length:"";
+  if(!state.runs.length){ paint(el,'<div class="empty">No runs'+(state.outcome?(" "+state.outcome):"")+' yet. Run a scenario (or <code>roborun demo</code>) and it shows up here.</div>'); return; }
   const html=state.runs.map(r=>{
     const tags=(r.tags||[]).slice(0,3).map(t=>`<span>${t}</span>`).join("");
     return `<a class="run" data-id="${r.run_id||''}" data-key="${r.id||r.run_id||r.name}">
-      <div class="o ${r.outcome}">${(r.outcome||'·').toUpperCase()}</div>
+      <div class="o ${r.outcome||''}">${(r.outcome||'pending').toUpperCase()}</div>
       <div class="nm">${r.name||'(run)'}</div>
-      <div class="meta">${r.suite?r.suite+' · ':''}${when(r.ended)}</div>
-      <div class="tags">${tags}</div></a>`;
+      <div class="meta">${r.suite?r.suite+' · ':''}${when(r.ended)||'—'}</div>
+      ${tags?`<div class="tags">${tags}</div>`:''}</a>`;
   }).join("");
   if(paint(el, html)){
     el.querySelectorAll(".run").forEach(a=>a.onclick=e=>{ e.preventDefault(); select(a.dataset.id, a.dataset.key); });
@@ -122,8 +151,10 @@ async function select(runId, key){
   renderRunRecord($("#pane"), r, {actions: replay});
   // timeline-only extras below the shared component
   $("#pane").insertAdjacentHTML("beforeend",
-    `<div class="seclabel" style="margin-top:20px">Flagged moments</div><div id="flags"><div class="rd-none">…</div></div>`+
-    `<div class="seclabel" style="margin-top:20px">Camera snapshots</div><div class="strip" id="strip"><div class="rd-none">…</div></div>`);
+    `<div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--line-soft)">`+
+    `<div class="seclabel">Flagged moments</div><div id="flags"><div class="rd-none">…</div></div>`+
+    `<div class="seclabel" style="margin-top:22px">Camera snapshots</div><div class="strip" id="strip"><div class="rd-none">…</div></div>`+
+    `</div>`);
   loadFlags(r.run_id); loadStrip(r.run_id);
 }
 

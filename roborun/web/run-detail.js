@@ -46,10 +46,14 @@
     const tags = (rec.tags || []).map((t) => `<span class="chip">${esc(t)}</span>`).join("");
     const params = chips(rec.params), results = chips(rec.metrics), tree = evalTree(rec.evaluation);
 
+    const sub = [rec.suite && ("suite " + rec.suite), rec.robot && ("robot " + rec.robot)]
+      .filter(Boolean).map(esc).join("  ·  ");
+
     el.innerHTML = `
       <div class="rd-head">
         <span class="rd-title">${esc(rec.name || rec.run_id || "run")}</span>
         ${rec.outcome ? `<span class="pill ${esc(rec.outcome)}">${esc(rec.outcome)}</span>` : ""}
+        ${sub ? `<span style="font-size:11.5px;color:var(--fg-dim)">${sub}</span>` : ""}
         ${opts.actions ? `<span class="rd-actions">${opts.actions}</span>` : ""}
       </div>
       ${rec.reason ? `<div class="rd-reason">${esc(rec.reason)}</div>` : ""}

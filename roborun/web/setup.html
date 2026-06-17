@@ -8,65 +8,132 @@
 <link rel="stylesheet" href="./ui.css">
 <script src="./shell.js"></script>
 <style>
-  *{ box-sizing:border-box; } body{ margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--mono); }
-  .step{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:18px 20px; margin-bottom:14px; }
-  .step h2{ font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--fg-dim); margin:0 0 12px; }
-  .step .stepn{ color:var(--accent); margin-right:8px; }
-  .opts{ display:flex; gap:10px; flex-wrap:wrap; }
-  .opt{ background:var(--panel-2); border:1px solid var(--line); border-radius:var(--r-sm); padding:11px 14px; cursor:pointer; min-width:130px; transition:border-color .12s; }
-  .opt:hover{ border-color:var(--accent); } .opt.sel{ border-color:var(--accent); background:#0e1a12; }
-  .opt.off{ opacity:.4; cursor:not-allowed; } .opt .t{ font-weight:600; font-size:13px; }
-  .opt .d{ color:var(--fg-dim); font-size:11px; margin-top:3px; }
-  .opt .st{ font-size:10px; text-transform:uppercase; letter-spacing:.06em; margin-top:5px; }
-  input,select{ background:var(--panel-2); color:var(--fg); border:1px solid var(--line); border-radius:var(--r-sm); font:inherit; font-size:13px; padding:8px 10px; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--mono); }
+
+  .intro{ color:var(--fg-2); font-size:13px; margin:0 0 20px; max-width:760px; }
+  .intro b{ color:var(--fg); font-weight:600; }
+
+  /* ── step card ─────────────────────────────────────────────────────────── */
+  .step{ position:relative; background:var(--panel); border:1px solid var(--line);
+    border-radius:var(--r); padding:18px 20px 20px 56px; margin-bottom:14px;
+    transition:border-color .15s, box-shadow .15s; }
+  .step.active{ border-color:var(--accent-dim); box-shadow:0 0 0 1px var(--accent-dim) inset; }
+  .step h2{ display:flex; align-items:baseline; gap:8px; font-size:11px; text-transform:uppercase;
+    letter-spacing:.12em; color:var(--fg-dim); margin:0 0 14px; }
+  .step h2 .hint{ margin-left:auto; text-transform:none; letter-spacing:0; font-size:11px;
+    color:var(--fg-dim); font-weight:400; }
+  /* numbered badge in the gutter */
+  .stepn{ position:absolute; left:18px; top:18px; width:26px; height:26px; border-radius:50%;
+    display:grid; place-items:center; font-size:12px; font-weight:700;
+    color:var(--fg-dim); background:var(--panel-2); border:1px solid var(--line);
+    transition:color .15s, border-color .15s, background .15s; }
+  .step.active .stepn{ color:#06120a; background:var(--accent); border-color:var(--accent); }
+
+  /* ── sub-label inside a step ───────────────────────────────────────────── */
+  .sublbl{ font-size:10px; text-transform:uppercase; letter-spacing:.1em; color:var(--fg-dim);
+    margin:0 0 9px; }
+  .sublbl + .opts, .sublbl + *{ margin-top:0; }
+  .gap{ height:16px; }
+
+  /* ── option cards ──────────────────────────────────────────────────────── */
+  .opts{ display:grid; grid-template-columns:repeat(auto-fill, minmax(168px, 1fr)); gap:10px; }
+  .opt{ position:relative; background:var(--panel-2); border:1px solid var(--line);
+    border-radius:var(--r-sm); padding:12px 14px; cursor:pointer;
+    transition:border-color .12s, background .12s, transform .06s; }
+  .opt:hover{ border-color:#2c3b2c; }
+  .opt.sel{ border-color:var(--accent); background:#0e1a12; }
+  .opt.sel::after{ content:"✓"; position:absolute; top:9px; right:11px; font-size:12px;
+    font-weight:700; color:var(--accent); }
+  .opt.off{ opacity:.42; cursor:not-allowed; }
+  .opt.off:hover{ border-color:var(--line); }
+  .opt .t{ font-weight:600; font-size:13px; color:var(--fg); padding-right:16px; }
+  .opt .d{ color:var(--fg-dim); font-size:11px; margin-top:3px; line-height:1.35; }
+  .opt .st{ font-size:9.5px; text-transform:uppercase; letter-spacing:.07em; margin-top:7px;
+    font-weight:600; display:inline-flex; align-items:center; gap:5px; }
+  .opt .st::before{ content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .opt .caps{ display:flex; flex-wrap:wrap; gap:4px; margin-top:8px; }
+  .opt .cap{ font-size:9px; text-transform:uppercase; letter-spacing:.05em; color:var(--fg-dim);
+    border:1px solid var(--line); border-radius:3px; padding:1px 5px; }
+  /* compact tiles (tasks) lay out tighter */
+  .opts.tight{ grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); }
+
+  /* ── inputs ────────────────────────────────────────────────────────────── */
+  input,select{ background:var(--panel-2); color:var(--fg); border:1px solid var(--line);
+    border-radius:var(--r-sm); font:inherit; font-size:13px; padding:9px 11px; transition:border-color .12s; }
+  input:focus,select:focus{ outline:none; border-color:var(--accent); }
+  input::placeholder{ color:var(--fg-dim); }
   .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-  .launch{ position:sticky; bottom:0; background:var(--bg); padding:14px 0; border-top:1px solid var(--line); display:flex; gap:14px; align-items:center; }
+  .sep{ color:var(--fg-dim); font-size:12px; }
+
+  /* ── launch bar + summary ──────────────────────────────────────────────── */
+  .launch{ position:sticky; bottom:0; z-index:20; margin-top:18px; background:var(--bg);
+    padding:16px 0 8px; border-top:1px solid var(--line); display:flex; gap:18px;
+    align-items:center; flex-wrap:wrap; }
+  #launch{ font-size:14px; padding:11px 22px; flex:none; }
+  #launch:disabled{ opacity:.6; cursor:default; }
+  .sumcard{ flex:1; min-width:220px; display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; }
   .summary{ color:var(--fg-dim); font-size:12px; }
+  .sumcard .summary{ color:var(--fg-2); }
   .hide{ display:none; }
+
+  @media (max-width:560px){
+    .step{ padding-left:20px; padding-top:48px; }
+    .stepn{ left:18px; top:14px; }
+    .launch{ flex-direction:column; align-items:stretch; }
+    #launch{ width:100%; }
+  }
 </style>
 </head>
 <body>
 <main>
-  <p style="color:var(--fg-dim);font-size:13px;margin:0 0 18px">Set up a robot or simulation. Pick where the data lives, the backend that drives it, and what to run — then launch. Everything you record scopes to this environment.</p>
+  <p class="intro">Set up a robot or simulation in four steps. Pick <b>where the data lives</b>, the <b>backend</b> that drives it, and <b>what to run</b> — then launch. Everything you record scopes to this environment.</p>
 
-  <div class="step">
-    <h2><span class="stepn">1</span>Project — where the data lives</h2>
+  <div class="step active">
+    <span class="stepn">1</span>
+    <h2>Project<span class="hint">where the data lives</span></h2>
     <div class="row">
       <select id="proj"><option value="">scratch (throwaway)</option></select>
-      <span style="color:var(--fg-dim)">or</span>
+      <span class="sep">or</span>
       <input id="newProj" placeholder="new project name">
     </div>
   </div>
 
-  <div class="step">
-    <h2><span class="stepn">2</span>Backend — what drives it</h2>
-    <div class="opts" id="backends"><div class="summary">loading…</div></div>
+  <div class="step active">
+    <span class="stepn">2</span>
+    <h2>Backend<span class="hint">what drives it</span></h2>
+    <div class="opts" id="backends"><div class="summary">loading backends…</div></div>
   </div>
 
-  <div class="step" id="simStep">
-    <h2><span class="stepn">3</span>What to run</h2>
-    <div style="margin-bottom:10px"><span class="summary">robot</span></div>
+  <div class="step active" id="simStep">
+    <span class="stepn">3</span>
+    <h2>What to run<span class="hint">robot + task, or a fleet</span></h2>
+    <p class="sublbl">Robot</p>
     <div class="opts" id="robots"></div>
-    <div style="margin:14px 0 10px"><span class="summary">task / world</span></div>
-    <div class="opts" id="tasks"></div>
+    <div class="gap"></div>
+    <p class="sublbl">Task / world</p>
+    <div class="opts tight" id="tasks"></div>
   </div>
 
-  <div class="step" id="realStep" class="hide" style="display:none">
-    <h2><span class="stepn">3</span>Connect a real robot</h2>
-    <div class="row"><input id="ip" placeholder="rosbridge IP — e.g. 192.168.1.42" style="width:280px"><span class="summary">runs the same Python on a Go2 / drone / any ROS robot</span></div>
+  <div class="step active hide" id="realStep" style="display:none">
+    <span class="stepn">3</span>
+    <h2>Connect a real robot<span class="hint">same Python, your hardware</span></h2>
+    <div class="row"><input id="ip" placeholder="rosbridge IP — e.g. 192.168.1.42" style="width:280px;max-width:100%"></div>
+    <p class="summary" style="margin:10px 0 0">Runs the same Python on a Go2 / drone / any ROS robot over rosbridge.</p>
   </div>
 
-  <div class="step">
-    <h2><span class="stepn">4</span>Environment</h2>
+  <div class="step active">
+    <span class="stepn">4</span>
+    <h2>Environment<span class="hint">name + persistence</span></h2>
     <div class="row">
-      <input id="envName" placeholder="environment name" style="width:240px">
+      <input id="envName" placeholder="environment name" style="width:240px;max-width:100%">
       <select id="mode"><option value="scratch">scratch (ephemeral)</option><option value="test">test (kept)</option><option value="production">production</option></select>
     </div>
   </div>
 
   <div class="launch">
-    <button class="btn accent" id="launch" style="font-size:14px;padding:10px 18px">▶ Launch</button>
-    <span class="summary" id="summary"></span>
+    <button class="btn accent" id="launch">▶ Launch</button>
+    <div class="sumcard"><span class="summary">Ready —</span><span class="summary" id="summary"></span></div>
   </div>
 </main>
 <script>
@@ -92,12 +159,18 @@ async function loadProjects(){
   if(d.active) sel.value=d.active.project;
 }
 async function loadBackends(){
-  let d; try{ d=await j("/api/backends"); }catch(e){ $("#backends").innerHTML='<div class="summary">○ offline — start <code>roborun</code></div>'; return; }
+  let d; try{ d=await j("/api/backends"); }catch(e){ $("#backends").innerHTML='<div class="summary">○ offline — start the <code>roborun</code> server to list backends</div>'; return; }
   const col={ready:"var(--ok)",available:"var(--warn)",optional:"var(--blue)",planned:"var(--fg-dim)"};
+  const capTags=c=>{ if(!c) return ""; const tags=[];
+    if(c.fleet) tags.push("fleet"); if(c.headless) tags.push("headless");
+    if(c.vectorized) tags.push("vectorized"); if(c.photoreal) tags.push("photoreal");
+    if(c.camera) tags.push("camera"); if(c.lidar) tags.push("lidar");
+    return tags.length?`<div class="caps">${tags.slice(0,4).map(t=>`<span class="cap">${t}</span>`).join("")}</div>`:""; };
   $("#backends").innerHTML=d.backends.map(b=>`
     <div class="opt ${b.id===S.backend?'sel':''} ${b.status==='planned'?'off':''}" data-b="${b.id}" data-kind="${b.kind}">
       <div class="t">${esc(b.name)}</div><div class="d">${b.kind==='real'?'your hardware':'simulation'}</div>
-      <div class="st" style="color:${col[b.status]}">${esc(b.status)}</div></div>`).join("");
+      ${capTags(b.caps)}
+      <div class="st" style="color:${col[b.status]||'var(--fg-dim)'}">${esc(b.status)}</div></div>`).join("");
   $("#backends").querySelectorAll(".opt").forEach(o=>{ if(o.classList.contains("off"))return;
     o.onclick=()=>{ S.backend=o.dataset.b; $("#backends").querySelectorAll(".opt").forEach(x=>x.classList.toggle("sel",x===o)); renderWhat(); };
   });
@@ -131,8 +204,11 @@ function suggestName(){
 function summary(){
   if(!$("#envName").value) $("#envName").placeholder=suggestName();
   const real=!SIM_BACKENDS.has(S.backend);
-  $("#summary").textContent = real ? `connect a ${S.backend} robot` :
-    S.fleet ? `warehouse fleet on ${S.backend}` : `${S.robot} · ${S.level} on ${S.backend}`;
+  const proj=($("#newProj").value.trim()||$("#proj").value||"scratch");
+  const env=$("#envName").value.trim()||suggestName();
+  const what = real ? `connect a real robot via ROS` :
+    S.fleet ? `warehouse fleet` : `${S.robot} · ${S.level}`;
+  $("#summary").textContent = `${what} on ${S.backend} → ${proj}/${env}`;
 }
 $("#launch").onclick=async()=>{
   const projName=$("#newProj").value.trim(), proj=projName||$("#proj").value;
@@ -152,8 +228,10 @@ $("#launch").onclick=async()=>{
     else { location.href="/sim?level="+encodeURIComponent(S.level); }
   }catch(e){ $("#launch").textContent="▶ Launch"; $("#launch").disabled=false; $("#summary").textContent="launch failed: "+e; }
 };
-$("#envName").oninput=()=>{};
-loadProjects(); loadBackends();
+$("#envName").oninput=summary;
+$("#newProj").oninput=summary;
+$("#proj").onchange=summary;
+loadProjects().then(summary); loadBackends();
 </script>
 </body>
 </html>
