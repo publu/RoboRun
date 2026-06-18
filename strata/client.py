@@ -132,12 +132,15 @@ class StrataClient:
                          data=json.dumps({"upserts": rows, "distance_metric": distance_metric}).encode())["upserted"]
 
     def vector_query(self, ns: str, *, vector=None, top_k: int = 10, filters=None,
-                     distance_metric=None, rank_by=None, include_attributes: bool = True) -> list[dict]:
+                     distance_metric=None, rank_by=None, include_attributes: bool = True,
+                     approx: bool = False, nprobe: Optional[int] = None) -> list[dict]:
         body = {"top_k": top_k, "include_attributes": include_attributes}
         if vector is not None: body["vector"] = list(vector)
         if filters is not None: body["filters"] = filters
         if distance_metric: body["distance_metric"] = distance_metric
         if rank_by: body["rank_by"] = list(rank_by)
+        if approx: body["approx"] = True
+        if nprobe is not None: body["nprobe"] = nprobe
         return self._req("POST", f"/api/v1/vectors/{quote(ns)}/query",
                          data=json.dumps(body).encode())["results"]
 

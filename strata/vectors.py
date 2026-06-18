@@ -51,6 +51,35 @@ class _Live:
     attrs: list[dict]             # per-row attribute dicts
 
 
+@dataclass
+class _IVF:
+    version: int
+    metric: str
+    centroids: np.ndarray         # (k, dim)
+    members: list[np.ndarray]     # k arrays of row indices
+
+
+def _kmeans(X: np.ndarray, k: int, iters: int = 12, seed: int = 0):
+    """Tiny matmul-based k-means → (centroids, assignments). Cheap, good enough
+    to bucket vectors for IVF coarse search."""
+    n = X.shape[0]
+    rng = np.random.default_rng(seed)
+    centroids = X[rng.choice(n, k, replace=False)].copy()
+    assign = np.zeros(n, dtype=np.int64)
+    for _ in range(iters):
+        # squared L2 to each centroid via the matmul identity
+        d = (X * X).sum(1)[:, None] - 2.0 * (X @ centroids.T) + (centroids * centroids).sum(1)[None, :]
+        new = d.argmin(1)
+        if np.array_equal(new, assign) and _ > 0:
+            break
+        assign = new
+        for c in range(k):
+            m = X[assign == c]
+            if len(m):
+                centroids[c] = m.mean(0)
+    return centroids, assign
+
+
 def _tokenize(text: str) -> list[str]:
     return _WORD.findall(text.lower()) if isinstance(text, str) else []
 
@@ -60,6 +89,7 @@ class VectorStore:
         self.store = store
         self.catalog = Catalog(store)
         self._views: "OrderedDict[str, _Live]" = OrderedDict()
+        self._ivf: dict[str, _IVF] = {}
         self._seg_cache: "OrderedDict[str, VectorSegment]" = OrderedDict()
         self._cap = cache_views
         self._lock = threading.RLock()
@@ -206,10 +236,36 @@ class VectorStore:
                 self._views.popitem(last=False)
         return live
 
+    # ── IVF coarse index (approximate ANN at scale) ──────────────────────────
+    def _ivf_index(self, ns: str, live: _Live, metric: str) -> _IVF:
+        cached = self._ivf.get(ns)
+        if cached is not None and cached.version == live.version and cached.metric == metric:
+            return cached
+        X = live.matrix
+        if metric in ("cosine", "cosine_distance"):
+            X = X / (live.norms[:, None] + 1e-12)        # cluster on the unit sphere
+        k = max(1, int(math.sqrt(len(live.ids))))
+        centroids, assign = _kmeans(X, k)
+        members = [np.where(assign == c)[0] for c in range(k)]
+        idx = _IVF(live.version, metric, centroids, members)
+        with self._lock:
+            self._ivf[ns] = idx
+        return idx
+
+    def _ivf_candidates(self, ns: str, live: _Live, q: np.ndarray, metric: str,
+                        nprobe: int) -> np.ndarray:
+        ivf = self._ivf_index(ns, live, metric)
+        qn = q / (np.linalg.norm(q) + 1e-12) if metric.startswith("cosine") else q
+        d = ((ivf.centroids - qn) ** 2).sum(1)
+        probe = np.argsort(d)[:max(1, nprobe)]
+        parts = [ivf.members[c] for c in probe if len(ivf.members[c])]
+        return np.concatenate(parts) if parts else np.empty(0, dtype=np.int64)
+
     # ── query ────────────────────────────────────────────────────────────────
     def query(self, ns: str, *, vector: Optional[list] = None, top_k: int = 10,
               filters: Optional[list] = None, distance_metric: Optional[str] = None,
-              include_attributes: bool = True, rank_by: Optional[tuple] = None) -> list[dict]:
+              include_attributes: bool = True, rank_by: Optional[tuple] = None,
+              approx: bool = False, nprobe: Optional[int] = None) -> list[dict]:
         """Vector ANN (`vector`), BM25 text (`rank_by=("field","BM25","query")`),
         or filter-only listing. Returns ranked [{id, dist|score, attributes}]."""
         # hybrid: fuse vector ANN + BM25 by reciprocal-rank fusion (turbopuffer-style)
@@ -224,7 +280,8 @@ class VectorStore:
             return []
 
         # push filters down to a candidate index set
-        if filters:
+        filtered = bool(filters)
+        if filtered:
             cand = np.array([i for i in range(n) if matches(filters, live.attrs[i])], dtype=np.int64)
         else:
             cand = np.arange(n, dtype=np.int64)
@@ -240,6 +297,16 @@ class VectorStore:
             return [self._row(live, int(i), 0.0, include_attributes, score_key="dist") for i in order]
 
         q = np.asarray(vector, dtype=np.float32)
+        # approximate ANN: restrict to the nprobe nearest IVF clusters, then score
+        # exactly within them (cosine / l2 only; dot falls back to exact).
+        if approx and metric.split("_")[0] in ("cosine", "euclidean", "l2"):
+            # default probes ~1/6 of clusters → good recall; lower nprobe = faster
+            probe = nprobe or max(8, int(math.sqrt(len(live.ids)) // 6))
+            ivf_cand = self._ivf_candidates(ns, live, q, metric, probe)
+            # no filter → use the IVF candidates directly (skip the costly intersect)
+            cand = np.intersect1d(cand, ivf_cand, assume_unique=False) if filtered else ivf_cand
+            if cand.size == 0:
+                return []
         M = live.matrix[cand]
         if metric in ("cosine", "cosine_distance"):
             qn = np.linalg.norm(q) or 1.0

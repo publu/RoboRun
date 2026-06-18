@@ -223,6 +223,28 @@ def test_vectors_hybrid_fusion():
     assert {x["id"] for x in r} == {"a", "b", "c"}
 
 
+def test_vectors_approx_ivf_recall():
+    rng = np.random.default_rng(7)
+    N, D = 2000, 16
+    data = rng.standard_normal((N, D)).astype(np.float32)
+    vs = VectorStore(MemoryObjectStore())
+    vs.upsert("big", [{"id": str(i), "vector": data[i].tolist()} for i in range(N)])
+    hits = 0
+    trials = 10
+    for t in range(trials):
+        q = rng.standard_normal(D).astype(np.float32).tolist()
+        exact = [h["id"] for h in vs.query("big", vector=q, top_k=10)]
+        approx = [h["id"] for h in vs.query("big", vector=q, top_k=10, approx=True, nprobe=16)]
+        hits += len(set(exact) & set(approx))
+    recall = hits / (trials * 10)
+    assert recall >= 0.7, f"IVF recall too low: {recall}"     # approximate, but high
+    # higher nprobe → recall approaches 1.0 (tunable, like turbopuffer)
+    q = rng.standard_normal(D).astype(np.float32).tolist()
+    ex = {h["id"] for h in vs.query("big", vector=q, top_k=10)}
+    ap = {h["id"] for h in vs.query("big", vector=q, top_k=10, approx=True, nprobe=44)}
+    assert len(ex & ap) >= 9                                  # near-exact at high nprobe
+
+
 def test_vectors_dim_mismatch():
     vs = VectorStore(MemoryObjectStore())
     vs.upsert("ns", [{"id": "a", "vector": [1, 0, 0]}])

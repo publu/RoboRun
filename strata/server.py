@@ -251,7 +251,8 @@ class StrataHandler(BaseHTTPRequestHandler):
         res = self.db.vectors.query(
             ns, vector=body.get("vector"), top_k=int(body.get("top_k", 10)),
             filters=body.get("filters"), distance_metric=body.get("distance_metric"),
-            include_attributes=body.get("include_attributes", True), rank_by=rank_by)
+            include_attributes=body.get("include_attributes", True), rank_by=rank_by,
+            approx=bool(body.get("approx", False)), nprobe=body.get("nprobe"))
         self._json({"namespace": ns, "results": res, "count": len(res)})
 
     def h_compact_vectors(self, ns):
