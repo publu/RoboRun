@@ -310,3 +310,54 @@ class BlobStore:
         s = self._settings(bucket)
         if s.quota_type == "FIFO" and s.quota_size > 0:
             enforce_fifo(self, bucket, s.quota_size)
+
+    # ── compaction ───────────────────────────────────────────────────────────
+    def compact(self, bucket: str, entry: str) -> dict:
+        """Merge many small segments into size-bounded blocks (fewer objects →
+        faster queries). Records keyed by time, so merging is conflict-free with
+        concurrent writes: a segment that appears mid-compaction is simply left
+        as-is. Returns {before, after, records}."""
+        self.flush(bucket, entry)
+        col = Collection(self.store, self._eprefix(bucket, entry))
+        st = col.load()
+        old = st.seg_list()
+        if len(old) <= 1:
+            return {"before": len(old), "after": len(old), "records": 0}
+        recs: list[Record] = []
+        for s in sorted(old, key=lambda s: s["min_t"]):
+            raw = self.store.get(s["key"])
+            if raw:
+                recs.extend(BlobSegment.deserialize(raw).records)
+        recs.sort(key=lambda r: r.time)
+        setn = self._settings(bucket)
+        # repack into blocks bounded by max_block_records / max_block_size
+        blocks: list[list[Record]] = []
+        cur: list[Record] = []
+        cur_bytes = 0
+        for r in recs:
+            cur.append(r); cur_bytes += len(r.data)
+            if len(cur) >= setn.max_block_records or cur_bytes >= setn.max_block_size:
+                blocks.append(cur); cur = []; cur_bytes = 0
+        if cur:
+            blocks.append(cur)
+        new_meta = []
+        for blk in blocks:
+            seg = BlobSegment(blk)
+            sid = new_id()
+            skey = f"{self._eprefix(bucket, entry)}/seg/{sid}.seg"
+            body = seg.serialize()
+            self.store.put(skey, body)
+            new_meta.append({"id": sid, "key": skey, "min_t": seg.min_time,
+                             "max_t": seg.max_time, "count": len(blk), "size": len(body)})
+        old_ids = [s["id"] for s in old]
+
+        def build(state):
+            present = [i for i in old_ids if i in state.segments]
+            if not present:
+                return Commit()
+            return Commit(add=new_meta, remove=present)
+
+        col.commit(build)
+        for s in old:                     # reclaim the now-unreferenced blobs
+            self.store.delete(s["key"])
+        return {"before": len(old), "after": len(new_meta), "records": len(recs)}

@@ -212,6 +212,10 @@ class VectorStore:
               include_attributes: bool = True, rank_by: Optional[tuple] = None) -> list[dict]:
         """Vector ANN (`vector`), BM25 text (`rank_by=("field","BM25","query")`),
         or filter-only listing. Returns ranked [{id, dist|score, attributes}]."""
+        # hybrid: fuse vector ANN + BM25 by reciprocal-rank fusion (turbopuffer-style)
+        if vector is not None and rank_by is not None:
+            return self._hybrid(ns, vector, rank_by, top_k, filters,
+                                distance_metric, include_attributes)
         live = self._live(ns)
         meta = self.namespace_meta(ns)
         metric = distance_metric or meta.get("metric", "cosine")
@@ -264,11 +268,93 @@ class VectorStore:
                                   score_key="dist" if metric != "dot" else "score"))
         return out
 
+    # ── compaction ───────────────────────────────────────────────────────────
+    def compact(self, ns: str) -> dict:
+        """Merge all segments into one, physically dropping rows that have been
+        shadowed by a newer upsert or tombstoned by a delete. Safe under
+        concurrent upserts: the merged segment inherits the *max* sequence of the
+        segments it replaces, so any segment written concurrently (higher seq)
+        still shadows it correctly. Returns {before, after, rows}."""
+        col = Collection(self.store, self._nsprefix(ns))
+        st = col.load()
+        segs = st.seg_list()
+        if len(segs) <= 1 and not st.meta.get("tombstones"):
+            return {"before": len(segs), "after": len(segs), "rows": 0}
+        tomb = set(st.meta.get("tombstones", []))
+        order = sorted(segs, key=lambda s: s.get("seq") or 0, reverse=True)
+        max_seq = max((s.get("seq") or 0) for s in segs)
+        seen: set[str] = set()
+        ids, rows, attr_rows = [], [], []
+        for s in order:
+            seg = self._segment(s["key"])
+            cols = seg.attributes
+            for i, rid in enumerate(seg.ids):
+                if rid in seen or rid in tomb:
+                    continue
+                seen.add(rid); ids.append(rid); rows.append(seg.vectors[i])
+                attr_rows.append({c: cols[c][i] for c in cols})
+        if not ids:
+            # everything tombstoned — just clear the namespace's segments
+            old_ids = [s["id"] for s in segs]
+            col.commit(lambda state: Commit(remove=[i for i in old_ids if i in state.segments],
+                                            meta={"tombstones": []}))
+            for s in segs:
+                self.store.delete(s["key"])
+            with self._lock:
+                self._views.pop(ns, None)
+            return {"before": len(segs), "after": 0, "rows": 0}
+        matrix = np.vstack(rows).astype(np.float32)
+        acols = sorted({k for a in attr_rows for k in a})
+        attributes = {c: [a.get(c) for a in attr_rows] for c in acols}
+        seg = VectorSegment(ids, matrix, attributes)
+        sid = new_id()
+        skey = f"{self._nsprefix(ns)}/seg/{sid}.vseg"
+        self.store.put(skey, seg.serialize())
+        meta = {"id": sid, "key": skey, "count": len(ids), "dim": seg.dim, "seq": max_seq}
+        old_ids = [s["id"] for s in segs]
+
+        def build(state):
+            present = [i for i in old_ids if i in state.segments]
+            if not present:
+                return Commit()
+            return Commit(add=[meta], remove=present, meta={"tombstones": []})
+
+        col.commit(build)
+        for s in segs:
+            self.store.delete(s["key"])
+        with self._lock:
+            self._views.pop(ns, None)
+        return {"before": len(segs), "after": 1, "rows": len(ids)}
+
     def _row(self, live: _Live, i: int, val: float, incl: bool, score_key: str) -> dict:
         r = {"id": live.ids[i], score_key: val}
         if incl:
             r["attributes"] = live.attrs[i]
         return r
+
+    def _hybrid(self, ns, vector, rank_by, top_k, filters, metric, incl,
+                k0: float = 60.0, pool: int = 4) -> list[dict]:
+        """Reciprocal-rank fusion of vector ANN and BM25 over the same namespace."""
+        K = max(top_k * pool, top_k)
+        vec = self.query(ns, vector=vector, top_k=K, filters=filters,
+                         distance_metric=metric, include_attributes=incl)
+        txt = self.query(ns, rank_by=rank_by, top_k=K, filters=filters,
+                         include_attributes=incl)
+        fused: dict[str, float] = {}
+        keep: dict[str, dict] = {}
+        for lst in (vec, txt):
+            for rank, row in enumerate(lst):
+                rid = row["id"]
+                fused[rid] = fused.get(rid, 0.0) + 1.0 / (k0 + rank)
+                keep.setdefault(rid, row)
+        order = sorted(fused, key=lambda i: -fused[i])[:top_k]
+        out = []
+        for rid in order:
+            row = {"id": rid, "score": fused[rid]}
+            if incl and "attributes" in keep[rid]:
+                row["attributes"] = keep[rid]["attributes"]
+            out.append(row)
+        return out
 
     # ── BM25 full-text ───────────────────────────────────────────────────────
     def _bm25(self, live: _Live, cand: np.ndarray, rank_by: tuple, top_k: int,

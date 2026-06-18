@@ -256,10 +256,17 @@ class _MemBlob:
 
 
 class MemoryObjectStore(ObjectStore):
-    """In-RAM store — fast, ephemeral; used by tests and `:memory:` mode."""
+    """In-RAM store — fast, ephemeral; used by tests and `:memory:` mode.
+
+    A lock makes `put_if_absent` an atomic compare-and-swap, emulating the
+    server-side atomicity that real S3 `If-None-Match` provides — without it,
+    concurrent commits could both pass the existence check and lose a write.
+    """
 
     def __init__(self):
+        import threading
         self._d: dict[str, bytes] = {}
+        self._lock = threading.Lock()
 
     def get(self, key: str) -> Optional[bytes]:
         return self._d.get(key)
@@ -268,15 +275,17 @@ class MemoryObjectStore(ObjectStore):
         return key in self._d
 
     def list(self, prefix: str) -> list[str]:
-        return sorted(k for k in self._d if k.startswith(prefix))
+        with self._lock:
+            return sorted(k for k in self._d if k.startswith(prefix))
 
     def put(self, key: str, data: bytes) -> None:
         self._d[key] = bytes(data)
 
     def put_if_absent(self, key: str, data: bytes) -> None:
-        if key in self._d:
-            raise PreconditionFailed(key)
-        self._d[key] = bytes(data)
+        with self._lock:
+            if key in self._d:
+                raise PreconditionFailed(key)
+            self._d[key] = bytes(data)
 
     def delete(self, key: str) -> None:
         self._d.pop(key, None)

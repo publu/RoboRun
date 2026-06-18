@@ -210,11 +210,63 @@ def test_vectors_bm25():
     assert r[0]["id"] == "a" and r[0]["score"] > r[1]["score"]
 
 
+def test_vectors_hybrid_fusion():
+    vs = VectorStore(MemoryObjectStore())
+    vs.upsert("kb", [
+        {"id": "a", "vector": [1.0, 0.0], "attributes": {"t": "yellow crate dock"}},
+        {"id": "b", "vector": [0.95, 0.05], "attributes": {"t": "blue door office"}},
+        {"id": "c", "vector": [0.0, 1.0], "attributes": {"t": "yellow crate shelf"}},
+    ])
+    # 'a' is both near [1,0] AND matches "yellow crate" → fusion should rank it #1
+    r = vs.query("kb", vector=[1.0, 0.0], rank_by=("t", "BM25", "yellow crate"), top_k=3)
+    assert r[0]["id"] == "a"
+    assert {x["id"] for x in r} == {"a", "b", "c"}
+
+
 def test_vectors_dim_mismatch():
     vs = VectorStore(MemoryObjectStore())
     vs.upsert("ns", [{"id": "a", "vector": [1, 0, 0]}])
     with pytest.raises(ValueError):
         vs.upsert("ns", [{"id": "b", "vector": [1, 0]}])
+
+
+def test_blob_compaction():
+    s = MemoryObjectStore()
+    bs = BlobStore(s)
+    bs.create_bucket("b", {"max_block_records": 1, "max_block_size": 1 << 30})  # 1 seg/record
+    t0 = 1_000_000
+    for i in range(20):
+        bs.write("b", "e", f"d{i}".encode(), time=t0 + i, labels={"k": str(i % 2)})
+    bs.flush()
+    before = list(bs.query("b", "e"))
+    assert len(Collection(s, "b/b/e").load().segments) == 20
+    bs.update_bucket("b", {"max_block_records": 100})
+    res = bs.compact("b", "e")
+    assert res["before"] == 20 and res["after"] < res["before"]
+    after = list(bs.query("b", "e"))
+    assert [(r.time, r.data) for r in before] == [(r.time, r.data) for r in after]   # identical
+    assert list(bs.query("b", "e", labels=["k", "Eq", "1"]))                          # labels survive
+    assert BlobStore(s).latest("b", "e").data == b"d19"                               # durable
+
+
+def test_vector_compaction_drops_dead_rows():
+    s = MemoryObjectStore()
+    vs = VectorStore(s)
+    vs.upsert("ns", [{"id": "a", "vector": [1, 0], "attributes": {"v": 1}},
+                     {"id": "b", "vector": [0, 1], "attributes": {"v": 1}}])
+    vs.upsert("ns", [{"id": "c", "vector": [1, 1], "attributes": {"v": 1}}])
+    vs.upsert("ns", [{"id": "a", "vector": [2, 0], "attributes": {"v": 2}}])   # shadow a
+    vs.delete("ns", ["b"])                                                     # tombstone b
+    before = {h["id"]: tuple(h["attributes"].items()) for h in vs.query("ns", vector=[1, 0], top_k=9)}
+    res = vs.compact("ns")
+    assert res["after"] == 1 and res["rows"] == 2                              # only live a,c
+    after = {h["id"]: tuple(h["attributes"].items()) for h in vs.query("ns", vector=[1, 0], top_k=9)}
+    assert before == after                                                    # results unchanged
+    assert after["a"] == (("v", 2),)                                          # newest a kept
+    # one physical segment, no tombstones, fully durable on a fresh engine
+    st = Collection(s, "v/ns").load()
+    assert len(st.segments) == 1 and not st.meta.get("tombstones")
+    assert {h["id"] for h in VectorStore(s).query("ns", vector=[1, 0], top_k=9)} == {"a", "c"}
 
 
 # ───────────────────────────── auth ──────────────────────────────────────────
@@ -274,6 +326,12 @@ def test_server_blobs_and_vectors(server):
     assert c.vector_query("mem", vector=[1, 0, 0], top_k=1)[0]["id"] == "a"
     assert c.vector_query("mem", rank_by=["t", "BM25", "crate"], top_k=1)[0]["id"] == "a"
     assert any(n["name"] == "mem" for n in c.namespaces())
+    # compaction over the wire
+    for i in range(6):
+        c.write("tele", "odom", f"x{i}".encode(), time=t0 + 100 + i)
+    res = c.compact("tele", "odom")
+    assert res["after"] <= res["before"]
+    assert c.vector_compact("mem")["after"] >= 0
 
 
 def test_server_auth_enforced(server):

@@ -99,6 +99,7 @@ against a fake S3 client including the `If-None-Match` CAS.
 | Downsampling (`each_n`, `each_s`) | ✅ `query(each_n=…, each_s=…)` |
 | FIFO quota (auto-evict oldest) | ✅ `quota_type=FIFO`, segment-granularity eviction |
 | Block (write buffer) sealing by size/records/age | ✅ `max_block_*`, idle ticker |
+| Compaction (merge small blocks) | ✅ `compact(bucket, entry)` |
 | Bearer-token auth with permissions | ✅ full / read / write per bucket |
 | Replication (filtered, checkpointed) | ✅ `Replication`, at-least-once, idempotent |
 | HTTP REST API | ✅ `/api/v1/b/...` |
@@ -115,8 +116,10 @@ against a fake S3 client including the `If-None-Match` CAS.
 | Distance metrics: cosine / euclidean / dot | ✅ |
 | Attribute filters (pushed down) | ✅ shared filter AST |
 | Full-text BM25 ranking | ✅ `rank_by=(field, "BM25", query)` |
+| Hybrid search (vector + BM25) | ✅ pass both → reciprocal-rank fusion |
 | Delete by id | ✅ tombstones |
 | Upsert overwrites (latest wins) | ✅ segment-seq shadowing |
+| Compaction (reclaim dead rows) | ✅ `compact(ns)` merges to one segment, drops shadowed/tombstoned |
 | `include_attributes` in results | ✅ |
 | Object storage as source of truth, cached locally | ✅ live-view cache keyed by manifest version |
 | Serverless / serializable writes on S3 | ✅ CAS'd manifest log |
@@ -142,12 +145,15 @@ Auth (when any token exists): `Authorization: Bearer <token>`.
   `x-strata-label-<k>` headers; `Content-Type` preserved)
 - `GET  /api/v1/b/{bucket}/{entry}?ts=<µs>` — read (omit `ts` → latest)
 - `POST /api/v1/b/{bucket}/{entry}/batch` — batch write (JSON, base64 data)
+- `POST /api/v1/b/{bucket}/{entry}/compact` — merge small segments
 - `GET  /api/v1/b/{bucket}/{entry}/q?start=&stop=&limit=&labels=&each_n=&each_s=&data=1`
 
 **Vectors**
 - `GET    /api/v1/vectors` — list namespaces
 - `POST   /api/v1/vectors/{ns}` — upsert (`{upserts:[...], distance_metric}`)
 - `POST   /api/v1/vectors/{ns}/query` — `{vector, top_k, filters, distance_metric, rank_by, include_attributes}`
+  (pass both `vector` and `rank_by` → hybrid reciprocal-rank fusion)
+- `POST   /api/v1/vectors/{ns}/compact` — merge segments, drop dead rows
 - `POST   /api/v1/vectors/{ns}/delete` — `{ids:[...]}` · `DELETE` — drop namespace
 
 **Tokens** (admin) — `GET /api/v1/tokens`, `POST /api/v1/tokens/{name}`, `DELETE`
@@ -178,7 +184,10 @@ write/read/query/downsample/FIFO/durability, vector ANN/metrics/shadow/delete/
 BM25, auth, server+client e2e, replication, and the **whole engine running on
 the S3 backend**.
 
-Roadmap: per-segment ANN index (IVF/HNSW) for very large namespaces, background
-compaction of small blob segments, multi-region read replicas (object storage
+Compaction (blob + vector), hybrid search, and the manifest concurrency fix are
+implemented and tested (31 cases; concurrent-writer test stress-passed 10×).
+
+Roadmap: per-segment ANN index (IVF/HNSW) for very large namespaces, a scheduler
+to run compaction automatically, multi-region read replicas (object storage
 already gives durable fan-out), and a RoboRun adapter so MCAP runs + spatial
 memory persist straight to Strata on S3.

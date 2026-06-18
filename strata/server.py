@@ -45,6 +45,7 @@ ROUTES = [
     _Route("GET", r"/api/v1/b/(?P<bucket>[^/]+)", "bucket_info", resource_arg="bucket"),
     _Route("DELETE", r"/api/v1/b/(?P<bucket>[^/]+)", "remove_bucket", perm="write", resource_arg="bucket"),
     _Route("POST", r"/api/v1/b/(?P<bucket>[^/]+)/(?P<entry>[^/]+)/batch", "batch_write", perm="write", resource_arg="bucket"),
+    _Route("POST", r"/api/v1/b/(?P<bucket>[^/]+)/(?P<entry>[^/]+)/compact", "compact_blob", perm="write", resource_arg="bucket"),
     _Route("GET", r"/api/v1/b/(?P<bucket>[^/]+)/(?P<entry>[^/]+)/q", "query_blobs", resource_arg="bucket"),
     _Route("POST", r"/api/v1/b/(?P<bucket>[^/]+)/(?P<entry>[^/]+)", "write_blob", perm="write", resource_arg="bucket"),
     _Route("GET", r"/api/v1/b/(?P<bucket>[^/]+)/(?P<entry>[^/]+)", "read_blob", resource_arg="bucket"),
@@ -52,6 +53,7 @@ ROUTES = [
     # vectors
     _Route("GET", r"/api/v1/vectors", "list_namespaces"),
     _Route("POST", r"/api/v1/vectors/(?P<ns>[^/]+)/query", "query_vectors", resource_arg="ns"),
+    _Route("POST", r"/api/v1/vectors/(?P<ns>[^/]+)/compact", "compact_vectors", perm="write", resource_arg="ns"),
     _Route("POST", r"/api/v1/vectors/(?P<ns>[^/]+)/delete", "delete_vectors", perm="write", resource_arg="ns"),
     _Route("POST", r"/api/v1/vectors/(?P<ns>[^/]+)", "upsert_vectors", perm="write", resource_arg="ns"),
     _Route("DELETE", r"/api/v1/vectors/(?P<ns>[^/]+)", "delete_namespace", perm="write", resource_arg="ns"),
@@ -198,6 +200,9 @@ class StrataHandler(BaseHTTPRequestHandler):
         self.db.blobs.write_records(bucket, entry, recs, durable=True)
         self._json({"bucket": bucket, "entry": entry, "written": len(recs)}, 201)
 
+    def h_compact_blob(self, bucket, entry):
+        self._json(self.db.blobs.compact(bucket, entry))
+
     def h_read_blob(self, bucket, entry):
         ts = self.query.get("ts")
         rec = self.db.blobs.read(bucket, entry, int(ts) if ts else None)
@@ -248,6 +253,9 @@ class StrataHandler(BaseHTTPRequestHandler):
             filters=body.get("filters"), distance_metric=body.get("distance_metric"),
             include_attributes=body.get("include_attributes", True), rank_by=rank_by)
         self._json({"namespace": ns, "results": res, "count": len(res)})
+
+    def h_compact_vectors(self, ns):
+        self._json(self.db.vectors.compact(ns))
 
     def h_delete_vectors(self, ns):
         ids = self._json_body().get("ids", [])

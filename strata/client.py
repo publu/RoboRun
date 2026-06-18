@@ -92,6 +92,9 @@ class StrataClient:
         return self._req("POST", f"/api/v1/b/{quote(bucket)}/{quote(entry)}/batch",
                          data=json.dumps(payload).encode())["written"]
 
+    def compact(self, bucket: str, entry: str) -> dict:
+        return self._req("POST", f"/api/v1/b/{quote(bucket)}/{quote(entry)}/compact")
+
     def read(self, bucket: str, entry: str, time: Optional[int] = None):
         path = f"/api/v1/b/{quote(bucket)}/{quote(entry)}"
         if time is not None:
@@ -137,6 +140,9 @@ class StrataClient:
         if rank_by: body["rank_by"] = list(rank_by)
         return self._req("POST", f"/api/v1/vectors/{quote(ns)}/query",
                          data=json.dumps(body).encode())["results"]
+
+    def vector_compact(self, ns: str) -> dict:
+        return self._req("POST", f"/api/v1/vectors/{quote(ns)}/compact")
 
     def vector_delete(self, ns: str, ids: list[str]) -> int:
         return self._req("POST", f"/api/v1/vectors/{quote(ns)}/delete",
