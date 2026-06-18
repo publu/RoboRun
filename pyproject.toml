@@ -49,7 +49,8 @@ fleet = ["boto3>=1.28", "duckdb>=1.0"]
 ann = ["sqlite-vec>=0.1"]            # CLIP ANN past ~1M vectors
 video = ["av>=11.0"]                 # H.264 camera channel (10–50× vs JPEG)
 mjx = ["mujoco-mjx>=3.0", "jax>=0.4"]  # vectorized N-world sim (GPU-optional)
-all = ["ros-agent[vision,sim,depth,jepa,gemini,ros,crypto,anchor,fleet,ann,video,mjx]"]
+strata = ["numpy>=1.24", "boto3>=1.28"]   # object-storage-native blob + vector engine
+all = ["ros-agent[vision,sim,depth,jepa,gemini,ros,crypto,anchor,fleet,ann,video,mjx,strata]"]
 
 [project.scripts]
 roborun = "roborun.server:main"
@@ -57,9 +58,11 @@ roborun-mcp = "roborun.mcp_stdio:main"
 # legacy aliases (the PyPI package is named ros-agent)
 ros-agent = "roborun.server:main"
 ros-agent-mcp = "roborun.mcp_stdio:main"
+# Strata — object-storage-native time-series + vector engine
+strata = "strata.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["roborun*"]
+include = ["roborun*", "strata*"]
 
 [tool.setuptools.package-data]
 roborun = ["web/**/*"]
