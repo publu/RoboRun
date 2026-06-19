@@ -12,7 +12,6 @@ export function ScopeSwitcher() {
   const bumpScope = useStudio((s) => s.bumpScope);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<Active>(null);
-  const [hasContext, setHasContext] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [envs, setEnvs] = useState<Record<string, Env[]>>({});
   const ref = useRef<HTMLDivElement>(null);
@@ -23,15 +22,8 @@ export function ScopeSwitcher() {
       .then((a) => setActive(a.active || null))
       .catch(() => {});
 
-  // Only worth showing once there's something to scope. A brand-new user has no
-  // projects, so "scratch ▾" is meaningless noise — hide the chip until a
-  // project exists or a scope is active.
   useEffect(() => {
     refresh();
-    fetch("/api/projects")
-      .then((r) => r.json())
-      .then((d) => (d.projects || []).length > 0 && setHasContext(true))
-      .catch(() => {});
   }, []);
 
   // close on outside click (not mouse-leave — that made the menu unreachable)
@@ -87,28 +79,50 @@ export function ScopeSwitcher() {
     await apply();
   };
 
-  // newcomer (no projects, no active scope): show nothing — projects appear in
-  // the chip once created (via Sims · setup).
-  if (!active && !hasContext) return null;
+  // create a project (+ its default environment) and switch to it
+  const createProject = async () => {
+    const name = window.prompt("Name your project (groups its runs, robots & data):");
+    if (!name || !name.trim()) return;
+    const d = await (await fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim() }),
+    })).json();
+    if (d.ok && d.project?.id) {
+      await fetch("/api/projects/active", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project: d.project.id, environment: "default" }),
+      });
+      await load();
+      await apply();
+    }
+  };
 
+  // Always visible: it's how you create/switch a project (the scope for all data).
   return (
     <div className="scope" ref={ref}>
-      <button className={"scope-btn" + (active ? " scoped" : "")} onClick={toggle} title="active project · scopes all data">
+      <button className={"scope-btn" + (active ? " scoped" : "")} onClick={toggle}
+        title="project / environment — scopes all data. Create or switch here.">
         <span className="dot" />
         {active ? (
           <span>
             {active.project} <span className="lbl-dim">/ {active.environment}</span>
           </span>
         ) : (
-          <span className="lbl-dim">scratch</span>
+          <span className="lbl-dim">Workspace</span>
         )}
         <span className="lbl-dim">▾</span>
       </button>
       {open && (
         <div className="scope-menu">
+          <div className="scope-env" onClick={createProject} style={{ color: "var(--accent)" }}>
+            <span>＋ New project</span>
+          </div>
           {projects.length === 0 && (
             <div className="scope-empty">
-              No projects yet — everything's in <b>scratch</b>.
+              No projects yet — you're in <b>scratch</b> (a throwaway workspace). Create one to group its
+              runs, robots and data.
             </div>
           )}
           {projects.map((p) => (
