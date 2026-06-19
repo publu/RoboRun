@@ -441,3 +441,25 @@ duplicated/contradicted Studio's. Swept systematically:
 **Rule (to prevent regression):** any page Studio embeds must, when framed (`window.self !== window.top`),
 hide its own nav chrome and route internal links to the Studio tab. shell.js pages get this automatically;
 non-shell pages (arena) self-guard at the top of their script.
+
+---
+
+## PASS 7 — conform to the RoboRun Design System (claude.ai/design f84aeaa8)
+
+Imported the official **RoboRun Design System** via the claude_design MCP and re-skinned Studio to match its
+visual language (the DS was itself lifted from this branch, so layouts already aligned — the deltas were the
+*design language*):
+- **System monospace** everywhere on the dashboards (DS: "no webfont; monospace gives the control-station
+  feel"). Dropped the IBM Plex webfonts (`@fontsource` deps removed); body now `var(--mono)` with tabular nums.
+- **Flat + one soft shadow, no glow** — removed every `--glow-*`; depth is layered surfaces + a single
+  `0 6px 24px rgba(0,0,0,.35)` on the hero and floating menus only. Panels are flat.
+- **`--accent-fill` (#0e1a12)** for all active states (nav/scope/chips/run-rows/target-seg), accent text,
+  `--accent-dim` border — replacing the old accent-dim-bg + glow-bar treatment. Nav glyphs are plain (no tile).
+- DS **radii** (10px panels / 6px controls / 999px pills), **232px sidebar**, **1280px content cap**,
+  flat background (removed the instrument-grid texture). Welcome is the one tinted **hero** (radial accent
+  wash + green border + soft shadow). `rr-pulse` ring on the live dot.
+- Tokens added to `theme.css` to mirror the DS (`--accent-fill`, washes, `--shadow`, `--rr-hero-grad`,
+  `--rr-sidebar-w`, `--rr-main-max`). Kept the user's consolidated nav (not the DS's many-page grouping).
+
+Files: `app/src/theme.css`, `app/src/shell/shell.css`, `app/src/main.tsx`, `app/package.json`. Verified:
+body font = system mono, no console errors, Live/Runs render flat + on-brand.
