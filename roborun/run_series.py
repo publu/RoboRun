@@ -23,13 +23,24 @@ def _find_mcap(run_id: str, robot_id: str | None = None) -> Path | None:
     return hits[0] if hits else None
 
 
+def _safe_messages(fh):
+    """Iterate MCAP messages, stopping cleanly if the file is corrupt/partial
+    (e.g. a half-written or malformed run) instead of raising — so one bad run
+    can't 500 the replay endpoints."""
+    from mcap.reader import make_reader
+    try:
+        for m in make_reader(fh).iter_messages():
+            yield m
+    except Exception:
+        return
+
+
 def run_series(run_id: str, robot_id: str | None = None) -> dict[str, Any]:
     """Extract the panels' series from a run. {ok, trajectory, velocity, cmd,
     clearance, scan, t0, t1, counts}."""
     mcap = _find_mcap(run_id, robot_id)
     if mcap is None:
         return {"ok": False, "error": f"run {run_id} not found"}
-    from mcap.reader import make_reader
 
     traj: list[list[float]] = []
     velocity: list[dict] = []
@@ -41,7 +52,7 @@ def run_series(run_id: str, robot_id: str | None = None) -> dict[str, Any]:
     counts: dict[str, int] = {}
 
     with open(mcap, "rb") as fh:
-        for _s, channel, message in make_reader(fh).iter_messages():
+        for _s, channel, message in _safe_messages(fh):
             if channel.message_encoding != "json":
                 continue
             try:
@@ -91,11 +102,10 @@ def frame_at(run_id: str, ts: float, robot_id: str | None = None) -> bytes | Non
     mcap = _find_mcap(run_id, robot_id)
     if mcap is None:
         return None
-    from mcap.reader import make_reader
     best = None
     best_dt = None
     with open(mcap, "rb") as fh:
-        for _s, channel, message in make_reader(fh).iter_messages():
+        for _s, channel, message in _safe_messages(fh):
             if not channel.topic.startswith("/camera/") or channel.message_encoding != "json":
                 continue
             try:

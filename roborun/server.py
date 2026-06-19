@@ -117,40 +117,41 @@ class Handler(SimpleHTTPRequestHandler):
 
         # One canonical view at one URL: "/". The old paths just redirect
         # there so nothing 404s, but there's a single route, not three.
-        if path_only in ("/deck", "/arena"):
-            self.send_response(301)
-            self.send_header("Location", "/")
+        # Studio is the one front door. The old standalone pages collapse into
+        # it: cockpit+fleet-sim → /sims, browser+timeline+run → /runs, the rest
+        # are reachable inside Studio's shell. Redirect the absorbed routes.
+        _STUDIO_REDIRECT = {
+            "/": "/studio/live", "/deck": "/studio/live", "/home": "/studio/live",
+            "/arena": "/studio/sims", "/browser": "/studio/runs",
+            "/timeline": "/studio/runs", "/run": "/studio/runs",
+            "/search": "/studio/search",
+        }
+        if path_only in _STUDIO_REDIRECT:
+            self.send_response(302)
+            self.send_header("Location", _STUDIO_REDIRECT[path_only])
             self.end_headers()
             return
-        # the dashboard home is the entry; the immersive cockpit lives at /sim
-        if path_only == "/":
-            self.path = "/home.html"
+        # Pages Studio still hosts (iframed) or links to — keep serving their html.
         if path_only == "/setup":
             self.path = "/setup.html"
-        # the fleet comms sandbox is its own page; "/fleet" is the clean URL
-        if path_only == "/fleet":
+        if path_only == "/fleet":            # Swarm Lab (Studio /swarm)
             self.path = "/fleet.html"
-        # the scenarios board (suites + scored runs)
-        if path_only == "/scenarios":
+        if path_only == "/scenarios":        # Studio /scenarios
             self.path = "/scenarios.html"
-        # search over time · live timeline · analytics dashboard
-        if path_only == "/search":
-            self.path = "/search.html"
-        if path_only == "/timeline":
-            self.path = "/timeline.html"
-        if path_only == "/analytics":
+        if path_only == "/analytics":        # Studio /analytics
             self.path = "/analytics.html"
-        if path_only == "/run":
-            self.path = "/run.html"
-        # the sim cockpit + its levels: /sim?level=<name> (consistent with /run?id=)
-        if path_only == "/sim":
+        if path_only == "/sim":              # Studio Sims · Arena
             self.path = "/arena.html"
         if path_only == "/projects":
             self.path = "/projects.html"
-        if path_only == "/browser":
-            self.path = "/browser.html"
-        if path_only == "/fleet-sim":
+        if path_only == "/fleet-sim":        # Studio Sims · Fleet
             self.path = "/fleet-sim.html"
+        # Studio SPA (React, client-side routing): any /studio/* that isn't a
+        # real built asset falls back to its index.html. Isolated subpath so the
+        # old pages keep working until parity; flipped to "/" in the last phase.
+        if path_only == "/studio" or path_only.startswith("/studio/"):
+            if not (WEB_ROOT / path_only.lstrip("/")).is_file():
+                self.path = "/studio/index.html"
         super().do_GET()
 
     def do_OPTIONS(self) -> None:
@@ -164,7 +165,46 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Private-Network", "true")
         self.end_headers()
 
+    def _handle_upload(self) -> None:
+        """Drop-zone: accept a raw .mcap upload and save it as a replayable run
+        (robot_id 'uploaded'). The body is binary, so this bypasses JSON dispatch."""
+        import re as _re
+        from urllib.parse import parse_qs, urlparse
+        from roborun.recorder import runs_root
+        q = parse_qs(urlparse(self.path).query)
+        name = (q.get("name") or ["upload.mcap"])[0]
+        stem = _re.sub(r"[^A-Za-z0-9_.-]", "_", name).rsplit(".mcap", 1)[0][:80] or \
+            time.strftime("upload_%Y%m%d_%H%M%S")
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        data = self.rfile.read(length) if length else b""
+        # MCAP files start with the magic \x89MCAP0\r\n — reject anything else
+        if not data[:5] == b"\x89MCAP":
+            send_json(self, 400, {"ok": False,
+                                  "error": "not an .mcap file (.bag/.db3 need conversion to MCAP first)"})
+            return
+        dest = runs_root() / "uploaded"
+        dest.mkdir(parents=True, exist_ok=True)
+        path = dest / f"{stem}.mcap"
+        n = 1
+        while path.exists():
+            path = dest / f"{stem}_{n}.mcap"; n += 1
+        path.write_bytes(data)
+        indexed = None
+        try:  # best-effort: index detections/clips so it's searchable too
+            from roborun.observations import extract_run
+            from roborun.routes._singletons import get_memory
+            indexed = extract_run(path, get_memory(), robot_id="uploaded")
+        except Exception as exc:
+            indexed = {"ok": False, "error": str(exc)}
+        from roborun.events import emit
+        emit("system", "upload", f"imported {path.name} ({len(data)//1024}KB)", {"run": path.stem})
+        send_json(self, 200, {"ok": True, "run": path.stem, "robot_id": "uploaded",
+                              "bytes": len(data), "indexed": indexed})
+
     def do_POST(self) -> None:
+        if self.path.split("?", 1)[0] == "/api/run/upload":
+            self._handle_upload()
+            return
         # MCP JSON-RPC
         if self.path in ("/mcp", "/mcp/ros"):
             try:

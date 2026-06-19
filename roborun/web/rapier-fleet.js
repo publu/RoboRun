@@ -183,7 +183,7 @@ function init3D() {
   V.statics = new THREE.Group(); V.scene.add(V.statics);
   V.robots = new THREE.Group(); V.scene.add(V.robots);
   // orbit controls (manual — no addons needed)
-  cv.addEventListener("pointerdown", e => { V.drag = true; V.px = e.clientX; V.py = e.clientY; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener("pointerdown", e => { V.drag = true; V.touched = true; V.px = e.clientX; V.py = e.clientY; cv.setPointerCapture(e.pointerId); });
   cv.addEventListener("pointerup", e => { V.drag = false; try { cv.releasePointerCapture(e.pointerId); } catch {} });
   cv.addEventListener("pointermove", e => {
     if (!V.drag) return; V.idle = 0;
@@ -281,8 +281,9 @@ function draw() {
       }
     }
   }
-  // orbit camera (gentle auto-rotate when the user isn't dragging)
-  if (!V.drag) { V.idle++; if (V.idle > 90) V.theta += 0.0016; }
+  // orbit camera: gentle attract-spin only until the user first grabs it —
+  // once they've positioned it, it stays exactly where they left it.
+  if (!V.drag && !V.touched) { V.idle++; if (V.idle > 90) V.theta += 0.0016; }
   const sp = V.phi, st = V.theta;
   V.camera.position.set(
     V.center.x + V.r * Math.sin(sp) * Math.cos(st),

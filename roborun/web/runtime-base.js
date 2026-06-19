@@ -89,8 +89,12 @@
     resolved.then(() => { if (!state.live) setTimeout(recheck, 5000); });
   };
 
-  if (document.body) badge();
-  else document.addEventListener("DOMContentLoaded", badge);
+  // Skip the floating badge when embedded (Studio hosts these pages in an
+  // iframe and owns its own live/scope chrome) — same guard as web/shell.js.
+  if (window.self === window.top) {
+    if (document.body) badge();
+    else document.addEventListener("DOMContentLoaded", badge);
+  }
 })();
 
 /* ── paint(el, html): write innerHTML only when it actually changed ──────

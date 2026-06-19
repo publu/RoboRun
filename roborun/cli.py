@@ -151,6 +151,14 @@ def demo_cli(argv: list[str]) -> int:
     from roborun.scenario_defs import run_suite
 
     store = SpatialMemoryStore()
+    # real CLIP image embeddings when the vision extra is present, so seeded data
+    # is genuinely semantic-searchable; else None (no fake placeholder vectors).
+    try:
+        from roborun.models import CLIPMatcher
+        _clip = CLIPMatcher()
+        embed_fn = lambda f: _clip.embed_image(f)
+    except Exception:
+        embed_fn = None
     labels = ["person", "forklift", "pallet"]
     for lab in labels:
         rec = RunRecorder(robot_id=f"demo-{lab}", root=runs_root(), checkpoint_interval=0.05)
@@ -158,7 +166,7 @@ def demo_cli(argv: list[str]) -> int:
                                            run_id=rec.run_id, source="production")
         cam = SyntheticCamera(label=lab)
         sess = PerceptionSession(cam, store, mode="production", source_id=f"{lab}-cam",
-                                 recorder=rec, embed_fn=lambda f: f.reshape(-1, 3).mean(0).astype(np.float32),
+                                 recorder=rec, embed_fn=embed_fn,
                                  hz=30)
         cam.start()
         try:

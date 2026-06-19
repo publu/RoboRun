@@ -35,6 +35,25 @@ def recall_unified(h, payload):
                        "scope": projects.active()})
 
 
+@get("/api/search/caps")
+def search_caps(h):
+    """Honest capability report so the UI never offers fake semantic search.
+    "Real" embeddings are high-dimensional CLIP vectors (~2KB); the old demo
+    placeholder was 3 floats (~12B). Semantic search only works if real ones
+    exist — checked cheaply by blob length, no model load."""
+    real = total = 0
+    try:
+        from roborun.routes._singletons import get_memory
+        conn = get_memory()._conn
+        real = conn.execute(
+            "SELECT COUNT(*) FROM observations WHERE embedding IS NOT NULL AND length(embedding) > 64"
+        ).fetchone()[0]
+        total = conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
+    except Exception:
+        pass
+    send_json(h, 200, {"ok": True, "semantic": real > 0, "embeddings": int(real), "total": int(total)})
+
+
 @post("/api/search")
 def search_history(h, payload):
     """Body: {query, by?: clip|label|near, k?, since?, until?, source_id?}.

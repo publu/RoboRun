@@ -8,6 +8,7 @@
   const PATH = location.pathname.replace(/\/$/, "") || "/";
   const NAV = [
     { items: [{ icon: "⌂", label: "Home", href: "/" }] },
+    { items: [{ icon: "◇", label: "Studio (new)", href: "/studio/live" }] },
     { group: "Build", items: [
       { icon: "▣", label: "Sims & Robots", href: "/setup" },
       { icon: "▦", label: "Cockpit", href: "/sim" }] },
@@ -35,6 +36,25 @@
   }
 
   function build() {
+    // Embedded in Studio (or any iframe host)? Skip the shell chrome so the
+    // page doesn't render a second sidebar/topbar inside the frame — the host
+    // already owns navigation. Also re-point this page's links to old standalone
+    // routes at the matching Studio tab (in the TOP window), so a cross-link
+    // lands on a Studio page instead of loading a standalone page in the frame.
+    if (window.self !== window.top) {
+      const MAP = { "/": "/studio/live", "/sim": "/studio/sims", "/fleet-sim": "/studio/sims",
+        "/fleet": "/studio/swarm", "/browser": "/studio/runs", "/timeline": "/studio/runs",
+        "/run": "/studio/runs", "/search": "/studio/search", "/scenarios": "/studio/scenarios",
+        "/analytics": "/studio/analytics", "/setup": "/studio/sims" };
+      const retarget = () => document.querySelectorAll('a[href^="/"]').forEach((a) => {
+        const dest = MAP[a.getAttribute("href").split("?")[0]];
+        if (dest) { a.setAttribute("href", dest); a.setAttribute("target", "_top"); }
+      });
+      retarget();
+      // re-apply after late renders
+      new MutationObserver(retarget).observe(document.body, { childList: true, subtree: true });
+      return;
+    }
     // drop any bespoke page header/nav — the shell owns navigation
     document.querySelectorAll("body > header, body > nav").forEach(h => h.remove());
     // capture ALL remaining page content (main + any stray bars/divs), not just

@@ -283,6 +283,32 @@ def badge(h):
                        "sealed_at": result.get("sealed_at")})
 
 
+_demo_seeding = {"running": False}
+
+
+@post("/api/demo/seed")
+def demo_seed(h, payload):
+    """Populate a fresh install with sample recorded+indexed runs so Runs/Search/
+    Analytics aren't empty on first open. Runs in a thread (~couple seconds)."""
+    import threading
+    if _demo_seeding["running"]:
+        send_json(h, 200, {"ok": True, "seeding": True, "already": True})
+        return
+
+    def _go():
+        _demo_seeding["running"] = True
+        try:
+            from roborun.cli import demo_cli
+            demo_cli([])
+        except Exception as exc:
+            bus.emit("system", "demo", f"demo seed failed: {exc}", {})
+        finally:
+            _demo_seeding["running"] = False
+
+    threading.Thread(target=_go, daemon=True, name="DemoSeed").start()
+    send_json(h, 200, {"ok": True, "seeding": True})
+
+
 @get("/api/run/list")
 def list_runs(h):
     live = bus.current_run()

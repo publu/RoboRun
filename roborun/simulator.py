@@ -208,6 +208,8 @@ class SimulatorRunner:
         self._model: mujoco.MjModel | None = None
         self._data: mujoco.MjData | None = None
         self._policy: _Go1Policy | _G1Policy | None = None
+        # set on start(); init here so get_state() works on an idle runner
+        self._drone_ctrl: _DroneController | None = None
         self._lock = RLock()
         self._should_stop = Event()
         self._should_reset = Event()

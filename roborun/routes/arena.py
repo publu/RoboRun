@@ -37,11 +37,17 @@ def _index_live(payload: dict) -> None:
     _last_index[0] = now
     try:
         from roborun.routes._singletons import get_memory
+        from roborun import recorder as rec_mod
         pose = payload.get("pose") or {}
         robot = (payload.get("level") or {}).get("robot") or "sim"
+        # link to the active run so the observation is openable in replay; when
+        # nothing is recording, run_id stays None (correctly non-replayable).
+        rec = rec_mod.active_recorder()
+        run_id = rec.run_id if rec is not None else None
         get_memory().store(detections=dets, ts=now,
                            x=pose.get("x", 0.0), y=-pose.get("z", 0.0),
-                           robot_id=f"{robot}-sim", source="sim", source_id="arena")
+                           robot_id=f"{robot}-sim", source="sim", source_id="arena",
+                           run_id=run_id, frame_topic="/detections/arena")
     except Exception:
         pass
 

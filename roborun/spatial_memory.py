@@ -118,6 +118,10 @@ class SpatialMemoryStore:
         self._conn.commit()
         self._emb_cache: np.ndarray | None = None
         self._id_cache: list[str] = []
+        # embeddings grouped by dimension: {dim: (ids, normalized_matrix)}. A
+        # query is only compared against vectors of its own dimension, so a mix
+        # of (e.g.) placeholder 3-d and real 512-d CLIP vectors never crashes.
+        self._emb_by_dim: dict[int, tuple[list[str], "np.ndarray"]] = {}
         self._cache_dirty = True
 
         self._s3 = None
@@ -313,15 +317,18 @@ class SpatialMemoryStore:
             self._cache_dirty = False
             return
         import numpy as np
-        ids, vecs = [], []
+        buckets: dict[int, tuple[list[str], list]] = {}
         for r in rows:
+            v = np.frombuffer(r["embedding"], dtype=np.float32)
+            ids, vecs = buckets.setdefault(int(v.shape[0]), ([], []))
             ids.append(r["id"])
-            vecs.append(np.frombuffer(r["embedding"], dtype=np.float32))
-        self._id_cache = ids
-        self._emb_cache = np.vstack(vecs)
-        norms = np.linalg.norm(self._emb_cache, axis=1, keepdims=True)
-        norms[norms == 0] = 1
-        self._emb_cache = self._emb_cache / norms
+            vecs.append(v)
+        self._emb_by_dim = {}
+        for dim, (ids, vecs) in buckets.items():
+            m = np.vstack(vecs)
+            norms = np.linalg.norm(m, axis=1, keepdims=True)
+            norms[norms == 0] = 1
+            self._emb_by_dim[dim] = (ids, m / norms)
         self._cache_dirty = False
 
     def search_clip(
@@ -340,8 +347,6 @@ class SpatialMemoryStore:
 
             if self._cache_dirty:
                 self._rebuild_cache()
-            if self._emb_cache is None or len(self._id_cache) == 0:
-                return []
 
             import numpy as np
             qvec = query_embedding.astype(np.float32).flatten()
@@ -349,15 +354,21 @@ class SpatialMemoryStore:
             if qnorm > 0:
                 qvec = qvec / qnorm
 
-            scores = self._emb_cache @ qvec
+            # compare only against embeddings of the query's dimension
+            bucket = self._emb_by_dim.get(int(qvec.shape[0]))
+            if not bucket:
+                return []
+            id_cache, emb_cache = bucket
+
+            scores = emb_cache @ qvec
             top_idx = np.argsort(scores)[::-1][:top_k * 3]
-            candidates = [self._id_cache[i] for i in top_idx]
+            candidates = [id_cache[i] for i in top_idx]
             rows = self._fetch_rows(candidates)
             dets = self._fetch_detections(candidates)
 
             results = []
             for i in top_idx:
-                row = rows.get(self._id_cache[i])
+                row = rows.get(id_cache[i])
                 if row is None:
                     continue
                 if robot_id and row["robot_id"] != robot_id:

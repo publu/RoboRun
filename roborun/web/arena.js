@@ -9,6 +9,25 @@
 import * as THREE from "three";
 import { initPhysics, createWorld } from "./physics.js";
 
+// Embedded in Studio? Strip chrome that points back at the old standalone pages
+// (Studio owns navigation / setup / fleet as its own tabs). Standalone /sim keeps it.
+if (window.self !== window.top) {
+  const strip = () => {
+    // Studio owns navigation — drop the arena's standalone nav chrome, keep its
+    // real sim controls (LEVELS / camera / CONNECT AGENT / reset / REC).
+    ["ck-home", "ck-views", "tb-views", "projChip"].forEach((id) =>
+      document.getElementById(id)?.remove());
+    document.querySelectorAll('a[href="/setup"], .server-only').forEach((el) => el.remove());
+    // the picker subtitle references old standalone pages — match it by content
+    document.querySelectorAll(".sub").forEach((s) => {
+      if (/set up a project|run a fleet|open Setup/i.test(s.textContent || ""))
+        s.innerHTML = "Swap the sim level. Grab the wheel anytime with <b>WASD</b>.";
+    });
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", strip);
+  else strip();
+}
+
 /* ════════════════ levels ════════════════ */
 const COLORS = { red: 0xd84a4a, blue: 0x4a7ad8, green: 0x44b86a,
                  yellow: 0xd8b54a, purple: 0x9a5ad8 };
@@ -2049,7 +2068,7 @@ async function bootWasm() {
     wasmRT = await mod.loadWasmRuntime((m) => policyStatus(m, ""));
     linked = true;
     policyStatus("in-browser python ready — press RUN", "ok");
-    startAttemptRecording();
+    // no silent auto-record — recording is opt-in via the ● Record button
   } catch (e) {
     policyStatus(`python runtime failed to load: ${e.message || e}`, "err");
   }
@@ -2098,7 +2117,7 @@ async function pollCmd() {
       } else {
         serverCmd = r.cmd; serverAnswer = r.answer; serverIntent = r.intent || null;
       }
-      if (!linked) { linked = true; startAttemptRecording(); }
+      if (!linked) { linked = true; }  // no silent auto-record (opt-in via ● Record)
     } catch { linked = false; }
   }
   el.textContent = linked ? "behaviors: linked"
@@ -2287,8 +2306,13 @@ function buildStartScreen() {
     card.addEventListener("pointerleave", () => { p.hoverTarget = 0; });
     previews.push(p);
   }
-  buildRosCard();    // the real-robot path sits alongside the sim robots
-  buildFleetCard();  // …and the many-robot path, on the right
+  // Embedded in Studio, Fleet and Real-robot (ROS) are their own top-level tabs,
+  // so don't duplicate them inside the single-robot Arena picker. Standalone /sim
+  // still shows them as the only entry points.
+  if (window.self === window.top) {
+    buildRosCard();    // the real-robot path sits alongside the sim robots
+    buildFleetCard();  // …and the many-robot path, on the right
+  }
 }
 
 /* the FLEET card: one quadruped is the sandbox; a fleet of them is the hard
