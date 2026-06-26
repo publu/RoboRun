@@ -28,6 +28,17 @@ private/
 *.pem
 *.key
 
+# Strategy / planning docs — live in the private website repo only, never public
+/docs/ANTIOCH_PARITY.md
+/docs/DEMO_SPEC.md
+/docs/RL_HARNESS_SPEC.md
+
+# Local agent / dev tooling — belongs in neither published repo
+.agents/
+.claude/
+.goalkeeper/
+skills-lock.json
+
 # Logs
 *.log
 *.tmp
