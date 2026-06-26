@@ -1,4 +1,5 @@
 import type { Source, EventMsg, Sample, SceneState, Detection } from "./Source";
+import { apiUrl } from "../runtime";
 
 // A sealed run, replayed. Events are fetched once and filtered by the playhead;
 // frames come per-t from /api/run/frame; series come from /api/run/series
@@ -43,7 +44,7 @@ export class RunSource implements Source {
   }
 
   frameURL(t: number, _camera?: string) {
-    return `/api/run/frame?id=${encodeURIComponent(this.id)}&t=${t}`;
+    return apiUrl(`/api/run/frame?id=${encodeURIComponent(this.id)}&t=${t}`);
   }
 
   private loadSeries() {

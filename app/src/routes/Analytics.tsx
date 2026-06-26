@@ -20,11 +20,12 @@ type Analytics = {
 function Stat({ v, label, sub }: { v: string; label: string; sub?: string }) {
   return (
     <div className="panel" style={{ minHeight: 0, padding: "14px 16px" }}>
-      <div style={{ fontSize: 26, fontWeight: 600, fontFamily: "var(--mono)" }}>{v}</div>
-      <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".12em", color: "var(--fg-dim)", marginTop: 4 }}>
+      {/* DS KPI numerals: 22px bold, .06em label tracking — matches Home tiles */}
+      <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>{v}</div>
+      <div style={{ fontSize: 10.5, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--fg-dim)", marginTop: 6 }}>
         {label}
       </div>
-      {sub && <div style={{ fontSize: 11, color: "var(--fg-dim)", marginTop: 2 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 11, color: "var(--fg-dim)", marginTop: 3 }}>{sub}</div>}
     </div>
   );
 }

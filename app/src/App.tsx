@@ -1,7 +1,8 @@
 import { useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AppShell } from "./shell/AppShell";
 import { useStudio } from "./store";
+import { Home } from "./routes/Home";
 import { Live } from "./routes/Live";
 import { Runs } from "./routes/Runs";
 import { Sims } from "./routes/Sims";
@@ -27,7 +28,7 @@ export function App() {
     <BrowserRouter basename="/studio">
       <Routes>
         <Route element={<AppShell />}>
-          <Route index element={<Navigate to="/live" replace />} />
+          <Route index element={<Home />} />
           <Route path="live" element={<Live />} />
           <Route path="sims" element={<Sims />} />
           <Route path="runs" element={<Runs />} />

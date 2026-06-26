@@ -9,7 +9,7 @@ import { PlotPanel } from "../panels/PlotPanel";
 // First-run welcome: when nothing is live (no webcam, sim, or robot), a newcomer
 // should see a clear "what is this + one obvious action" — not an empty quadrant
 // full of system logs. Once something is running, swap to the live panels.
-function LiveWelcome() {
+export function LiveWelcome() {
   const navigate = useNavigate();
   const startTour = useStudio((s) => s.startTour);
   const [seeding, setSeeding] = useState(false);
@@ -37,7 +37,7 @@ function LiveWelcome() {
             ▶ Start a sim — no install
           </button>
           <button className="btn" onClick={tour} disabled={seeding}>
-            {seeding ? "preparing tour…" : "Take the 60-sec tour"}
+            {seeding ? "loading demo…" : "Take the 60-sec tour"}
           </button>
         </div>
         <div className="welcome-steps">

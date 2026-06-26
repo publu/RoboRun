@@ -8,8 +8,14 @@
 /* ── sidebar ─────────────────────────────────────────────────────────── */
 .app-side { background: var(--bg-2); border-right: 1px solid var(--line);
   display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; }
-.app-brand { display: flex; align-items: baseline; gap: 7px;
+.app-side-top { display: flex; align-items: center; }
+.app-brand { display: flex; align-items: baseline; gap: 7px; flex: 1; min-width: 0;
   padding: 16px 18px 12px; font-size: 16px; color: var(--fg-2); text-decoration: none; letter-spacing: .02em; }
+.nav-min-btn { flex: none; margin: 8px 10px 0 0; width: 24px; height: 24px; line-height: 1;
+  background: transparent; border: 1px solid var(--line); border-radius: var(--r-sm);
+  color: var(--fg-dim); cursor: pointer; font-family: var(--mono); font-size: 13px;
+  transition: color var(--rr-dur-fast), border-color var(--rr-dur-fast); }
+.nav-min-btn:hover { color: var(--fg); border-color: var(--line-soft); }
 .app-brand .dia { color: var(--accent); }
 .app-brand b { color: var(--accent); font-weight: 600; }
 .app-brand .sub { color: var(--fg-dim); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
@@ -27,6 +33,17 @@
 .nav-item.on .ni-ic { color: var(--accent); }
 
 .app-side-foot { padding: 12px 18px; border-top: 1px solid var(--line); font-size: 11px; color: var(--fg-dim); }
+
+/* ── collapsed sidebar: icon-only rail ───────────────────────────────── */
+.app-shell.nav-min { grid-template-columns: 56px 1fr; }
+.app-shell.nav-min .app-side-top { flex-direction: column; gap: 4px; }
+.app-shell.nav-min .app-brand { justify-content: center; padding: 14px 0 8px; gap: 0; }
+.app-shell.nav-min .app-brand b, .app-shell.nav-min .app-brand .sub { display: none; }
+.app-shell.nav-min .nav-min-btn { margin: 0 0 6px; }
+.app-shell.nav-min .ni-l, .app-shell.nav-min .nav-group, .app-shell.nav-min .app-side-foot { display: none; }
+.app-shell.nav-min .nav-item { justify-content: center; gap: 0; padding: 9px 0; }
+.app-shell.nav-min .nav-item .ni-ic { width: auto; }
+.app-shell.nav-min .nav-sep { margin: 10px 12px 2px; }
 
 /* ── top bar ─────────────────────────────────────────────────────────── */
 .app-top { display: flex; align-items: center; gap: 14px; min-height: var(--rr-topbar-h);
@@ -70,7 +87,7 @@
 
 /* ── buttons ─────────────────────────────────────────────────────────── */
 .btn { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono);
-  background: var(--panel-2); border: 1px solid var(--line); color: var(--fg);
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); text-decoration: none;
   border-radius: var(--r-sm); padding: 8px 13px; cursor: pointer; font-size: 13px;
   transition: border-color var(--rr-dur-fast), background var(--rr-dur-fast), color var(--rr-dur-fast); }
 .btn:hover { background: #1b231a; border-color: var(--line-soft); }
@@ -115,10 +132,28 @@
 .beh-editor { display: flex; flex-direction: column; gap: 8px; }
 .beh-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .beh-status { font-size: 12px; }
-.beh-code { width: 100%; min-height: 220px; resize: vertical; background: var(--bg); color: var(--fg);
-  border: 1px solid var(--line); border-radius: var(--r-sm); padding: 12px; font-family: var(--mono);
-  font-size: 12.5px; line-height: 1.6; tab-size: 4; }
+/* syntax-highlight overlay: a transparent textarea sits exactly over a
+ * highlighted <pre>. Both share font/size/line-height/padding/border so the
+ * caret lands on the right glyph; the textarea drives sizing+scroll, the pre
+ * is clipped and scroll-synced underneath. */
+.beh-code-wrap { position: relative; width: 100%; }
+.beh-code, .beh-hl { margin: 0; box-sizing: border-box; font-family: var(--mono);
+  font-size: 12.5px; line-height: 1.6; tab-size: 4; padding: 12px;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  white-space: pre-wrap; word-break: break-word; }
+.beh-hl { position: absolute; inset: 0; overflow: hidden; pointer-events: none;
+  background: var(--bg); color: var(--fg); z-index: 0; }
+.beh-hl code { font: inherit; }
+.beh-code { position: relative; z-index: 1; display: block; width: 100%; min-height: 220px;
+  resize: vertical; background: transparent; color: transparent; caret-color: var(--fg);
+  border-color: var(--line); }
 .beh-code:focus { outline: none; border-color: var(--accent); }
+/* token palette — single accent for keywords, muted for the rest, per DS */
+.beh-hl .t-c { color: var(--fg-dim); font-style: italic; }   /* comments */
+.beh-hl .t-s { color: var(--blue); }                          /* strings */
+.beh-hl .t-k { color: var(--accent); }                        /* keywords */
+.beh-hl .t-d { color: #e0c050; }                              /* decorators */
+.beh-hl .t-n { color: #c98a5e; }                              /* numbers */
 .code-note { margin-top: 11px; font-size: 12px; color: var(--fg-dim); line-height: 1.5; }
 .code-note code { background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--accent); }
 

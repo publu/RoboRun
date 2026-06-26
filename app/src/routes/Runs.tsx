@@ -18,7 +18,7 @@ type McapRow = {
 };
 type Row = ListRow & Partial<McapRow>;
 
-function runTime(run: string): string {
+export function runTime(run: string): string {
   const m = /run_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/.exec(run);
   if (!m) return run;
   const [, y, mo, d, h, mi] = m.map(Number) as unknown as number[];
@@ -26,10 +26,10 @@ function runTime(run: string): string {
     month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
   });
 }
-const fmtSize = (b?: number) => (b == null ? "" : b > 1e6 ? (b / 1e6).toFixed(1) + "MB" : Math.round(b / 1e3) + "KB");
+export const fmtSize = (b?: number) => (b == null ? "" : b > 1e6 ? (b / 1e6).toFixed(1) + "MB" : Math.round(b / 1e3) + "KB");
 
 // What the robot saw/did, derived from the recorded channels.
-function summarize(c?: Record<string, number>): string {
+export function summarize(c?: Record<string, number>): string {
   if (!c) return "";
   const frames = c["/detections/arena"] ?? c["/camera/webcam"] ?? 0;
   const det = Object.entries(c).filter(([k]) => k.startsWith("/detections")).reduce((a, [, v]) => a + v, 0);

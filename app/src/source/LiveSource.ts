@@ -1,4 +1,5 @@
 import type { Source, EventMsg, Sample, SceneState, Detection, Pose } from "./Source";
+import { apiUrl, wsUrl } from "../runtime";
 
 // Live robot or running sim. Events via SSE, telemetry via the WS on :8766
 // (ring-buffered per channel), camera via the MJPEG/frame endpoint. The
@@ -20,7 +21,7 @@ export class LiveSource implements Source {
   private ensure() {
     if (this.opened) return;
     this.opened = true;
-    this.es = new EventSource("/api/events/stream");
+    this.es = new EventSource(apiUrl("/api/events/stream"));
     this.es.onmessage = (m) => {
       try {
         const e = JSON.parse(m.data) as EventMsg;
@@ -35,11 +36,11 @@ export class LiveSource implements Source {
   }
 
   private connectWS() {
-    // The telemetry WS lives on its own port; reach it directly, matching the
-    // page's scheme so it isn't blocked as mixed content under https.
-    const scheme = location.protocol === "https:" ? "wss" : "ws";
+    // The telemetry WS lives on its own port; reach it on the resolved backend
+    // host (so a hosted page hits the user's localhost, not the Vercel domain),
+    // matching scheme so it isn't blocked as mixed content under https.
     const port = (window as { ROBORUN_WS_PORT?: number }).ROBORUN_WS_PORT ?? 8766;
-    const url = `${scheme}://${location.hostname}:${port}`;
+    const url = wsUrl(port);
     try {
       this.ws = new WebSocket(url);
     } catch {
@@ -94,7 +95,7 @@ export class LiveSource implements Source {
   frameURL(_t: number, camera = "auto") {
     this.ensure();
     // cache-bust so the <img> actually refreshes when polled
-    return `/api/camera/frame?source=${encodeURIComponent(camera)}&_=${Date.now()}`;
+    return apiUrl(`/api/camera/frame?source=${encodeURIComponent(camera)}&_=${Date.now()}`);
   }
 
   async series(channel: string) {
