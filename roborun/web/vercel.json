@@ -1,6 +1,7 @@
 {
   "cleanUrls": true,
   "rewrites": [
-    { "source": "/sim", "destination": "/arena.html" }
+    { "source": "/sim", "destination": "/arena.html" },
+    { "source": "/studio/:path*", "destination": "/studio/index.html" }
   ]
 }
