@@ -50,7 +50,8 @@ ann = ["sqlite-vec>=0.1"]            # CLIP ANN past ~1M vectors
 video = ["av>=11.0"]                 # H.264 camera channel (10–50× vs JPEG)
 mjx = ["mujoco-mjx>=3.0", "jax>=0.4"]  # vectorized N-world sim (GPU-optional)
 strata = ["numpy>=1.24", "boto3>=1.28"]   # object-storage-native blob + vector engine
-all = ["ros-agent[vision,sim,depth,jepa,gemini,ros,crypto,anchor,fleet,ann,video,mjx,strata]"]
+tui = ["rich>=13.0"]                 # full-screen terminal dashboard (roborun tui)
+all = ["ros-agent[vision,sim,depth,jepa,gemini,ros,crypto,anchor,fleet,ann,video,mjx,strata,tui]"]
 
 [project.scripts]
 roborun = "roborun.server:main"

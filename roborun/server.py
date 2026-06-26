@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -22,6 +23,27 @@ WEB_ROOT = Path(__file__).resolve().parent / "web"
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("ROBORUN_PORT", "8765"))
 STATE_ROOT = ROOT / ".roborun"
+
+# CORS allowlist. A running roborun exposes its API to the browser; allow only
+# same-machine origins (the local UI / dev) and the known hosted demo platforms
+# (Vercel, GitHub Pages), plus anything in ROBORUN_ALLOWED_ORIGINS. Anything else
+# is refused, so a random site the user visits can't drive their robot. Replaces
+# the old blanket "*".
+_ALLOWED_ORIGIN_RE = re.compile(
+    r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+    r"|^https://([a-z0-9-]+\.)*(vercel\.app|github\.io)$",
+    re.IGNORECASE,
+)
+
+
+def allowed_origin(origin: str | None) -> str | None:
+    """Echo `origin` back iff it may call this server cross-origin, else None."""
+    if not origin:
+        return None
+    extra = {o.strip() for o in os.environ.get("ROBORUN_ALLOWED_ORIGINS", "").split(",") if o.strip()}
+    if origin in extra or _ALLOWED_ORIGIN_RE.match(origin):
+        return origin
+    return None
 
 # each pipeline writes its own file; the stream picks by ?source=
 _SOURCE_FRAMES = {
@@ -73,9 +95,14 @@ class Handler(SimpleHTTPRequestHandler):
 
     def end_headers(self) -> None:
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-        # the static site (GitHub Pages, python -m http.server -d site) probes
-        # this server cross-origin and upgrades itself to the live cockpit
-        self.send_header("Access-Control-Allow-Origin", "*")
+        # CORS, centralized: the static/hosted site probes this server
+        # cross-origin and upgrades itself to the live cockpit. Echo only
+        # allowlisted origins (see allowed_origin) — never a blanket "*".
+        origin = self.headers.get("Origin") if getattr(self, "headers", None) else None
+        allow = allowed_origin(origin)
+        if allow:
+            self.send_header("Access-Control-Allow-Origin", allow)
+            self.send_header("Vary", "Origin")
         super().end_headers()
 
     def do_GET(self) -> None:
@@ -215,7 +242,6 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(body)
                 return
@@ -236,7 +262,6 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Connection", "keep-alive")
         self.end_headers()
         q = subscribe()
@@ -269,19 +294,16 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "image/jpeg")
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(data)
             return
         self.send_response(503)
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
 
     def _mjpeg_stream(self, source: str = "auto") -> None:
         self.send_response(200)
         self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
         self.send_header("Cache-Control", "no-cache")
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         try:
             last_mtime = 0.0
@@ -335,6 +357,8 @@ def _frame_recorder_loop() -> None:
 _HELP = """RoboRun — run robots, record everything, search it over time.
 
   roborun                 start the server + UI (http://localhost:8765)
+  roborun run             headless: drive behaviors, stream the loop to the terminal (no UI)
+  roborun tui             full-screen terminal dashboard (live events · behaviors · vision)
   roborun status          is it running, what's connected, how much is recorded
   roborun demo            load sample data so the dashboards aren't empty
   roborun ask "<task>"    tell the robot what to do in plain English (agent drives)
@@ -347,6 +371,109 @@ _HELP = """RoboRun — run robots, record everything, search it over time.
   roborun skill <...>     install / manage skills from GitHub
 
 Open the cockpit, then its ▤ VIEWS menu for: search · scenarios · timeline · analytics · fleet."""
+
+
+def _run_autostart() -> None:
+    """First boot should be alive, not a NO SIGNAL screen: try the webcam with
+    YOLO; fall back to the MuJoCo sim. ROBORUN_AUTOSTART=0 disables it."""
+    from roborun.events import emit
+    time.sleep(2.0)  # let a previous instance release the camera
+    # a connected/saved robot IS the camera source — never grab the laptop
+    # webcam (and its privacy light) out from under the user
+    try:
+        from roborun.connect import saved_robot
+        if saved_robot():
+            emit("system", "server", "autostart: a robot is the source — webcam left off")
+            return
+    except Exception:
+        pass
+    why: list[str] = []
+    try:
+        from roborun.routes._singletons import get_webcam
+        result = get_webcam().start(camera_index=0, models=["yolo"])
+        if result.get("ok"):
+            emit("system", "server", "autostart: webcam live with YOLO")
+            return
+        why.append(f"webcam: {result.get('error', 'failed')}")
+    except ImportError:
+        why.append("webcam vision not installed (pip install 'ros-agent[vision]')")
+    except Exception as exc:
+        why.append(f"webcam: {exc}")
+    try:
+        from roborun.routes._singletons import get_simulator
+        result = get_simulator().start()
+        if result.get("ok"):
+            emit("system", "server", f"autostart: MuJoCo sim ({result.get('robot', 'robot')})")
+            return
+        why.append(f"sim: {result.get('error', 'failed')}")
+    except ImportError:
+        why.append("MuJoCo sim not installed (pip install 'ros-agent[sim]')")
+    except Exception as exc:
+        why.append(f"sim: {exc}")
+    # A blank deck with no explanation reads as broken — say exactly what didn't
+    # start and point at the path that needs no installs.
+    emit("system", "server",
+         "no camera or sim started — " + "; ".join(why) +
+         ". Open the cockpit: browser sim, nothing to install.")
+
+
+def start_runtime(announce=print, autostart: bool = True) -> None:
+    """Boot the live robot runtime — telemetry WS, ROS bridge, trajectory
+    recorder, frame hashing, and behavior hot-reload — WITHOUT the HTTP server.
+
+    Shared by the web server (`roborun`) and the headless / TUI run modes
+    (`roborun run`, `roborun tui`), so the see/move/ask loop runs identically
+    with or without a browser. Workers are daemon threads; returns once started.
+    """
+    STATE_ROOT.mkdir(parents=True, exist_ok=True)
+
+    # A robot saved by `roborun connect` is the robot behaviors drive
+    from roborun.connect import saved_robot
+    robot = saved_robot()
+    if robot:
+        from roborun.rosbridge import get_client
+        client = get_client(robot["host"], robot.get("port", 9090))
+        state = "connected" if client and client.is_connected else "unreachable — will retry"
+        announce(f"  Robot {robot['host']} ({robot.get('type', '?')}): {state}")
+        if client and client.is_connected:
+            try:
+                from roborun.ros_camera import get_ros_camera
+                cam = get_ros_camera().start()
+                if cam.get("ok"):
+                    announce(f"  Robot camera: {cam['topic']} → YOLO → robot.see()")
+            except Exception:
+                pass
+
+    from roborun.skills import load_skills
+    count = load_skills()
+    if count:
+        announce(f"  Loaded {count} skill(s)")
+
+    threading.Thread(target=_frame_recorder_loop, daemon=True, name="FrameRecorder").start()
+
+    from roborun.telemetry import start_ws_server
+    start_ws_server()
+
+    from roborun.ros_telemetry import get_bridge
+    get_bridge().start()
+
+    from roborun.trajectory import TrajectoryRecorder
+    TrajectoryRecorder.get().start()
+
+    # Vibecode runtime: behaviors/*.py hot-reload while the robot runs
+    from roborun.behaviors import BehaviorRunner, write_examples
+    created = write_examples()
+    if created:
+        announce(f"  Created {created}/ — edit follow_person.py and save. It reloads live.")
+    BehaviorRunner.get().start()
+
+    # Reach-a-human channel: forward notify events to an OpenClaw gateway
+    from roborun.openclaw import start_bridge
+    if start_bridge():
+        announce(f"  OpenClaw bridge:  notify() → {os.environ['OPENCLAW_HOOKS_URL']}")
+
+    if autostart and os.environ.get("ROBORUN_AUTOSTART", "1") != "0":
+        threading.Thread(target=_run_autostart, daemon=True, name="Autostart").start()
 
 
 def main() -> None:
@@ -390,103 +517,17 @@ def main() -> None:
             for i in list_incidents():
                 print(f"  {i['run_id']}  ⚑ {i.get('note') or i['tag']}")
         raise SystemExit(0)
+    # Headless + TUI run modes — drive the see/move/ask loop with no web UI
+    if len(sys.argv) > 1 and sys.argv[1] in ("run", "headless"):
+        from roborun.tui import run_headless
+        raise SystemExit(run_headless(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "tui":
+        from roborun.tui import run_tui
+        raise SystemExit(run_tui(sys.argv[2:]))
     if not WEB_ROOT.exists():
         raise SystemExit(f"Missing web directory at {WEB_ROOT}")
-    STATE_ROOT.mkdir(parents=True, exist_ok=True)
 
-    # A robot saved by `roborun connect` is the robot behaviors drive
-    from roborun.connect import saved_robot
-    robot = saved_robot()
-    if robot:
-        from roborun.rosbridge import get_client
-        client = get_client(robot["host"], robot.get("port", 9090))
-        state = "connected" if client and client.is_connected else "unreachable — will retry"
-        print(f"  Robot {robot['host']} ({robot.get('type', '?')}): {state}")
-        if client and client.is_connected:
-            try:
-                from roborun.ros_camera import get_ros_camera
-                cam = get_ros_camera().start()
-                if cam.get("ok"):
-                    print(f"  Robot camera: {cam['topic']} → YOLO → robot.see()")
-            except Exception:
-                pass
-
-    # Load skills
-    from roborun.skills import load_skills
-    count = load_skills()
-    if count:
-        print(f"  Loaded {count} skill(s)")
-
-    recorder = threading.Thread(target=_frame_recorder_loop, daemon=True, name="FrameRecorder")
-    recorder.start()
-
-    from roborun.telemetry import start_ws_server
-    start_ws_server()
-
-    from roborun.ros_telemetry import get_bridge
-    get_bridge().start()
-
-    from roborun.trajectory import TrajectoryRecorder
-    TrajectoryRecorder.get().start()
-
-    # Vibecode runtime: behaviors/*.py hot-reload while the robot runs
-    from roborun.behaviors import BehaviorRunner, write_examples
-    created = write_examples()
-    if created:
-        print(f"  Created {created}/ — edit follow_person.py and save. It reloads live.")
-    BehaviorRunner.get().start()
-
-    # Reach-a-human channel: forward notify events to an OpenClaw gateway
-    from roborun.openclaw import start_bridge
-    if start_bridge():
-        print(f"  OpenClaw bridge:  notify() → {os.environ['OPENCLAW_HOOKS_URL']}")
-
-    # First boot should be alive, not a NO SIGNAL screen: try the webcam
-    # with YOLO; fall back to the MuJoCo sim. ROBORUN_AUTOSTART=0 disables.
-    if os.environ.get("ROBORUN_AUTOSTART", "1") != "0":
-        def _autostart() -> None:
-            from roborun.events import emit
-            time.sleep(2.0)  # let a previous instance release the camera
-            # a connected/saved robot IS the camera source — never grab the
-            # laptop webcam (and its privacy light) out from under the user
-            try:
-                from roborun.connect import saved_robot
-                if saved_robot():
-                    emit("system", "server",
-                         "autostart: a robot is the source — webcam left off")
-                    return
-            except Exception:
-                pass
-            why: list[str] = []
-            try:
-                from roborun.routes._singletons import get_webcam
-                result = get_webcam().start(camera_index=0, models=["yolo"])
-                if result.get("ok"):
-                    emit("system", "server", "autostart: webcam live with YOLO")
-                    return
-                why.append(f"webcam: {result.get('error', 'failed')}")
-            except ImportError:
-                why.append("webcam vision not installed (pip install 'ros-agent[vision]')")
-            except Exception as exc:
-                why.append(f"webcam: {exc}")
-            try:
-                from roborun.routes._singletons import get_simulator
-                result = get_simulator().start()
-                if result.get("ok"):
-                    emit("system", "server",
-                         f"autostart: MuJoCo sim ({result.get('robot', 'robot')})")
-                    return
-                why.append(f"sim: {result.get('error', 'failed')}")
-            except ImportError:
-                why.append("MuJoCo sim not installed (pip install 'ros-agent[sim]')")
-            except Exception as exc:
-                why.append(f"sim: {exc}")
-            # A blank deck with no explanation reads as broken — say exactly
-            # what didn't start and point at the path that needs no installs.
-            emit("system", "server",
-                 "no camera or sim started — " + "; ".join(why) +
-                 ". Open the cockpit: browser sim, nothing to install.")
-        threading.Thread(target=_autostart, daemon=True, name="Autostart").start()
+    start_runtime(announce=print)
 
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"\n  RoboRun is live: http://{HOST}:{PORT}")

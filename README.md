@@ -19,10 +19,19 @@
 
 ```bash
 pip install ros-agent     # the package keeps its PyPI name; the command is roborun
-roborun
+roborun                   # serves the UI at http://localhost:8765 (prints the URL)
 ```
 
-The browser opens live, and a `behaviors/` folder appears with the robot's brain. Open **`/arena`** — a robot dog in a browser sim, body and eyes in the same world (what it does changes what it sees). Nothing else to install; the base package is three small dependencies, no torch. The robot's brain:
+Open the printed URL and a `behaviors/` folder appears with the robot's brain. Open **`/arena`** — a robot dog in a browser sim, body and eyes in the same world (what it does changes what it sees). Nothing else to install; the base package is three small dependencies, no torch.
+
+Prefer the terminal? It runs fully without the web UI:
+
+```bash
+roborun run     # headless: drives behaviors, streams the see/move/ask loop to stdout
+roborun tui     # full-screen terminal dashboard (pip install 'ros-agent[tui]')
+```
+
+The robot's brain:
 
 ```python
 # behaviors/follow_person.py (already running)
