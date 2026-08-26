@@ -20,7 +20,6 @@ def _mcp_reply(h, req_id: Any, result: Any) -> None:
     h.send_response(200)
     h.send_header("Content-Type", "application/json")
     h.send_header("Content-Length", str(len(body)))
-    h.send_header("Access-Control-Allow-Origin", "*")
     h.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
     h.end_headers()
     h.wfile.write(body)
@@ -32,7 +31,6 @@ def _mcp_error(h, req_id: Any, code: int, message: str) -> None:
     h.send_response(200)
     h.send_header("Content-Type", "application/json")
     h.send_header("Content-Length", str(len(body)))
-    h.send_header("Access-Control-Allow-Origin", "*")
     h.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
     h.end_headers()
     h.wfile.write(body)
@@ -58,7 +56,6 @@ def handle_mcp_request(h, payload: dict) -> None:
 
     if method == "notifications/initialized":
         h.send_response(204)
-        h.send_header("Access-Control-Allow-Origin", "*")
         h.end_headers()
         return
 
@@ -137,7 +134,6 @@ def handle_mcp_sse(h) -> None:
     h.send_response(200)
     h.send_header("Content-Type", "text/event-stream")
     h.send_header("Cache-Control", "no-cache")
-    h.send_header("Access-Control-Allow-Origin", "*")
     h.end_headers()
     msg = f'data: {{"type":"endpoint","url":"http://127.0.0.1:{PORT}/mcp"}}\n\n'
     try:

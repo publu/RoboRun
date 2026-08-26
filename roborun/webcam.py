@@ -357,6 +357,26 @@ class WebcamPipeline:
                 rec.write_detections([d.to_dict() for d in detections], name="yolo")
         except Exception:
             pass
+        # Persist the reconstructed 3D scene cloud (platform spec 05 P2): the
+        # SceneBuilder cloud used to be transient — fold it into the run's MCAP
+        # via the /cloud channel so it's durable + browsable, ~every 2s.
+        try:
+            if now - getattr(self, "_last_cloud_ts", 0.0) > 2.0:
+                from roborun.scene_builder import SceneBuilder
+                sb = SceneBuilder.get()
+                if sb.is_running():
+                    scene = sb.get_scene()
+                    pts = scene.get("points") or []
+                    if pts:
+                        # get_scene() returns nested [[x,y,z(,r,g,b)], …];
+                        # write_cloud wants a flat [x,y,z, …] float list.
+                        flat = []
+                        for p in pts:
+                            flat.extend((float(p[0]), float(p[1]), float(p[2])))
+                        rec.write_cloud("scene", flat, frame_id="world")
+                        self._last_cloud_ts = now
+        except Exception:
+            pass
 
     def _maybe_timeline(self, frame: np.ndarray, detections: list[Detection]) -> None:
         if not self._timeline_enabled:

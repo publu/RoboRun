@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script src="./runtime-base.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoboRun · Fleet Sim</title>
+<link rel="stylesheet" href="./ui.css">
+<script src="./shell.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "@dimforge/rapier3d-compat": "https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.19.3/+esm"
+} }
+</script>
+<style>
+  *{ box-sizing:border-box; } body{ margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--mono); }
+  .scope{ background:#0e1a12; border:1px solid var(--accent-dim); border-radius:var(--r); padding:11px 15px; font-size:12.5px; color:var(--fg-2); margin-bottom:14px; }
+  .scope b{ color:var(--accent); }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:14px 16px; margin-bottom:14px; }
+  .ph{ display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+  .ph .t{ font-size:13px; font-weight:600; } .ph .run{ font-size:11px; color:var(--accent); }
+  .controls{ display:flex; gap:18px; align-items:center; flex-wrap:wrap; }
+  .ctl{ display:flex; flex-direction:column; gap:3px; }
+  .ctl label{ font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--fg-dim); display:flex; justify-content:space-between; gap:10px; }
+  .ctl label b{ color:var(--accent); }
+  input[type=range]{ accent-color:var(--accent); width:150px; }
+  .btns{ margin-left:auto; display:flex; gap:8px; }
+  .kpis{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:14px 0 0; }
+  .legend{ display:flex; gap:18px; flex-wrap:wrap; font-size:11px; color:var(--fg-2); align-items:center; }
+  .legend .sw{ display:inline-flex; align-items:center; gap:6px; }
+  .legend .tri{ width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:9px solid var(--accent); }
+  .legend .dot{ width:9px;height:9px;border-radius:50%; } .legend .dot.on{ background:var(--accent); } .legend .dot.off{ background:#5a7a6a; }
+  .legend .elev{ width:11px;height:11px;border:1.5px solid var(--blue);border-radius:2px;display:inline-flex;align-items:center;justify-content:center;color:var(--blue);font-size:8px; }
+  .stage-wrap{ position:relative; background:var(--panel); border:1px solid var(--line); border-radius:var(--r); overflow:hidden; }
+  #stage{ width:100%; height:560px; display:block; background:#070a07; cursor:grab; }
+  #stage:active{ cursor:grabbing; }
+  .stage-hint{ position:absolute; bottom:9px; right:12px; font-size:10.5px; color:var(--fg-dim); pointer-events:none; letter-spacing:.04em; }
+  .stage-floors{ position:absolute; top:9px; left:12px; display:flex; flex-direction:column; gap:4px; pointer-events:none; }
+  .stage-floors .fr{ font-size:10.5px; color:var(--fg-2); background:rgba(8,12,8,.6); padding:2px 7px; border-radius:4px; }
+  .stage-floors .fr b{ color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <div class="scope" id="scope"><b>Layer 2: real Rapier physics.</b> N robots with real bodies + collisions in a multi-floor warehouse, collecting jointly into the active environment. Coordination strategies live in the <a href="/fleet">Swarm Lab</a>.</div>
+
+  <div class="panel">
+    <div class="ph"><span style="font-size:16px">🐝</span><span class="t">FLEET SIM</span><span class="run">● Rapier physics</span></div>
+    <div class="controls">
+      <div class="ctl"><label>robots <b id="nlab">8</b></label><input id="n" type="range" min="1" max="24" value="8"></div>
+      <div class="ctl"><label>floors <b id="flab">3</b></label><input id="fl" type="range" min="1" max="4" value="3"></div>
+      <div class="ctl"><label>speed <b id="slab">1.0×</b></label><input id="spd" type="range" min="2" max="40" value="10"></div>
+      <div class="btns"><button class="btn accent" id="play">▶ play</button><button class="btn" id="reset">↺ reset</button></div>
+    </div>
+    <div class="kpis" id="kpis"></div>
+  </div>
+
+  <div class="panel legend">
+    <span class="sw"><span class="tri"></span> robot (real physics body)</span>
+    <span class="sw"><span class="dot on"></span> detected item</span>
+    <span class="sw"><span class="dot off"></span> undetected item</span>
+    <span class="sw"><span class="elev">⇅</span> elevator (between floors)</span>
+    <span class="sw" style="color:var(--fg-dim)">— walls / rooms</span>
+  </div>
+
+  <div class="stage-wrap">
+    <canvas id="stage"></canvas>
+    <div class="stage-floors" id="floorTags"></div>
+    <div class="stage-hint">drag to orbit · scroll to zoom</div>
+  </div>
+</main>
+<script type="module" src="./rapier-fleet.js"></script>
+</body>
+</html>

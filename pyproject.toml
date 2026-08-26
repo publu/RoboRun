@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ros-agent"
-version = "0.12.0"
+version = "0.13.0"
 description = "Quickly run and manage ROS 1/2 robots. Built-in MCP for Claude, Cursor, or any AI client, plus vision, sim, and hot-reload behaviors. Merkle proofs make every run tamper-evident and replayable."
 readme = "README.md"
 license = {text = "MIT"}
@@ -46,7 +46,12 @@ ros = ["cyclonedds>=0.10"]
 crypto = ["cryptography>=42.0"]
 anchor = ["asn1crypto>=1.5"]
 fleet = ["boto3>=1.28", "duckdb>=1.0"]
-all = ["ros-agent[vision,sim,depth,jepa,gemini,ros,crypto,anchor,fleet]"]
+ann = ["sqlite-vec>=0.1"]            # CLIP ANN past ~1M vectors
+video = ["av>=11.0"]                 # H.264 camera channel (10–50× vs JPEG)
+mjx = ["mujoco-mjx>=3.0", "jax>=0.4"]  # vectorized N-world sim (GPU-optional)
+strata = ["numpy>=1.24", "boto3>=1.28"]   # object-storage-native blob + vector engine
+tui = ["rich>=13.0"]                 # full-screen terminal dashboard (roborun tui)
+all = ["ros-agent[vision,sim,depth,jepa,gemini,ros,crypto,anchor,fleet,ann,video,mjx,strata,tui]"]
 
 [project.scripts]
 roborun = "roborun.server:main"
@@ -54,9 +59,11 @@ roborun-mcp = "roborun.mcp_stdio:main"
 # legacy aliases (the PyPI package is named ros-agent)
 ros-agent = "roborun.server:main"
 ros-agent-mcp = "roborun.mcp_stdio:main"
+# Strata — object-storage-native time-series + vector engine
+strata = "strata.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["roborun*"]
+include = ["roborun*", "strata*"]
 
 [tool.setuptools.package-data]
 roborun = ["web/**/*"]

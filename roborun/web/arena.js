@@ -9,6 +9,25 @@
 import * as THREE from "three";
 import { initPhysics, createWorld } from "./physics.js";
 
+// Embedded in Studio? Strip chrome that points back at the old standalone pages
+// (Studio owns navigation / setup / fleet as its own tabs). Standalone /sim keeps it.
+if (window.self !== window.top) {
+  const strip = () => {
+    // Studio owns navigation — drop the arena's standalone nav chrome, keep its
+    // real sim controls (LEVELS / camera / CONNECT AGENT / reset / REC).
+    ["ck-home", "ck-views", "tb-views", "projChip"].forEach((id) =>
+      document.getElementById(id)?.remove());
+    document.querySelectorAll('a[href="/setup"], .server-only').forEach((el) => el.remove());
+    // the picker subtitle references old standalone pages — match it by content
+    document.querySelectorAll(".sub").forEach((s) => {
+      if (/set up a project|run a fleet|open Setup/i.test(s.textContent || ""))
+        s.innerHTML = "Swap the sim level. Grab the wheel anytime with <b>WASD</b>.";
+    });
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", strip);
+  else strip();
+}
+
 /* ════════════════ levels ════════════════ */
 const COLORS = { red: 0xd84a4a, blue: 0x4a7ad8, green: 0x44b86a,
                  yellow: 0xd8b54a, purple: 0x9a5ad8 };
@@ -723,7 +742,8 @@ function senseDetections() {
                bbox: [cx - size / 4, 360 - size / 2, cx + size / 4, 360 + size / 2],
                distance: +dist.toFixed(2) });
     dets.push({ p, dist, ppos });
-    if (!p.seen) { p.seen = true; postEvent("detection", `sighted: ${p.label}`, {}); }
+    if (!p.seen) { p.seen = true; postEvent("detection", `sighted: ${p.label}`, {});
+      simEvent("yolo", `sighted ${p.label} · ${dist.toFixed(1)}m`); }
   }
   currentDets = dets;
   if (bot.type === "dog" || bot.type === "biped") {
@@ -915,8 +935,26 @@ function loadLevel(i) {
   else if (w.type === "rings") setChips(
     w.order.map((id) => ({ id: `r${id}`, label: `ring ${id + 1}`, done: false })));
   postEvent("arena", `level loaded: ${LV.name}`, { robot: LV.robot });
+  if (MODE === "robot" && levelGroup) levelGroup.visible = false;
+  // Route: /sim?level=<name> — a path+query route, consistent with /run?id=<run>
+  // (NOT a #hash). Makes levels bookmarkable and the browser BACK button work.
+  if (!window._navFromHistory && MODE !== "wasm") {
+    try {
+      const cur = new URLSearchParams(location.search).get("level");
+      if (cur !== LV.name)
+        history.pushState({ level: levelIndex }, "", "/sim?level=" + encodeURIComponent(LV.name));
+    } catch (_) {}
+  }
 }
 levelSel.addEventListener("change", () => loadLevel(+levelSel.value));
+window.addEventListener("popstate", () => {
+  const nm = new URLSearchParams(location.search).get("level");
+  const idx = nm ? LEVELS.findIndex((l) => l.name === nm) : -1;
+  if (idx >= 0 && idx !== levelIndex) {
+    window._navFromHistory = true;
+    try { loadLevel(idx); } finally { window._navFromHistory = false; }
+  }
+});
 
 function winChamber(detail) {
   won = true;
@@ -1250,16 +1288,777 @@ async function api(path, body) {
 let MODE = "detect";                       // "server" | "wasm"
 let wasmRT = null, wasmLoading = false;
 async function detectMode() {
+  // resolve runtime discovery (sets window.ROBORUN_RUNTIME) before deciding
+  try { await fetch("/api/health"); } catch {}
+  const rt = window.ROBORUN_RUNTIME || {};
+  const iAmRuntime = rt.live && !rt.remote;   // this page IS the roborun server
+  const pinned = localStorage.getItem("roborun.source");
+
+  // The menu is the front door: a freshly opened page ALWAYS lands on the
+  // selector, even when a robot is already connected (it just shows up as a
+  // live card you can pick). We only skip straight into a robot when the user
+  // explicitly pinned one before — a deliberate, sticky choice, never the default.
+  if (iAmRuntime && pinned === "robot") {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 1500);
+      const r = await fetch("/api/ros/health", { signal: ctl.signal });
+      clearTimeout(t);
+      if (r.ok && (await r.json()).connected) { enterRobotMode(); return; }
+    } catch {}
+  }
+
+  // otherwise: determine the sim backend now (server vs in-browser wasm) so a
+  // menu pick enters instantly, then show the ROBORUN ARENA menu (the launcher)
   try {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 1500);
     const r = await fetch("/api/arena/cmd", { signal: ctl.signal });
     clearTimeout(t);
-    if (r.ok) { MODE = "server"; return; }
+    if (r.ok) MODE = "server";
   } catch {}
-  MODE = "wasm";
-  document.body.classList.add("wasm-mode");
-  bootWasm();
+  if (MODE !== "server") {
+    MODE = "wasm"; document.body.classList.add("wasm-mode"); bootWasm();
+  }
+  if (pinned === "sim") { enterSimCockpit(); return; }   // user pinned the sim
+  // came from Setup with a chosen level (/sim?level=…)? it's already loaded —
+  // don't make the user pick a robot & task all over again.
+  if (!new URLSearchParams(location.search).get("level")) showStart();
+}
+
+/* ── robot mode: same arena, the world is the robot's telemetry ─────────
+   Pose, lidar cloud, and detections come from the connected robot via the
+   runtime (SIM_SPEC handle contract: {x, z, heading} + 36-sector scan).
+   The level disappears, the accumulated point cloud *is* the map, the
+   EYES panel shows the camera frames robot.see() runs YOLO on, and WASD
+   publishes real cmd_vel. Sim → robot without changing pages. */
+const RT_BASE = () => (window.ROBORUN_RUNTIME && window.ROBORUN_RUNTIME.base) || "";
+let lastMoveSent = 0;
+let robotPolicyName = "";
+const TYPE_GLYPH = { drone: "✈", quadruped: "◈", humanoid: "⬡", arm: "⚙", webcam_only: "◉" };
+const ckTrail = [];          // recent poses, world frame, for the tactical map
+let ckPose = null;           // latest robot pose, shared across pollers
+const ckObjects = new Map(); // track_id → world-tracked object (moving vs stationary)
+// sim cockpit runs fully client-side — its timeline must reflect the SIM's
+// own perception and decisions, never the server log (which, on a
+// robot-connected runtime, is dominated by the real robot)
+const simLog = [];
+const simCloud = [];   // accumulated sim-lidar world points (the generated map)
+function simEvent(source, title) {
+  simLog.push({ source, title, ts: Date.now() / 1000 });
+  if (simLog.length > 40) simLog.shift();
+}
+const CK_HFOV = 1.0472;      // camera horizontal FOV (rad) — matches the X3 cam
+const CLASS_H = { person: 1.7, car: 1.5, truck: 2.6, bus: 3.0, bicycle: 1.1,
+                  motorcycle: 1.2, "dog": 0.6, "cat": 0.3, "chair": 0.9 };
+const CLASS_COLOR = { person: "#00d47e", car: "#e0a030", truck: "#e0a030",
+                      bus: "#e0a030", bicycle: "#40a0e0", motorcycle: "#40a0e0" };
+const ckColor = (label) => CLASS_COLOR[label] || "#9fb0bd";
+
+/* ── the cockpit: one view for every source ────────────────────────────
+   A robot's camera and the sim's 3D render are both just "the stream"; the
+   tactical map, timeline and telemetry are derived from inputs (camera,
+   point cloud, pose) that BOTH sources provide. src = "robot" | "sim". */
+let COCKPIT = null;
+
+/* ── robot DECK mode: the connected robot drives the same multi-panel deck
+   the sim uses. Its pose places the bot, its lidar builds the ROBOT MAP and
+   the 3D world (VIEW panels render it from any angle), its camera fills the
+   EYES panel, its behavior lives in POLICY. Same deck, real telemetry. */
+let robotCloudSeen = 0, robotDeckOn = false;
+async function enterRobotDeck() {
+  MODE = "robot"; robotDeckOn = true;
+  if (levelGroup) levelGroup.visible = false;     // no sim walls
+  cloudOn = true; cloud.visible = true;
+  cloudReset(); occ.fill(0);
+  if (!scene.getObjectByName("robotGrid")) {
+    const grid = new THREE.GridHelper(120, 120, 0x1a2a38, 0x0f1820);
+    grid.name = "robotGrid"; grid.position.y = 0.01; scene.add(grid);
+  }
+  // keep LEVELS visible as the way back to the picker — never trap the user in
+  // the robot deck with no door out (relabelled so it reads as "the menu")
+  const lvl = $("btnLevels"); if (lvl) { lvl.style.display = ""; lvl.textContent = "⊞ MENU"; }
+  for (const sel of ['button[data-panel="p-runs"]', 'button[data-panel="p-brief"]']) {
+    const b = document.querySelector(sel); if (b) b.style.display = "none";
+  }
+  const eyesBtn = $("btnEyes"); if (eyesBtn) eyesBtn.style.display = "";
+  $("p-runs").classList.add("hidden");
+  // repurpose MISSION → robot identity / connection
+  const brief = $("p-brief");
+  if (brief) {
+    brief.querySelector(".p-head b").textContent = "ROBOT";
+    const sel = brief.querySelector("#levelSel"); if (sel) sel.style.display = "none";
+    $("briefTitle").textContent = "CONNECTED ROBOT";
+    $("briefText").innerHTML = "live over rosbridge — its pose, lidar map, camera and " +
+      "behavior fill this deck. The same policy file drives the sim and this robot.";
+    const rooms = $("rooms"); if (rooms) rooms.innerHTML = "";
+  }
+  // EYES camera feed (frame-polled, deterministic) — dock it via the layout
+  // so it lands in the same deck slot the sim uses, not floating at 0,0
+  layout["p-eyes"].hidden = false; applyLayout();
+  let camSrc = "robot";
+  $("eyesSrc").addEventListener("change", (e) => { camSrc = e.target.value; });
+  (function pump() {
+    const img = new Image();
+    img.onload = () => { $("robotEyesImg").src = img.src; setTimeout(pump, 90); };
+    img.onerror = () => setTimeout(pump, 400);
+    img.src = `${RT_BASE()}/api/camera/frame?source=${camSrc}&t=${Date.now()}`;
+  })();
+  // POLICY edits the robot's running behavior
+  wireRobotPolicy();
+  // robot type → body, then start telemetry
+  try {
+    const r = await (await fetch("/api/ros/cloud")).json();
+    const ty = r.robot_type === "drone" ? "drone"
+             : r.robot_type === "humanoid" ? "biped" : "dog";
+    if (bot.type !== ty) { bot.type = ty; buildBody(ty); }
+  } catch {}
+  if (mainCamSel) mainCamSel.value = "chase";
+  pollRobotDeck();
+  pollRobotEyesDets();
+}
+
+async function wireRobotPolicy() {
+  // load the running behavior into the deck's POLICY editor; RUN deploys it
+  try {
+    const r = await (await fetch("/api/behaviors")).json();
+    const live = (r.behaviors || []).find((b) => b.enabled &&
+      !["fix_camera", "heartbeat", "player_policy"].includes(b.name));
+    if (live) {
+      robotPolicyName = live.name;
+      const src = await api("/api/behaviors/read", { name: live.name });
+      if (src.ok) setCode(src.source);
+      policyStatus(`editing ${live.name} — live on the robot · RUN deploys`, "ok");
+    } else policyStatus("no behavior running — write one and RUN", "");
+  } catch {}
+}
+
+async function pollRobotDeck() {
+  if (!robotDeckOn) return;
+  try {
+    const r = await (await fetch("/api/ros/cloud")).json();
+    const p = r.pose;
+    if (p) {
+      bot.pos.x = p.x; bot.pos.z = p.z; bot.alt = (p.y ?? 0);
+      bot.heading = p.heading || 0;
+      if (bot.group) {
+        bot.group.position.set(bot.pos.x, bot.type === "drone" ? bot.alt : (bodySpec?.standH || 0.4), bot.pos.z);
+        bot.group.rotation.y = bot.heading;
+      }
+    }
+    // lidar → occupancy map + 3D cloud (the deck's ROBOT MAP + scene)
+    if (r.lidar && r.lidar.length) { lastLidar = r.lidar; integrateLidar(lastLidar); }
+    cloudCommit(); drawMap();
+    // status panel
+    $("teleOdo") && ($("teleOdo").textContent = `${odo.toFixed(1)} m`);
+    if ($("telePose")) $("telePose").textContent = bot.type === "drone"
+      ? `x ${bot.pos.x.toFixed(1)} · z ${bot.pos.z.toFixed(1)} · alt ${bot.alt.toFixed(1)}`
+      : `x ${bot.pos.x.toFixed(1)} · z ${bot.pos.z.toFixed(1)} · θ ${bot.heading.toFixed(2)}`;
+    const link = $("link"); if (link) { link.textContent = `robot: ${r.robot_type || "live"}`; link.className = "link on"; }
+  } catch {}
+  setTimeout(pollRobotDeck, 120);
+}
+
+async function pollRobotEyesDets() {
+  if (!robotDeckOn) return;
+  try {
+    const r = await (await fetch("/api/robot/detections")).json();
+    const ov = $("robotEyesOv"); if (ov) {
+      ov.innerHTML = "";
+      const host = ov.parentElement.getBoundingClientRect();
+      const iw = r.w || 16, ih = r.h || 9;
+      const scale = Math.max(host.width / iw, host.height / ih);
+      const dw = iw * scale, dh = ih * scale, ox = (host.width - dw) / 2, oy = (host.height - dh) / 2;
+      for (const d of (r.detections || [])) {
+        const box = document.createElement("div");
+        box.style.cssText = `position:absolute;border:1.5px solid #00d47e;border-radius:2px;` +
+          `left:${ox + d.x * dw}px;top:${oy + d.y * dh}px;width:${d.w * dw}px;height:${d.h * dh}px`;
+        box.innerHTML = `<span style="position:absolute;top:-15px;left:-1px;font-size:9px;` +
+          `background:#00d47e;color:#06080a;padding:0 4px;border-radius:2px;white-space:nowrap">` +
+          `${d.label} ${(d.conf * 100).toFixed(0)}%</span>`;
+        ov.appendChild(box);
+      }
+    }
+  } catch {}
+  setTimeout(pollRobotEyesDets, 250);
+}
+
+let simArmed = false;   // the sim policy only drives after you DEPLOY — no
+                        // surprise dog spinning in circles on arrival
+function enterRobotMode() { enterRobotDeck(); }   // robot drives the deck
+function enterSimCockpit() { /* sim uses the deck directly; nothing to enter */ }
+
+function enterCockpit(src) {
+  COCKPIT = src;
+  if (src === "robot") MODE = "robot";
+  document.body.classList.add("cockpit", "src-" + src);
+  const st = document.getElementById("start");
+  if (st) st.classList.remove("show");
+
+  // shared: syntax-highlighted policy editor
+  const code = $("ck-code"), hl = $("ck-hl");
+  const sync = () => { hl.firstChild.innerHTML = ckHighlight(code.value);
+                       hl.scrollTop = code.scrollTop; hl.scrollLeft = code.scrollLeft; };
+  code.addEventListener("input", sync);
+  code.addEventListener("scroll", () => { hl.scrollTop = code.scrollTop; hl.scrollLeft = code.scrollLeft; });
+  code.addEventListener("keydown", (e) => {           // tab inserts spaces
+    if (e.key === "Tab") { e.preventDefault();
+      const s = code.selectionStart, en = code.selectionEnd;
+      code.value = code.value.slice(0, s) + "    " + code.value.slice(en);
+      code.selectionStart = code.selectionEnd = s + 4; sync(); }
+  });
+  window.__ckSyncCode = sync;
+
+  // shared: policy slide-in + source picker
+  const pol = $("ck-policy");
+  $("ck-policy-btn").addEventListener("click", () => pol.classList.toggle("open"));
+  $("ck-policy-close").addEventListener("click", () => pol.classList.remove("open"));
+  $("ck-policy-expand").addEventListener("click", () => pol.classList.toggle("wide"));
+  $("ck-hold").addEventListener("click", () => ckSetPaused(!ckPaused));
+  $("ck-deploy").addEventListener("click", ckDeploy);
+  $("ck-stop").addEventListener("click", ckStop);
+  const srcBtn = $("ck-source-btn"), srcMenu = $("ck-sources");
+  srcBtn.addEventListener("click", () => { srcMenu.classList.add("open"); buildSourceMenu(); });
+  $("ck-src-close").addEventListener("click", () => srcMenu.classList.remove("open"));
+  srcMenu.addEventListener("click", (e) => {           // click backdrop to close
+    if (e.target === srcMenu) srcMenu.classList.remove("open"); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") srcMenu.classList.remove("open"); });
+
+  ckTimeline();
+
+  if (src === "robot") {
+    // stream = the robot camera, polled one frame at a time (deterministic)
+    let camSource = "robot";
+    $("ck-src").addEventListener("change", (e) => { camSource = e.target.value; });
+    // Honest feed state: operators must know if the video is live or frozen
+    // (teleop UX — a stale feed at >300ms is unsafe to drive against).
+    const setLive = (ok) => {
+      const el = $("ck-live"); if (!el) return;
+      const dot = el.querySelector(".dot"), txt = el.querySelector("span:last-child");
+      if (dot) dot.style.background = ok ? "#00d47e" : "#d4a030";
+      if (txt) txt.textContent = ok ? "LIVE" : "NO SIGNAL";
+    };
+    (function pumpCam() {
+      const img = new Image();
+      img.onload = () => { $("ck-cam").src = img.src; setLive(true); setTimeout(pumpCam, 90); };
+      img.onerror = () => { setLive(false); setTimeout(pumpCam, 400); };
+      img.src = `${RT_BASE()}/api/camera/frame?source=${camSource}&t=${Date.now()}`;
+    })();
+    fetch("/api/sources").then((r) => r.json()).then((s) => {
+      const h = (s.robot && s.robot.host) || "127.0.0.1";
+      $("ck-where").textContent = `${h === "127.0.0.1" ? "local" : "network"} · rosbridge ${h}`;
+    }).catch(() => {});
+    // a leftover sim sandbox policy (player_policy) would fall through to the
+    // real robot once no arena browser is feeding state — disable it on entry
+    api("/api/behaviors/disable", { name: "player_policy" }).catch(() => {});
+    loadRobotBehavior(); pollRobot(); pollRobotDetections();
+    ckSetPaused(false, true);   // the robot's behavior is running; label reads PAUSE
+  } else {
+    // stream = the sim's 3D render. POV is "what the robot sees"; the game
+    // loop keeps rendering it full-screen behind the cockpit chrome.
+    // The sim is driven by player_policy; disable the webcam follow behavior so
+    // it doesn't fight the sandbox policy for the arena (or spam "no actuator").
+    api("/api/behaviors/disable", { name: "follow_person" }).catch(() => {});
+    $("ck-src").style.display = "none";
+    // chase cam: a stable 3rd-person view of the robot in its world, so a
+    // turning policy doesn't whip the whole screen around like POV does
+    if (mainCamSel) mainCamSel.value = "chase";
+    $("ck-where").textContent = "browser sim · rapier physics";
+    $("ck-type").textContent = (LV?.robot || bot.type || "robot").toUpperCase();
+    $("ck-glyph").textContent = TYPE_GLYPH[bot.type] || "◈";
+    $("ck-code").value = getCode(); sync();
+    $("ck-pname").textContent = "player_policy";
+    cloudOn = false; cloud.visible = false;   // lidar lives in the 2D map, not sprayed on the scene
+    ckSetPaused(true, true);                   // start calm; label reads RESUME
+    // if this tab closes, make sure the sim's policy can't be left enabled
+    // and fall through to drive a real robot once the arena goes inactive
+    addEventListener("beforeunload", () => {
+      try {
+        fetch("/api/behaviors/disable", { method: "POST", keepalive: true,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "player_policy" }) });
+      } catch {}
+    });
+    ckPStat("paused — edit the policy, then DEPLOY to run", "");
+    $("ck-levels").addEventListener("click", () => showStart());
+    pollSimCockpit();
+  }
+}
+function $(id) { return document.getElementById(id); }
+
+/* sim cockpit data: the same panels the robot fills, fed from sim state.
+   Telemetry from the sim body, the tactical map from sightings + trail. */
+function pollSimCockpit() {
+  const now = performance.now();
+  // keep identity fresh — picking a new robot from LEVELS changes bot.type
+  $("ck-type").textContent = (LV?.robot || bot.type || "robot").toUpperCase();
+  $("ck-glyph").textContent = TYPE_GLYPH[bot.type] || "◈";
+  // trail + speed
+  if (ckTrail.length) { const prev = ckTrail[ckTrail.length - 1];
+    const sp = Math.hypot(bot.pos.x - prev.x, bot.pos.z - prev.z) /
+               Math.max(0.001, (now - (prev.t || now)) / 1000);
+    $("ck-spd").textContent = (isFinite(sp) ? sp : 0).toFixed(1); }
+  ckTrail.push({ x: bot.pos.x, z: bot.pos.z, t: now });
+  if (ckTrail.length > 240) ckTrail.shift();
+  const hdg = ((bot.heading * 180 / Math.PI) % 360 + 360) % 360;
+  $("ck-hdg").textContent = hdg.toFixed(0) + "°";
+  const altChip = $("ck-alt").parentElement;
+  if (bot.type === "drone") { $("ck-alt").textContent = bot.alt.toFixed(1) + "m"; altChip.style.display = ""; }
+  else altChip.style.display = "none";
+  $("ck-osd-tl").innerHTML = `<span class="lbl">POS</span> ${bot.pos.x.toFixed(1)}, ${bot.pos.z.toFixed(1)}` +
+    (bot.type === "drone" ? `<br><span class="lbl">ALT</span> ${bot.alt.toFixed(2)} m` : "");
+  $("ck-osd-tr").innerHTML = `<span class="lbl">HDG</span> ${hdg.toFixed(0)}°`;
+  // objects from the sim robot's OWN client-side perception (currentDets:
+  // world-located raycast detections) — never the shared server sightings
+  ckObjects.clear();
+  for (const d of currentDets) {
+    const pp = d.ppos || (d.p && (d.p.kind === "crate" ? d.p.mesh.position : d.p.pos));
+    if (!pp) continue;
+    const label = (d.p && d.p.label || "object").split(" ")[0];
+    ckObjects.set((d.p && d.p.id != null ? d.p.id : label) + "", {
+      label, wx: pp.x, wz: pp.z, dist: d.dist, moving: false, followed: false, last: now });
+  }
+  $("ck-osd-bl").innerHTML = ckObjects.size
+    ? `<span class="lbl">SENSING</span> ${ckObjects.size} object(s) in view`
+    : `<span class="lbl">SCANNING</span>`;
+  // accumulate the sim lidar into a world-frame map (the dog has a 36-ray
+  // scanner; [0] is dead ahead, CCW) — this is the generated map building up
+  for (let i = 0; i < lastLidar.length; i++) {
+    const r = lastLidar[i];
+    if (r == null || r >= 7.9) continue;             // 8m = no return
+    const a = bot.heading + (i / lastLidar.length) * Math.PI * 2;
+    simCloud.push([bot.pos.x + Math.cos(a) * r, bot.pos.z - Math.sin(a) * r, r]);
+  }
+  if (simCloud.length > 4000) simCloud.splice(0, simCloud.length - 4000);
+  drawTacticalMap({ pose: { x: bot.pos.x, z: bot.pos.z, y: bot.alt, heading: bot.heading },
+                    points: simCloud, lidar: lastLidar, robot_type: bot.type });
+  setTimeout(pollSimCockpit, 120);
+}
+
+/* lightweight Python highlighter for the policy underlay. Tokenizes in one
+   pass so strings/comments swallow keywords inside them. */
+const CK_KW = new Set(("def return if elif else for while in and or not is None True False " +
+  "import from as with try except finally class lambda yield break continue pass global " +
+  "nonlocal raise assert del await async").split(" "));
+const CK_BUILTIN = new Set("robot self range len min max abs int float str print round sum".split(" "));
+function ckEsc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function ckHighlight(src) {
+  let out = "", i = 0, n = src.length;
+  while (i < n) {
+    const c = src[i];
+    if (c === "#") { let j = i; while (j < n && src[j] !== "\n") j++;
+      out += `<span class="tk-com">${ckEsc(src.slice(i, j))}</span>`; i = j; continue; }
+    if (c === '"' || c === "'") {
+      const triple = src.slice(i, i + 3);
+      if (triple === '"""' || triple === "'''") {       // docstring / block string
+        let j = i + 3; while (j < n && src.slice(j, j + 3) !== triple) j++;
+        out += `<span class="tk-str">${ckEsc(src.slice(i, j + 3))}</span>`; i = j + 3; continue;
+      }
+      const q = c; let j = i + 1;
+      while (j < n && src[j] !== q && src[j] !== "\n") { if (src[j] === "\\") j++; j++; }
+      out += `<span class="tk-str">${ckEsc(src.slice(i, j + 1))}</span>`; i = j + 1; continue; }
+    if (c === "@") { let j = i + 1; while (j < n && /[\w.]/.test(src[j])) j++;
+      out += `<span class="tk-dec">${ckEsc(src.slice(i, j))}</span>`; i = j; continue; }
+    if (/[A-Za-z_]/.test(c)) { let j = i; while (j < n && /[\w]/.test(src[j])) j++;
+      const w = src.slice(i, j);
+      const prev = src.slice(0, i).trimEnd();
+      const cls = CK_KW.has(w) ? "tk-kw"
+        : (prev.endsWith("def") || prev.endsWith("class")) ? "tk-def"
+        : CK_BUILTIN.has(w) ? "tk-bn" : null;
+      out += cls ? `<span class="${cls}">${w}</span>` : ckEsc(w); i = j; continue; }
+    if (/[0-9]/.test(c)) { let j = i; while (j < n && /[\d.]/.test(src[j])) j++;
+      out += `<span class="tk-num">${ckEsc(src.slice(i, j))}</span>`; i = j; continue; }
+    out += ckEsc(c); i++;
+  }
+  return out;
+}
+
+/* the source picker: every robot / sim this runtime can reach, in one menu.
+   A connected robot, a sim arena, and any rosbridge discovered on the LAN —
+   pick one and the page switches to it. Answers "I don't want the drone,
+   give me something else even though ROS is connected." */
+async function buildSourceMenu() {
+  const list = $("ck-src-list");
+  list.innerHTML = '<div class="ck-source"><span class="ic">…</span>' +
+    '<div class="meta"><div class="nm">scanning…</div></div></div>';
+  let s = {};
+  try { s = await (await fetch("/api/sources")).json(); } catch {}
+  const rows = [];
+  // the connected robot (active)
+  if (s.robot && s.robot.connected) {
+    rows.push({ ic: TYPE_GLYPH[s.robot.type] || "◈",
+      nm: (s.robot.type || "robot").replace("_", " ").toUpperCase(),
+      sub: `rosbridge ${s.robot.host}`, badge: "live", active: true,
+      onPick: () => $("ck-sources").classList.remove("open") });
+  }
+  // other rosbridges on the network
+  for (const f of ((s.network && s.network.found) || [])) {
+    if (s.robot && s.robot.connected && f.host === s.robot.host) continue;
+    rows.push({ ic: "◈", nm: "ROBOT", sub: `rosbridge ${f.host}:${f.port}`, badge: "go",
+      onPick: async () => { await api("/api/ros/connect", { host: f.host, port: f.port });
+        localStorage.removeItem("roborun.source"); location.reload(); } });
+  }
+  // the browser sim arena — leave the robot without disconnecting it
+  rows.push({ ic: "◐", nm: "SIM ARENA", sub: "browser physics · code & test policies",
+    onPick: () => { localStorage.setItem("roborun.source", "sim"); location.reload(); } });
+
+  list.innerHTML = "";
+  for (const r of rows) {
+    const el = document.createElement("div");
+    el.className = "ck-source" + (r.active ? " active" : "");
+    el.innerHTML = `<span class="ic">${r.ic}</span><div class="meta">` +
+      `<div class="nm">${r.nm}</div><div class="sub">${r.sub}</div></div>` +
+      (r.badge ? `<span class="badge ${r.badge}">${r.badge === "go" ? "CONNECT" : "LIVE"}</span>` : "");
+    el.addEventListener("click", r.onPick);
+    list.appendChild(el);
+  }
+}
+
+async function loadRobotBehavior() {
+  try {
+    const r = await (await fetch("/api/behaviors")).json();
+    const live = (r.behaviors || []).find((b) =>
+      b.enabled && !["fix_camera", "heartbeat", "player_policy"].includes(b.name));
+    if (!live) { ckPStat("no behavior running — write one and DEPLOY", ""); return; }
+    robotPolicyName = live.name;
+    $("ck-pname").textContent = live.name;
+    const src = await api("/api/behaviors/read", { name: live.name });
+    if (src.ok) { $("ck-code").value = src.source;
+      if (window.__ckSyncCode) window.__ckSyncCode();
+      ckPStat(`live: ${live.name}`, "ok"); }
+  } catch {}
+}
+function ckPStat(msg, cls) {
+  const el = $("ck-pstat"); el.textContent = msg; el.className = "stat " + (cls || "");
+}
+// the HOLD button is a clear pause/resume toggle: PAUSE stops the policy
+// (the robot/sim holds), RESUME runs it again. Label reflects current state.
+let ckPaused = false;
+function ckSetPaused(paused, silent) {
+  ckPaused = paused;
+  const btn = $("ck-hold");
+  if (btn) { btn.innerHTML = paused ? "▶ RESUME" : "⏸ PAUSE";
+             btn.classList.toggle("danger", !paused); }
+  if (silent) return;
+  if (COCKPIT === "sim") {
+    simArmed = !paused;
+    if (!paused) setCode($("ck-code").value);
+    try { document.getElementById(paused ? "btnStop" : "btnRun").click(); } catch {}
+    ckPStat(paused ? "paused — DEPLOY or RESUME to run" : "running in the sim", paused ? "" : "ok");
+  } else {
+    const name = robotPolicyName || "robot_policy";
+    api(paused ? "/api/behaviors/disable" : "/api/behaviors/enable", { name }).catch(() => {});
+    ckPStat(paused ? `${name} paused — robot holds` : `${name} running`, paused ? "" : "ok");
+  }
+}
+
+// styled confirm — a cockpit modal instead of the native browser popup
+function ckConfirm(title, msg) {
+  return new Promise((resolve) => {
+    const m = $("ck-confirm");
+    $("ck-confirm-ttl").textContent = title;
+    $("ck-confirm-msg").textContent = msg;
+    m.classList.add("open");
+    const done = (v) => { m.classList.remove("open");
+      $("ck-confirm-yes").onclick = null; $("ck-confirm-no").onclick = null;
+      m.onclick = null; resolve(v); };
+    $("ck-confirm-yes").onclick = () => done(true);
+    $("ck-confirm-no").onclick = () => done(false);
+    m.onclick = (e) => { if (e.target === m) done(false); };
+  });
+}
+
+async function ckDeploy() {
+  const source = $("ck-code").value;
+  if (COCKPIT === "sim") {
+    // the sim runs the same policy format; hand it to the game's run path
+    setCode(source);
+    document.getElementById("btnRun").click();
+    simArmed = true;
+    ckSetPaused(false, true);
+    ckPStat("running in the sim — edit & DEPLOY to iterate", "ok");
+    return;
+  }
+  const name = robotPolicyName || "robot_policy";
+  if (!source.includes("@behavior")) { ckPStat("needs an @behavior function", "err"); return; }
+  const ok = await ckConfirm(`⚠ Deploy "${name}" to the CONNECTED ROBOT?`,
+    "It hot-reloads and starts moving real hardware immediately.");
+  if (!ok) { ckPStat("deploy cancelled", ""); return; }
+  ckPStat("saving…", "");
+  const w = await api("/api/behaviors/write", { name, source });
+  if (!w.ok) { ckPStat(w.error || "write failed", "err"); return; }
+  await api("/api/behaviors/enable", { name });
+  robotPolicyName = name; $("ck-pname").textContent = name;
+  ckPStat(`live on the robot — DEPLOY applies edits`, "ok");
+}
+async function ckStop() {
+  if (COCKPIT === "sim") { simArmed = false; document.getElementById("btnStop").click();
+    ckSetPaused(true, true); ckPStat("paused — DEPLOY to run", ""); return; }
+  const name = robotPolicyName || "robot_policy";
+  await api("/api/behaviors/disable", { name }).catch(() => {});
+  ckSetPaused(true, true); ckPStat(`${name} stopped — robot holds`, "");
+}
+
+async function pollRobot() {
+  try {
+    const r = await (await fetch("/api/ros/cloud")).json();
+    const p = r.pose;
+    ckPose = p || ckPose;
+    if (p) {
+      const now = performance.now();
+      if (ckTrail.length) {
+        const prev = ckTrail[ckTrail.length - 1];
+        const d = Math.hypot(p.x - prev.x, p.z - prev.z);
+        const dtspeed = d / Math.max(0.001, (now - (prev.t || now)) / 1000);
+        $("ck-spd").textContent = (isFinite(dtspeed) ? dtspeed : 0).toFixed(1);
+      }
+      ckTrail.push({ x: p.x, z: p.z, t: now });
+      if (ckTrail.length > 240) ckTrail.shift();
+      const isDrone = r.robot_type === "drone";
+      const altChip = $("ck-alt").parentElement;
+      if (isDrone) {
+        $("ck-alt").textContent = (p.y ?? 0).toFixed(1) + "m";
+        altChip.style.display = "";
+        altChip.classList.toggle("warn", (p.y ?? 0) > 8);
+      } else { altChip.style.display = "none"; }
+      const hdg = ((p.heading || 0) * 180 / Math.PI + 360) % 360;
+      $("ck-hdg").textContent = hdg.toFixed(0) + "°";
+      $("ck-osd-tl").innerHTML =
+        `<span class="lbl">POS</span> ${p.x.toFixed(1)}, ${p.z.toFixed(1)}` +
+        (isDrone ? `<br><span class="lbl">ALT</span> ${(p.y ?? 0).toFixed(2)} m` : "");
+      $("ck-osd-tr").innerHTML = `<span class="lbl">HDG</span> ${hdg.toFixed(0)}°`;
+    }
+    if (r.robot_type) {
+      $("ck-type").textContent = r.robot_type.replace("_", " ").toUpperCase();
+      $("ck-glyph").textContent = TYPE_GLYPH[r.robot_type] || "◈";
+      // the map shows what the robot actually senses
+      $("ck-map-tag").textContent = (r.lidar && r.lidar.length) ? "lidar · trail" : "trail";
+    }
+    drawTacticalMap(r);
+  } catch {}
+  setTimeout(pollRobot, 150);
+}
+
+/* range + bearing of a detection, projected to a world (x,z) point using
+   the drone's pose. Distance comes from how tall the object stands in the
+   frame against its real-world height — the same monocular cue the follow
+   behavior leans on, good to roughly ±20%. */
+function projectDetection(d, pose, aspect) {
+  const realH = CLASS_H[d.label] || 1.4;
+  const vfov = 2 * Math.atan(Math.tan(CK_HFOV / 2) * aspect);
+  const dist = Math.max(0.6, Math.min(60, realH / (2 * Math.tan(vfov / 2) * Math.max(0.02, d.h))));
+  const cxn = d.x + d.w / 2;
+  const bearing = (pose.heading || 0) + (0.5 - cxn) * CK_HFOV;
+  return { dist, bearing,
+           wx: pose.x + Math.cos(bearing) * dist,
+           wz: pose.z - Math.sin(bearing) * dist };
+}
+
+function drawTacticalMap(r) {
+  const cv = $("ck-mapcv"); if (!cv) return;
+  const ctx = cv.getContext("2d"); const W = cv.width, H = cv.height;
+  const cx = W / 2, cy = H / 2, R = Math.min(W, H) / 2 - 10;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "#070b0e"; ctx.fillRect(0, 0, W, H);
+  const rx = r.pose?.x || 0, rz = r.pose?.z || 0;
+  // auto-scale to hold the trail and every tracked object in view
+  let span = 6;
+  for (const t of ckTrail) span = Math.max(span, Math.abs(t.x - rx), Math.abs(t.z - rz));
+  for (const o of ckObjects.values()) span = Math.max(span, Math.abs(o.wx - rx) + 1, Math.abs(o.wz - rz) + 1);
+  const sc = R / span;
+  // range rings + their real distance, so the map reads in meters
+  ctx.font = "8px ui-monospace, Menlo, monospace";
+  for (let i = 1; i <= 3; i++) {
+    ctx.strokeStyle = "rgba(42,58,70,.5)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, R * i / 3, 0, 7); ctx.stroke();
+    ctx.fillStyle = "rgba(90,107,120,.7)";
+    ctx.fillText((span * i / 3).toFixed(0) + "m", cx + 2, cy - R * i / 3 + 9);
+  }
+  // occupancy map: bin accumulated lidar into world cells so nearby returns
+  // merge into solid walls — a built-up map, not a scatter of dots (the more
+  // hits land in a cell, the more confidently it's a wall, so the brighter)
+  const pts = r.points || [];
+  if (pts.length) {
+    const CELL = 0.3;                          // metres per cell
+    const cells = new Map();
+    for (const pt of pts) {
+      const k = Math.round(pt[0] / CELL) + "," + Math.round(pt[1] / CELL);
+      cells.set(k, (cells.get(k) || 0) + 1);
+    }
+    const s = Math.max(2, CELL * sc);
+    for (const [k, n] of cells) {
+      const c = k.indexOf(",");
+      const gx = +k.slice(0, c) * CELL, gz = +k.slice(c + 1) * CELL;
+      const px = cx + (gx - rx) * sc, py = cy + (gz - rz) * sc;
+      if (px < 0 || px >= W || py < 0 || py >= H) continue;
+      ctx.fillStyle = `rgba(0,212,126,${Math.min(0.9, 0.3 + n * 0.14)})`;
+      ctx.fillRect(px - s / 2, py - s / 2, s, s);
+    }
+  }
+  // travel trail
+  ctx.strokeStyle = "rgba(0,212,126,.5)"; ctx.lineWidth = 1.5; ctx.beginPath();
+  ckTrail.forEach((t, i) => { const px = cx + (t.x - rx) * sc, py = cy + (t.z - rz) * sc;
+    i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+  ctx.stroke();
+  // tracked objects — stationary as hollow squares, movers filled with a
+  // heading tail, the followed target ringed
+  const now = performance.now();
+  for (const o of ckObjects.values()) {
+    const px = cx + (o.wx - rx) * sc, py = cy + (o.wz - rz) * sc;
+    if (px < 2 || px > W - 2 || py < 2 || py > H - 2) continue;
+    const col = ckColor(o.label);
+    if (o.followed) {
+      const pulse = 0.5 + 0.5 * Math.sin(now / 240);
+      ctx.strokeStyle = col; ctx.globalAlpha = 0.4 + 0.6 * pulse; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(px, py, 6 + pulse * 2, 0, 7); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    if (o.moving) {
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(px, py, 2.6, 0, 7); ctx.fill();
+      if (o.vx !== undefined) { ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.beginPath();
+        ctx.moveTo(px, py); ctx.lineTo(px + o.vx * sc * 1.2, py + o.vz * sc * 1.2); ctx.stroke(); }
+    } else {
+      ctx.strokeStyle = col; ctx.globalAlpha = 0.8; ctx.lineWidth = 1.2;
+      ctx.strokeRect(px - 2.5, py - 2.5, 5, 5); ctx.globalAlpha = 1;
+    }
+  }
+  // robot + heading wedge, always on top
+  const hd = r.pose?.heading || 0;
+  ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(cx, cy, 3.5, 0, 7); ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,.85)"; ctx.lineWidth = 1.5; ctx.beginPath();
+  ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(hd) * 15, cy - Math.sin(hd) * 15); ctx.stroke();
+}
+
+async function pollRobotDetections() {
+  try {
+    const r = await (await fetch("/api/robot/detections")).json();
+    const ov = $("ck-overlay"); ov.innerHTML = "";
+    const iw = r.w || 16, ih = r.h || 9, vw = innerWidth, vh = innerHeight;
+    const scale = Math.max(vw / iw, vh / ih);
+    const dw = iw * scale, dh = ih * scale, ox = (vw - dw) / 2, oy = (vh - dh) / 2;
+    const pose = ckPose, aspect = ih / iw, now = performance.now();
+    const dets = r.detections || [];
+    // pick the followed target the way follow_person_drone does: the
+    // highest-confidence person
+    let followed = null;
+    for (const d of dets) if (d.label === "person" &&
+        (!followed || d.conf > followed.conf)) followed = d;
+
+    const seen = new Set();
+    for (const d of dets) {
+      const proj = pose ? projectDetection(d, pose, aspect) : null;
+      // draw the camera box, with live distance when we can estimate it
+      const box = document.createElement("div"); box.className = "ck-det";
+      box.style.left = (ox + d.x * dw) + "px"; box.style.top = (oy + d.y * dh) + "px";
+      box.style.width = (d.w * dw) + "px"; box.style.height = (d.h * dh) + "px";
+      box.style.borderColor = ckColor(d.label);
+      const tag = box.appendChild(document.createElement("span"));
+      tag.className = "tag"; tag.style.background = ckColor(d.label);
+      tag.textContent = `${d.label} ${(d.conf * 100).toFixed(0)}%` +
+        (proj ? ` · ${proj.dist.toFixed(1)}m` : "");
+      ov.appendChild(box);
+
+      // world-track it: id by track_id when present, else by class+bearing
+      if (proj && pose) {
+        const id = d.track_id != null ? "t" + d.track_id
+                 : d.label + Math.round((d.x + d.w / 2) * 8);
+        seen.add(id);
+        let o = ckObjects.get(id);
+        if (!o) { o = { label: d.label, hist: [] }; ckObjects.set(id, o); }
+        o.wx = proj.wx; o.wz = proj.wz; o.dist = proj.dist; o.last = now;
+        o.followed = (d === followed);
+        o.hist.push({ x: proj.wx, z: proj.wz, t: now });
+        if (o.hist.length > 14) o.hist.shift();
+        // moving vs stationary: displacement across the history window
+        if (o.hist.length >= 6) {
+          const a = o.hist[0], b = o.hist[o.hist.length - 1];
+          const dt = Math.max(0.001, (b.t - a.t) / 1000);
+          const sp = Math.hypot(b.x - a.x, b.z - a.z) / dt;
+          o.moving = sp > 0.35;
+          o.vx = (b.x - a.x) / dt; o.vz = (b.z - a.z) / dt;
+        }
+      }
+    }
+    // age out objects we haven't seen for ~1.5s
+    for (const [id, o] of ckObjects) if (now - o.last > 1500) ckObjects.delete(id);
+
+    // followed-target readout in the lower-left OSD
+    if (followed && pose) {
+      const proj = projectDetection(followed, pose, aspect);
+      const o = [...ckObjects.values()].find((x) => x.followed);
+      const motion = o && o.moving ? "MOVING" : "STATIONARY";
+      $("ck-osd-bl").innerHTML =
+        `<span class="lbl">TRACK</span> person · ${proj.dist.toFixed(1)} m · ${motion}`;
+    } else {
+      $("ck-osd-bl").innerHTML = `<span class="lbl">SCANNING</span>`;
+    }
+  } catch {}
+  setTimeout(pollRobotDetections, 200);
+}
+
+/* the timeline: the robot's stream of decisions and sightings, rendered as
+   it happens. Same idea as the sim arena's event feed — one consistent
+   "what is happening" surface, whatever the source is. */
+const CK_SRC_COLOR = { follow_person_drone: "#00d47e", fix_camera: "#40a0e0",
+  ros: "#e0a030", frame: "#9fb0bd", camera: "#9fb0bd", system: "#6b7b88",
+  yolo: "#00d47e", policy: "#40a0e0" };
+let _simMoveAcc = 0;
+async function ckTimeline() {
+  try {
+    let rows;
+    if (COCKPIT === "sim") {
+      // the sim's OWN perception + decisions, isolated from any robot on
+      // this runtime — never the shared server log
+      rows = simLog.filter((e) => (e.title || "").trim());
+    } else {
+      const evs = (await (await fetch("/api/run/events")).json()).events || [];
+      rows = evs.filter((e) => e.source !== "arena" && (e.title || "").trim() &&
+        !/level loaded|behaviors:/.test(e.title));
+    }
+    const list = $("ck-tl-list");
+    const fresh = rows.slice(Math.max(0, rows.length - 7));
+    list.innerHTML = "";
+    for (const e of fresh) {
+      const row = document.createElement("div"); row.className = "ck-tl-row";
+      const t = e.ts ? new Date(e.ts * 1000) : new Date();
+      const hhmmss = t.toTimeString().slice(0, 8);
+      const col = CK_SRC_COLOR[e.source] || "#6b7b88";
+      row.innerHTML = `<span class="t">${hhmmss}</span>` +
+        `<span class="dot" style="background:${col}"></span>` +
+        `<span class="m">${(e.title || "").replace(/</g, "&lt;")}</span>`;
+      list.appendChild(row);
+    }
+  } catch {}
+  setTimeout(ckTimeline, 600);
+}
+
+/* ── network robots (sim modes): a rosbridge on the wifi is a source ───── */
+async function pollNetworkRobots() {
+  const chip = $("ck-net");
+  // this chip exists for ONE job: in the sim cockpit, offer to jump to a
+  // connected robot. The menu has the ROS card; the robot cockpit is already
+  // there. Anywhere but the sim cockpit, it must stay hidden.
+  if (COCKPIT !== "sim") { chip.style.display = "none"; setTimeout(pollNetworkRobots, 8000); return; }
+  try {
+    const r = await (await fetch("/api/sources")).json();
+    if (r.robot && r.robot.connected) {
+      chip.textContent = "✈ robot connected · enter cockpit →";
+      chip.style.display = "block";
+      chip.onclick = () => { localStorage.removeItem("roborun.source"); location.reload(); };
+    } else { chip.style.display = "none"; }
+  } catch {}
+  setTimeout(pollNetworkRobots, 8000);
+}
+
+function sendRobotMove(cmd) {
+  const now = performance.now();
+  if (now - lastMoveSent < 120) return;
+  lastMoveSent = now;
+  api("/api/ros/move", {
+    linear_x: cmd.forward || 0, linear_y: cmd.strafe || 0,
+    linear_z: cmd.climb || 0, angular_z: cmd.turn || 0,
+  }).catch(() => {});
 }
 async function bootWasm() {
   if (wasmRT || wasmLoading) return;
@@ -1269,7 +2068,7 @@ async function bootWasm() {
     wasmRT = await mod.loadWasmRuntime((m) => policyStatus(m, ""));
     linked = true;
     policyStatus("in-browser python ready — press RUN", "ok");
-    startAttemptRecording();
+    // no silent auto-record — recording is opt-in via the ● Record button
   } catch (e) {
     policyStatus(`python runtime failed to load: ${e.message || e}`, "err");
   }
@@ -1284,7 +2083,7 @@ let serverSightings = [];
 async function pollSightings() {
   if (MODE === "wasm" && wasmRT) {
     try { serverSightings = wasmRT.sightings() || []; } catch {}
-  } else if (linked) {
+  } else if (linked || MODE === "robot") {
     try {
       const r = await (await fetch("/api/sightings")).json();
       serverSightings = r.sightings || [];
@@ -1294,6 +2093,12 @@ async function pollSightings() {
 }
 async function pollCmd() {
   const el = document.getElementById("link");
+  if (MODE === "robot") {
+    el.textContent = "robot: live — behaviors run on the runtime";
+    el.className = "link on";
+    setTimeout(pollCmd, 2000);
+    return;
+  }
   if (MODE === "wasm") {
     // cmd arrives synchronously from each tick in pushState
     el.textContent = wasmRT ? "policy: in-browser python"
@@ -1306,10 +2111,13 @@ async function pollCmd() {
   if (MODE === "server") {
     try {
       const r = await (await fetch("/api/arena/cmd")).json();
-      serverCmd = r.cmd;
-      serverAnswer = r.answer;
-      serverIntent = r.intent || null;
-      if (!linked) { linked = true; startAttemptRecording(); }
+      // keep the arena link warm even while paused; just hold the cmd at zero
+      if (COCKPIT === "sim" && !simArmed) {
+        serverCmd = { forward: 0, strafe: 0, turn: 0, climb: 0, grip: 0 };
+      } else {
+        serverCmd = r.cmd; serverAnswer = r.answer; serverIntent = r.intent || null;
+      }
+      if (!linked) { linked = true; }  // no silent auto-record (opt-in via ● Record)
     } catch { linked = false; }
   }
   el.textContent = linked ? "behaviors: linked"
@@ -1329,8 +2137,14 @@ function currentState() {
   };
 }
 async function pushState() {
+  if (MODE === "robot") {              // the robot is the source of truth;
+    setTimeout(pushState, 1000);       // feeding the arena backend would
+    return;                            // reroute see()/move() to the sim
+  }
   if (MODE === "wasm" && wasmRT) {
-    try {
+    if (COCKPIT === "sim" && !simArmed) {
+      serverCmd = { forward: 0, strafe: 0, turn: 0, climb: 0, grip: 0 };  // holds until DEPLOY
+    } else try {
       const r = wasmRT.tick(currentState());
       serverCmd = r.cmd;
       serverAnswer = r.answer;
@@ -1492,6 +2306,131 @@ function buildStartScreen() {
     card.addEventListener("pointerleave", () => { p.hoverTarget = 0; });
     previews.push(p);
   }
+  // Embedded in Studio, Fleet and Real-robot (ROS) are their own top-level tabs,
+  // so don't duplicate them inside the single-robot Arena picker. Standalone /sim
+  // still shows them as the only entry points.
+  if (window.self === window.top) {
+    buildRosCard();    // the real-robot path sits alongside the sim robots
+    buildFleetCard();  // …and the many-robot path, on the right
+  }
+}
+
+/* the FLEET card: one quadruped is the sandbox; a fleet of them is the hard
+   part — sharing what each finds over a radio that only reaches so far. The
+   card is just the door; every knob (robots, radio, memory, the coordination
+   algorithm, even an LLM-written one) lives inside the sandbox itself. */
+function buildFleetCard() {
+  const grid = document.getElementById("startGrid");
+  const card = document.createElement("div");
+  card.className = "bot-card fleet-card";
+  card.innerHTML = `<div class="fleet-ic">◈◈◈</div>
+    <h3>FLEET<div class="fleet-sub">MANY QUADRUPEDS</div></h3>
+    <div class="tag">a swarm covering a field over an imperfect radio — tune the
+      range, memory and coordination algorithm, or have an LLM write a better one</div>
+    <div class="tasks">
+      <button class="fleet-go">▶ OPEN FLEET LAB</button>
+    </div>`;
+  grid.appendChild(card);
+  card.querySelector(".fleet-go").addEventListener("click", () => {
+    // hosted (static) builds have no /fleet route; the file sits beside arena
+    location.href = (MODE === "wasm") ? "./fleet.html" : "/fleet";
+  });
+}
+
+/* the ROS card: a complete system shows the real-robot path whether or not a
+   robot is connected right now. Connected → enter its cockpit; on the network
+   → connect; otherwise → type an IP. */
+function buildRosCard() {
+  const grid = document.getElementById("startGrid");
+  const card = document.createElement("div");
+  card.className = "bot-card ros-card";
+  card.innerHTML = `<div class="ros-ic">◈</div>
+    <h3>ROS<div class="ros-sub">GAZEBO · ISAAC · HARDWARE</div></h3>
+    <div class="tag">connect anything on rosbridge — a Gazebo or Isaac sim, or a real robot</div>
+    <div class="tasks" id="ros-tasks"><div class="ros-hint">looking for sources…</div></div>`;
+  grid.appendChild(card);
+  refreshRosCard();
+}
+let rosScanning = false;
+async function refreshRosCard() {
+  const tasks = document.getElementById("ros-tasks");
+  if (!tasks) return;
+  let s = null;
+  try { s = await (await fetch("/api/sources")).json(); } catch {}
+  tasks.innerHTML = "";
+  const enterRobot = () => { startEl.classList.remove("show"); enterRobotMode(); };
+  const connectAnd = async (host, port) => {
+    const r = await api("/api/ros/connect", { host, port: port || 9090 });
+    if (r && r.ok !== false) enterRobot();
+  };
+  if (!s) {                               // no runtime reachable at all
+    tasks.innerHTML = `<div class="ros-hint">start <b>roborun</b>, then point a ` +
+      `Gazebo or Isaac sim — or a real robot — at it over rosbridge. The same ` +
+      `policy file drives them all.</div>`;
+    return;
+  }
+
+  // 1) the live robot, if one is already connected on rosbridge
+  const connectedHost = s.robot && s.robot.connected ? s.robot.host : null;
+  if (connectedHost) {
+    const ty = s.robot.type;
+    const label = (ty && ty !== "webcam_only") ? ty.toUpperCase() : "ROSBRIDGE";
+    const btn = document.createElement("button");
+    btn.innerHTML = `▶ ${label} · ${connectedHost}<span class="live">LIVE</span>`;
+    btn.addEventListener("click", enterRobot);
+    tasks.appendChild(btn);
+  }
+
+  // 2) one view per robot the scan found on the network — pick any to enter it
+  const found = ((s.network && s.network.found) || []).filter((f) => f.host !== connectedHost);
+  for (const f of found) {
+    const btn = document.createElement("button");
+    btn.innerHTML = `▶ ${f.local ? "THIS MACHINE" : "ROBOT"} · ${f.host}:${f.port}` +
+      `<span class="live" style="border-color:#3a4d5a;color:#9fb0bd">rosbridge</span>`;
+    btn.addEventListener("click", () => connectAnd(f.host, f.port));
+    tasks.appendChild(btn);
+  }
+
+  // 3) the scan button — on a hosted page this is what trips the browser's
+  // "access devices on your network" permission, then loads every robot found
+  const scanBtn = document.createElement("button");
+  scanBtn.className = "ros-scan";
+  scanBtn.innerHTML = rosScanning ? "⟳ scanning the network…"
+    : (found.length ? "⚲ rescan network for robots" : "⚲ Allow network scan to load robots");
+  scanBtn.disabled = rosScanning;
+  scanBtn.addEventListener("click", () => scanNetwork());
+  tasks.appendChild(scanBtn);
+  if (!connectedHost && !found.length && !rosScanning) {
+    const hint = document.createElement("div"); hint.className = "ros-hint";
+    hint.innerHTML = "lets the browser see robots on your wifi — or enter a rosbridge IP below.";
+    tasks.appendChild(hint);
+  }
+
+  // 4) manual IP, always available as a fallback
+  const row = document.createElement("div"); row.className = "ros-connect";
+  row.innerHTML = `<input id="ros-ip" placeholder="robot ip" value="127.0.0.1">` +
+    `<button id="ros-go">CONNECT</button>`;
+  tasks.appendChild(row);
+  document.getElementById("ros-go").addEventListener("click", () => {
+    const ip = document.getElementById("ros-ip").value.trim(); if (ip) connectAnd(ip, 9090);
+  });
+}
+
+/* Kick a forced LAN scan and poll until it settles, then re-render the card
+   with one entry per robot found. The POST to the local runtime is also what
+   triggers the browser's local-network permission prompt on the hosted site. */
+async function scanNetwork() {
+  if (rosScanning) return;
+  rosScanning = true; refreshRosCard();
+  try { await api("/api/sources/scan", {}); } catch {}
+  const t0 = Date.now();
+  while (Date.now() - t0 < 7000) {
+    await new Promise((r) => setTimeout(r, 700));
+    let s = null;
+    try { s = await (await fetch("/api/sources")).json(); } catch {}
+    if (s && s.network && !s.network.scanning) break;
+  }
+  rosScanning = false; refreshRosCard();
 }
 let startRaf = 0, startLastT = 0;
 function animateStart(t) {
@@ -1510,17 +2449,20 @@ function animateStart(t) {
   if (startEl.classList.contains("show")) startRaf = requestAnimationFrame(animateStart);
 }
 function showStart() {
+  if (COCKPIT === "robot") return;   // never over a live robot cockpit
   startEl.classList.add("show");
+  refreshRosCard();                  // keep the real-robot options current
   cancelAnimationFrame(startRaf);
   startRaf = requestAnimationFrame(animateStart);
 }
 function enterLevel(i) {
   startEl.classList.remove("show");
-  loadLevel(i);
-  policyStatus("starter policy loaded — edit it (or don't), then press ▶ RUN · WASD grabs the wheel anytime", "ok");
+  loadLevel(i);   // the sim runs in the deck directly (3D scene + panels)
+  policyStatus("starter loaded — edit it, then RUN · WASD grabs the wheel anytime", "ok");
 }
 buildStartScreen();
-showStart();
+// splash shows after mode detection — a connected robot boots into its
+// cockpit, not into "pick a robot, pick a task"
 document.getElementById("startClose").addEventListener("click", () => startEl.classList.remove("show"));
 startEl.addEventListener("click", (e) => { if (e.target === startEl) startEl.classList.remove("show"); });
 document.getElementById("btnLevels").addEventListener("click", showStart);
@@ -1559,17 +2501,29 @@ document.getElementById("btnRun").addEventListener("click", async () => {
     if (!source.includes("@behavior")) {
       // words, not code: compile the mission into a policy first
       policyStatus("✨ compiling mission via LLM… (~10s)", "");
-      const c = await api("/api/behaviors/compile",
-                          { mission: source, context: LV.title + ": " + LV.brief });
+      const ctx = MODE === "robot"
+        ? "a real connected robot — be conservative with speeds"
+        : LV.title + ": " + LV.brief;
+      const c = await api("/api/behaviors/compile", { mission: source, context: ctx });
       if (!c.ok) { policyStatus(c.error, "err"); return; }
       source = c.source;
       setCode(source);                 // language in, code out — inspect/edit it
     }
+    // sandbox writes player_policy; robot mode edits the robot's own
+    // behavior file, and never without saying so
+    const name = MODE === "robot" ? robotPolicyName : "player_policy";
+    if (MODE === "robot" && !await ckConfirm(`⚠ Deploy "${name}" to the connected robot?`,
+        "It hot-reloads and starts moving hardware immediately.")) {
+      policyStatus("deploy cancelled", "");
+      return;
+    }
     policyStatus("saving…", "");
-    const w = await api("/api/behaviors/write", { name: "player_policy", source });
+    const w = await api("/api/behaviors/write", { name, source });
     if (!w.ok) { policyStatus(w.error, "err"); return; }
-    await api("/api/behaviors/enable", { name: "player_policy" });
-    policyStatus("running — hot reload applies edits on every RUN", "ok");
+    await api("/api/behaviors/enable", { name });
+    policyStatus(MODE === "robot"
+      ? `live on the robot as ${name} — RUN applies edits`
+      : "running — hot reload applies edits on every RUN", "ok");
   } catch { policyStatus("no server — run `roborun` first", "err"); }
 });
 document.getElementById("btnStop").addEventListener("click", async () => {
@@ -1579,14 +2533,58 @@ document.getElementById("btnStop").addEventListener("click", async () => {
     return;
   }
   try {
-    await api("/api/behaviors/disable", { name: "player_policy" });
-    policyStatus("stopped", "");
+    const name = MODE === "robot" ? robotPolicyName : "player_policy";
+    await api("/api/behaviors/disable", { name });
+    policyStatus(MODE === "robot" ? `${name} stopped — robot holds` : "stopped", "");
   } catch {}
 });
 
 /* ════════════════ telemetry ════════════════ */
 let odo = 0;
 const prevPos = new THREE.Vector3();
+
+/* live velocity sparkline (the SPEED panel) — sampled from the odometer
+   delta each telemetry tick (~8 Hz), held ~14 s. Antioch's velocity-under-
+   the-view, on our own loop. */
+const speedHist = [];           // m/s samples, newest last
+let _spkOdo = 0, _spkT = 0, _spdPeak = 0;
+function updateSpeedSpark() {
+  const now = performance.now();
+  if (_spkT) {
+    const sp = (odo - _spkOdo) / Math.max(0.001, (now - _spkT) / 1000);
+    const v = isFinite(sp) ? sp : 0;
+    speedHist.push(v);
+    if (speedHist.length > 120) speedHist.shift();
+    if (v > _spdPeak) _spdPeak = v;
+    const nowEl = document.getElementById("teleSpdNow");
+    if (nowEl) nowEl.textContent = v.toFixed(1);
+    const maxEl = document.getElementById("teleSpdMax");
+    if (maxEl) maxEl.textContent = _spdPeak.toFixed(1);
+  }
+  _spkOdo = odo; _spkT = now;
+  drawSpeedSpark();
+}
+function drawSpeedSpark() {
+  const cv = document.getElementById("teleSpark");
+  if (!cv || !cv.clientWidth) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight || 64;
+  if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const d = speedHist;
+  const max = Math.max(0.5, ...d);
+  g.strokeStyle = "rgba(120,175,144,.14)";
+  g.beginPath(); g.moveTo(0, h - 1); g.lineTo(w, h - 1); g.stroke();
+  if (d.length < 2) return;
+  const X = i => i / (d.length - 1) * w, Y = v => h - (v / max) * (h - 6) - 3;
+  g.beginPath();
+  d.forEach((v, i) => { const x = X(i), y = Y(v); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+  g.strokeStyle = "#00d47e"; g.lineWidth = 1.5; g.stroke();
+  g.lineTo(w, h); g.lineTo(0, h); g.closePath();
+  g.fillStyle = "rgba(0,212,126,.10)"; g.fill();
+}
 function currentRoom() {
   for (const r of LV.rooms || []) {
     const [x1, z1, x2, z2] = r.rect;
@@ -1598,17 +2596,18 @@ function updateTelemetry() {
   const it = document.getElementById("intent");
   it.textContent = serverIntent
     ? `▸ ${serverIntent.verb} — ${serverIntent.detail}` : "";
-  document.getElementById("teleRoom").textContent = `room ${currentRoom()}`;
-  document.getElementById("teleOdo").textContent = `odometer ${odo.toFixed(1)} m`;
+  document.getElementById("teleRoom").textContent = `${currentRoom()}`;
+  document.getElementById("teleOdo").textContent = `${odo.toFixed(1)} m`;
+  updateSpeedSpark();
   document.getElementById("telePose").textContent = bot.type === "drone"
     ? `x ${bot.pos.x.toFixed(1)} · z ${bot.pos.z.toFixed(1)} · alt ${bot.alt.toFixed(1)}`
     : `x ${bot.pos.x.toFixed(1)} · z ${bot.pos.z.toFixed(1)} · θ ${bot.heading.toFixed(2)}`;
 }
 
 /* ════════════════ panels ════════════════ */
-const LAYOUT_KEY = "arena-layout-v3";
-const PANEL_IDS = ["p-brief", "p-policy", "p-status", "p-map", "p-view1", "p-view2",
-                   "p-runs"];
+const LAYOUT_KEY = "arena-layout-v5";  // v5: wider right rail + SPEED telemetry panel; reflow stale layouts
+const PANEL_IDS = ["p-brief", "p-policy", "p-status", "p-map", "p-tele", "p-view1", "p-view2",
+                   "p-runs", "p-eyes"];
 let zTop = 100;
 function defaultLayout() {
   if (innerWidth < 760) {
@@ -1626,20 +2625,27 @@ function defaultLayout() {
   const w = innerWidth, h = innerHeight;
   const GAP = 10, TOP = 52;
   const L = Math.min(440, Math.max(340, Math.round(w * 0.3)));
-  const R = Math.min(290, Math.max(230, Math.round(w * 0.18)));
-  const briefH = 185, statusH = 168;
-  const mapH = Math.max(180, Math.round((h - TOP - statusH - 3 * GAP) * 0.45));
+  const R = Math.min(360, Math.max(300, Math.round(w * 0.2)));
+  const briefH = 185, statusH = 196, teleH = 136;
+  // right rail: status, map, speed, robot-cam — each readable, not cramped
+  const mapH = Math.max(170, Math.round((h - TOP - statusH - teleH - 4 * GAP) * 0.5));
+  const rTele = TOP + statusH + mapH + 2 * GAP;
+  const rView = rTele + teleH + GAP;
   return {
     "p-brief":  { l: GAP, t: TOP, w: L, h: briefH, hidden: false },
     "p-policy": { l: GAP, t: TOP + briefH + GAP, w: L,
                   h: h - TOP - briefH - 2 * GAP - 4, hidden: false },
     "p-status": { l: w - R - GAP, t: TOP, w: R, h: statusH, hidden: false },
     "p-map":    { l: w - R - GAP, t: TOP + statusH + GAP, w: R, h: mapH, hidden: false },
-    "p-view2":  { l: w - R - GAP, t: TOP + statusH + mapH + 2 * GAP, w: R,
-                  h: h - TOP - statusH - mapH - 3 * GAP - 4, hidden: false },
+    "p-tele":   { l: w - R - GAP, t: rTele, w: R, h: teleH, hidden: false },
+    "p-view2":  { l: w - R - GAP, t: rView, w: R,
+                  h: Math.max(150, h - rView - GAP - 4), hidden: false },
     "p-view1":  { l: Math.round(w / 2 - 170), t: h - 244, w: 340, h: 230, hidden: true },
     "p-runs":   { l: Math.round(w / 2 - 230), t: TOP + 30, w: 460,
                   h: Math.min(440, h - TOP - 60), hidden: true },
+    // EYES (the connected robot's camera) docks where the sim shows its POV,
+    // so a ROS robot lands in the exact same deck — hidden until robot mode.
+    "p-eyes":   { l: Math.round(w / 2 - 180), t: h - 264, w: 360, h: 248, hidden: true },
   };
 }
 function loadLayout() {
@@ -1662,6 +2668,10 @@ function applyLayout() {
   for (const id of PANEL_IDS) {
     const el = document.getElementById(id), st = layout[id];
     if (!el || !st) continue;
+    // EYES is the *real robot's* camera; in the sim there's no camera, so it
+    // would just sit black. It's a robot-deck-only panel — never show it (or
+    // its toolbar toggle) outside robot mode, even if a saved layout had it open.
+    const robotOnly = id === "p-eyes" && MODE !== "robot";
     const w = Math.min(st.w, innerWidth - 12);
     const h = Math.min(st.h, innerHeight - TOP - 8);
     // clamp AND write back, so a layout saved offscreen heals itself
@@ -1671,10 +2681,12 @@ function applyLayout() {
     el.style.top = `${st.t}px`;
     el.style.width = `${w}px`;
     el.style.height = `${h}px`;
-    el.classList.toggle("hidden", !!st.hidden);
+    el.classList.toggle("hidden", robotOnly || !!st.hidden);
     document.querySelector(`#toolbar [data-panel="${id}"]`)
-      ?.classList.toggle("on", !st.hidden);
+      ?.classList.toggle("on", !robotOnly && !st.hidden);
   }
+  const eb = document.getElementById("btnEyes");
+  if (eb) eb.style.display = MODE === "robot" ? "" : "none";
 }
 function initPanels() {
   for (const id of PANEL_IDS) {
@@ -1888,15 +2900,27 @@ function frame(now) {
   adaptQuality(dt);
   renderer.shadowMap.needsUpdate = true;
   const cmd = keyboardCmd() || serverCmd;
-  updateMovers(dt);
-  updateBody(dt, cmd);
-  syncProps();
-  tickChamber(dt, serverAnswer);
+  if (MODE === "robot") {
+    const k = keyboardCmd();           // WASD drives the real robot
+    if (k) sendRobotMove(k);
+    // pose/cloud/lidar arrive from telemetry in pollRobot()
+  } else {
+    updateMovers(dt);
+    updateBody(dt, cmd);
+    syncProps();
+    tickChamber(dt, serverAnswer);
+    // log the sim policy's decisions into the sim-local timeline (~1/s)
+    if (COCKPIT === "sim") {
+      _simMoveAcc = (_simMoveAcc || 0) + dt;
+      if (_simMoveAcc > 1.0) { _simMoveAcc = 0;
+        simEvent("policy", `move fwd=${(cmd.forward || 0).toFixed(2)} turn=${(cmd.turn || 0).toFixed(2)}`); }
+    }
+  }
 
   odo += prevPos.distanceTo(bot.pos);
   prevPos.copy(bot.pos);
   senseTick += dt;
-  if (senseTick > 0.12) {
+  if (MODE !== "robot" && senseTick > 0.12) {
     senseTick = 0;
     lastLidar = senseLidar();
     integrateLidar(lastLidar);
@@ -1931,15 +2955,21 @@ function frame(now) {
   orbitAngle += dt * 0.25;
 
   if (!won) clockEl.textContent = `${((now - t0) / 1000).toFixed(1)}s`;
-  cmdEl.textContent = `cmd f=${(cmd.forward || 0).toFixed(2)} t=${(cmd.turn || 0).toFixed(2)} · cam ${mainCamSel.value}`;
+  cmdEl.textContent = `f=${(cmd.forward || 0).toFixed(2)} t=${(cmd.turn || 0).toFixed(2)} · cam ${mainCamSel.value}`;
   renderViews();
   compositeRecordFrame();
   requestAnimationFrame(frame);
 }
 
 await initPhysics();                       // rapier WASM, once per page
-loadLevel(0);
-detectMode(); pollCmd(); pushState(); pollSightings(); renderRuns();
+// open the level named in /sim?level=<name> if present, else the first
+{
+  const _q = new URLSearchParams(location.search).get("level");
+  const _hi = _q ? LEVELS.findIndex((l) => l.name === _q) : -1;
+  window._navFromHistory = true;
+  try { loadLevel(_hi >= 0 ? _hi : 0); } finally { window._navFromHistory = false; }
+}
+detectMode().then(() => pollNetworkRobots()); pollCmd(); pushState(); pollSightings(); renderRuns();
 requestAnimationFrame(frame);
 
 /* harness hook — scripts/e2e_arena.mjs drives the page without the UI */

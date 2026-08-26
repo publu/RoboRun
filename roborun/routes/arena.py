@@ -19,6 +19,37 @@ def arena_cmd(h):
 
 
 _last_level: list[str] = [""]
+_last_index: list[float] = [0.0]   # throttle live store-indexing
+
+
+def _index_live(payload: dict) -> None:
+    """Doing stuff in rapier should GENERATE real, searchable data — not seeds.
+    Index the sim's detections into the spatial store (scoped to the active
+    project/environment), throttled, so /search, /api/spatial and /analytics
+    fill from real play. Best-effort; never blocks the sim."""
+    import time
+    dets = payload.get("detections") or []
+    if not dets:
+        return
+    now = time.time()
+    if now - _last_index[0] < 1.0:      # ~1 Hz is plenty for a searchable index
+        return
+    _last_index[0] = now
+    try:
+        from roborun.routes._singletons import get_memory
+        from roborun import recorder as rec_mod
+        pose = payload.get("pose") or {}
+        robot = (payload.get("level") or {}).get("robot") or "sim"
+        # link to the active run so the observation is openable in replay; when
+        # nothing is recording, run_id stays None (correctly non-replayable).
+        rec = rec_mod.active_recorder()
+        run_id = rec.run_id if rec is not None else None
+        get_memory().store(detections=dets, ts=now,
+                           x=pose.get("x", 0.0), y=-pose.get("z", 0.0),
+                           robot_id=f"{robot}-sim", source="sim", source_id="arena",
+                           run_id=run_id, frame_topic="/detections/arena")
+    except Exception:
+        pass
 
 
 @post("/api/arena/state")
@@ -32,6 +63,7 @@ def arena_state(h, payload):
         sightings.reset()
     sightings.observe(payload.get("detections") or [],
                       pose=payload.get("pose"), source="arena")
+    _index_live(payload)   # real rapier play → real searchable data
     # the black box gets the full ROS-shaped view: /pose, /detections, /lidar
     try:
         from roborun import recorder as rec_mod
@@ -39,19 +71,39 @@ def arena_state(h, payload):
         if rec is not None:
             pose = payload.get("pose") or {}
             fx, fy = pose.get("x", 0.0), -pose.get("z", 0.0)
-            h = pose.get("heading", 0.0)
+            hd = pose.get("heading", 0.0)   # not `h` — that's the HTTP handler
             alt = (pose.get("y", 0.0)
                    if (payload.get("level") or {}).get("robot") == "drone" else 0.0)
-            rec.write_pose(fx, fy, alt, heading=h)
+            rec.write_pose(fx, fy, alt, heading=hd)
             dets = payload.get("detections") or []
             if dets:
                 rec.write_detections(dets, name="arena")
-                rec.write_detection_scene(dets, fx, fy, h)
+                rec.write_detection_scene(dets, fx, fy, hd)
             lidar = payload.get("lidar") or []
             if lidar:
-                rec.write_scan(lidar, fx, fy, h)
+                rec.write_scan(lidar, fx, fy, hd)
     except Exception:
         pass
+    send_json(h, 200, {"ok": True})
+
+
+@post("/api/fleet/observe")
+def fleet_observe(h, payload):
+    """A fleet robot reports a detection at its world pose → indexed into the
+    active project/environment store (real multi-robot data, platform spec 04).
+    No throttle: each robot's first sighting of an item is one real observation."""
+    dets = payload.get("detections") or []
+    if dets:
+        try:
+            import time
+            from roborun.routes._singletons import get_memory
+            pose = payload.get("pose") or {}
+            get_memory().store(detections=dets, ts=time.time(),
+                               x=float(pose.get("x", 0.0)), y=float(pose.get("y", 0.0)),
+                               robot_id=str(payload.get("robot_id", "fleet")),
+                               source="sim", source_id="fleet")
+        except Exception:
+            pass
     send_json(h, 200, {"ok": True})
 
 

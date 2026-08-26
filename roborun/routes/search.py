@@ -1,0 +1,178 @@
+"""Search-over-time + perception session routes — the production surface.
+
+`/api/search` finds anything/anyone across all recorded history (semantic + label +
+time window), regardless of which mode produced it. `/api/perception/*` runs the
+unified capture loop in a chosen mode.
+"""
+from __future__ import annotations
+
+from roborun.routes import get, post, send_json, ApiError
+
+_session = None
+
+
+@post("/api/recall")
+def recall_unified(h, payload):
+    """Unified retrieval (platform spec 06): combine semantic + label + spatial +
+    time in one query, scoped to the active project's index. Body: {text?, label?,
+    near?{x,y,radius?}, since?, until?, k?, source_id?}."""
+    from roborun.routes._singletons import get_memory
+    try:
+        store = get_memory()
+    except Exception:
+        from roborun.spatial_memory import SpatialMemoryStore
+        store = SpatialMemoryStore()
+    if not any(payload.get(key) is not None and payload.get(key) != ""
+               for key in ("text", "label", "near", "since", "until")):
+        raise ApiError(400, "provide at least one of text/label/near/since/until")
+    rows = store.recall_combined(
+        text=payload.get("text"), label=payload.get("label"),
+        near=payload.get("near"), since=payload.get("since"),
+        until=payload.get("until"), k=int(payload.get("k", 12)),
+        source_id=payload.get("source_id"))
+    from roborun import projects
+    send_json(h, 200, {"ok": True, "results": rows, "total": len(rows),
+                       "scope": projects.active()})
+
+
+@get("/api/search/caps")
+def search_caps(h):
+    """Honest capability report so the UI never offers fake semantic search.
+    "Real" embeddings are high-dimensional CLIP vectors (~2KB); the old demo
+    placeholder was 3 floats (~12B). Semantic search only works if real ones
+    exist — checked cheaply by blob length, no model load."""
+    real = total = 0
+    try:
+        from roborun.routes._singletons import get_memory
+        conn = get_memory()._conn
+        real = conn.execute(
+            "SELECT COUNT(*) FROM observations WHERE embedding IS NOT NULL AND length(embedding) > 64"
+        ).fetchone()[0]
+        total = conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
+    except Exception:
+        pass
+    send_json(h, 200, {"ok": True, "semantic": real > 0, "embeddings": int(real), "total": int(total)})
+
+
+@post("/api/search")
+def search_history(h, payload):
+    """Body: {query, by?: clip|label|near, k?, since?, until?, source_id?}.
+    Searches all runs/modes; since/until are unix seconds."""
+    from roborun.routes._singletons import get_memory  # SpatialMemoryStore singleton
+    from roborun.session import search
+    query = payload.get("query")
+    if not query and payload.get("by") not in ("time", "uncertain"):
+        raise ApiError(400, "query required")
+    try:
+        store = get_memory()
+    except Exception:
+        from roborun.spatial_memory import SpatialMemoryStore
+        store = SpatialMemoryStore()
+    rows = search(store, query, by=str(payload.get("by", "clip")),
+                  k=int(payload.get("k", 10)),
+                  since=payload.get("since"), until=payload.get("until"),
+                  source_id=payload.get("source_id"))
+    send_json(h, 200, {"ok": True, "results": rows, "total": len(rows)})
+
+
+@post("/api/search/export")
+def search_export(h, payload):
+    """Curate a labeled dataset from a search → datasets/<name>/. Body: {query,
+    by?, since?, until?, name?}."""
+    import time
+    from pathlib import Path
+    from roborun.session import export_dataset
+    try:
+        from roborun.routes._singletons import get_memory
+        store = get_memory()
+    except Exception:
+        from roborun.spatial_memory import SpatialMemoryStore
+        store = SpatialMemoryStore()
+    name = str(payload.get("name") or f"ds_{int(time.time())}")
+    out = Path("datasets") / name
+    r = export_dataset(store, payload.get("query", ""), str(out),
+                       by=str(payload.get("by", "label")),
+                       since=payload.get("since"), until=payload.get("until"))
+    send_json(h, 200, r)
+
+
+@post("/api/perception/start")
+def perception_start(h, payload):
+    """Start the unified capture loop in a mode (sim|robot|production)."""
+    global _session
+    from roborun.session import PerceptionSession, MODES
+    mode = str(payload.get("mode", "production"))
+    if mode not in MODES:
+        raise ApiError(400, f"mode must be one of {MODES}")
+    if _session is not None:
+        _session.stop()
+    try:
+        store = None
+        from roborun.routes._singletons import get_memory
+        store = get_memory()
+    except Exception:
+        store = None
+    _session = PerceptionSession.for_mode(
+        mode, store=store, source_id=str(payload.get("source_id", "cam")))
+    _session.start()
+    send_json(h, 200, {"ok": True, "mode": mode, "source_id": _session.source_id})
+
+
+@post("/api/perception/stop")
+def perception_stop(h, payload):
+    global _session
+    if _session is not None:
+        _session.stop()
+        _session = None
+    send_json(h, 200, {"ok": True})
+
+
+@get("/api/perception/status")
+def perception_status(h):
+    send_json(h, 200, {"ok": True, "running": _session is not None,
+                       "mode": getattr(_session, "mode", None),
+                       "indexed": getattr(_session, "indexed", 0)})
+
+
+@get("/api/analytics")
+def analytics(h):
+    """One dashboard payload: detections histogram, observations over time, source
+    breakdown, suite pass-rates, run + fleet counts. Everything tracked, summarized."""
+    out: dict = {"ok": True}
+    try:
+        from roborun.routes._singletons import get_memory
+        store = get_memory()
+        out["observations"] = store.stats()
+        out["labels"] = store.label_histogram(top=15)
+        out["over_time"] = store.counts_over_time(bucket_s=3600.0, buckets=24)
+        out["sources"] = store.source_breakdown()
+        out["robots"] = store.robots_breakdown()
+    except Exception as exc:
+        out["observations_error"] = str(exc)
+    try:
+        from roborun.scenario import list_suites
+        out["suites"] = list_suites()
+    except Exception:
+        out["suites"] = []
+    try:
+        from roborun.recorder import list_runs
+        runs = list_runs()
+        out["runs"] = {"count": len(runs),
+                       "total_bytes": sum(r.get("size", 0) for r in runs),
+                       "sealed": sum(1 for r in runs if r.get("sealed")),
+                       "anchored": sum(1 for r in runs if r.get("anchored"))}
+    except Exception:
+        out["runs"] = {"count": 0}
+    try:
+        from roborun.retention import status as storage_status
+        out["storage"] = storage_status()
+    except Exception:
+        out["storage"] = {}
+    try:
+        from roborun.routes.fleet import _load_fleet
+        fleet = _load_fleet()
+        out["fleet"] = {"total": len(fleet),
+                        "online": sum(1 for r in fleet if r.get("status") == "online")}
+    except Exception:
+        out["fleet"] = {"total": 0, "online": 0}
+    send_json(h, 200, out)

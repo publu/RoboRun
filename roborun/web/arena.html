@@ -1,30 +1,31 @@
 <!doctype html>
 <html lang="en">
 <head>
+<script src="./runtime-base.js"></script>
 <meta charset="utf-8">
 <title>RoboRun Arena</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./ui.css">
 <style>
   html, body { margin: 0; height: 100%; background: #0b0e11; overflow: hidden;
                font: 13px/1.4 ui-monospace, "SF Mono", Menlo, monospace; color: #d7e0e8; }
   canvas.webgl { position: fixed; inset: 0; z-index: 0; }
 
   /* ── panel system: drag by header, resize by corner, toggle from toolbar ── */
-  .panel { position: fixed; z-index: 10; background: rgba(11,14,17,.78);
-           backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-           border: 1px solid rgba(42,58,70,.55); border-radius: 10px;
-           box-shadow: 0 6px 24px rgba(0,0,0,.35); min-width: 180px;
+  .panel { position: fixed; z-index: 10; background: #0e1310;
+           border: 1px solid #243024; border-radius: 10px;
+           box-shadow: 0 8px 28px rgba(0,0,0,.5); min-width: 180px;
            min-height: 70px; resize: both; overflow: hidden;
            display: flex; flex-direction: column; }
   .panel.hidden { display: none; }
-  .p-head { display: flex; align-items: center; gap: 8px; padding: 5px 10px;
-            background: rgba(16,22,28,.9); border-bottom: 1px solid #1f2a33;
-            cursor: grab; user-select: none; font-size: 10px; letter-spacing: .14em;
-            color: #6b7b88; flex: none; }
-  .p-head b { color: #00d47e; }
-  .p-head .x { margin-left: auto; cursor: pointer; color: #4a5a66; }
-  .p-head .x:hover { color: #d84a4a; }
-  .p-body { flex: 1; padding: 8px 10px; overflow: auto; min-height: 0; }
+  .p-head { display: flex; align-items: center; gap: 8px; padding: 7px 11px;
+            background: #131a13; border-bottom: 1px solid #243024;
+            cursor: grab; user-select: none; font-size: 11px; letter-spacing: .12em;
+            color: #aebcc7; flex: none; }
+  .p-head b { color: #00d47e; font-weight: 600; }
+  .p-head .x { margin-left: auto; cursor: pointer; color: #6a7a86; font-size: 13px; }
+  .p-head .x:hover { color: #e0563f; }
+  .p-body { flex: 1; padding: 10px 12px; overflow: auto; min-height: 0; font-size: 12.5px; }
 
   /* view panels render the 3D scene through a transparent body */
   .view-panel .p-body { padding: 0; background: transparent; }
@@ -44,15 +45,24 @@
              padding: 5px 8px; flex-wrap: wrap; justify-content: center;
              max-width: calc(100vw - 16px); box-sizing: border-box; }
   @media (max-width: 900px) {
-    #toolbar button { font-size: 10px; padding: 2px 6px; }
-    #toolbar { gap: 4px; }
+    #toolbar button { font-size: 12px; padding: 6px 9px; }
+    #toolbar { gap: 5px; }
   }
-  #toolbar button { background: #10161c; color: #6b7b88; border: 1px solid #2a3a46;
-                    border-radius: 4px; font: inherit; font-size: 11px;
-                    padding: 2px 9px; cursor: pointer; }
+  #toolbar button { background: #10161c; color: #aebcc7; border: 1px solid #2a3a46;
+                    border-radius: 6px; font: inherit; font-size: 13px;
+                    padding: 7px 12px; min-height: 30px; cursor: pointer;
+                    transition: background .12s, color .12s, border-color .12s; }
+  #toolbar button:hover { background: #1a242d; color: #eaf2f8; border-color: #3a4d5a; }
   #toolbar button.on { color: #00d47e; border-color: #1f4434; }
   #toolbar button.accent { color: #e0c050; border-color: #4a3f1f; }
   #toolbar .sep { width: 1px; background: #1f2a33; margin: 0 2px; }
+
+  /* always-visible way back to the dashboard (the cockpit is full-screen, no shell) */
+  #ck-home { position: fixed; top: 10px; left: 12px; z-index: 56; text-decoration: none;
+             background: rgba(14,19,16,.92); color: #aebcc7; border: 1px solid #2a3a46;
+             border-radius: 7px; padding: 7px 13px; font-size: 13px; letter-spacing: .02em;
+             backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); transition: color .12s, border-color .12s; }
+  #ck-home:hover { color: #00d47e; border-color: #1f4434; }
 
   /* mission */
   #rooms { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
@@ -138,43 +148,82 @@
   .wasm-mode .server-only { display: none !important; }
 
   /* start screen: pick a robot, pick a task */
+  /* start modal — standardized on the dashboard design system (ui.css tokens) */
   #start { position: fixed; inset: 0; display: none; place-items: center; z-index: 70;
-           background: rgba(5,8,10,.8); backdrop-filter: blur(6px);
-           -webkit-backdrop-filter: blur(6px); overflow: auto; }
+           background: rgba(6,9,8,.86); backdrop-filter: blur(8px);
+           -webkit-backdrop-filter: blur(8px); overflow: auto; }
   #start.show { display: grid; }
-  .start-card { text-align: center; max-width: 1000px; padding: 18px;
+  .start-card { text-align: center; max-width: 1180px; padding: 26px 22px;
                 position: relative; margin: 24px auto; }
-  .start-card h1 { color: #00d47e; letter-spacing: .22em; font-size: 22px; margin: 0 0 8px; }
-  .start-card .sub { color: #9fb0bd; margin: 0 auto 20px; max-width: 660px; line-height: 1.6; }
-  .start-card .tagline { color: #d7e0e8; margin: 0 auto 14px; max-width: 720px;
-                         line-height: 1.55; font-size: 15px; }
-  .start-card .tagline b { color: #00d47e; }
-  .start-steps { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
-                 margin: 0 auto 18px; max-width: 880px; }
+  .start-card h1 { color: var(--fg); letter-spacing: .04em; font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .start-card .sub { color: var(--fg-2); margin: 0 auto 22px; max-width: 660px; line-height: 1.6; font-size: 13px; }
+  .start-card .tagline { color: var(--fg); margin: 0 auto 14px; max-width: 720px; line-height: 1.55; font-size: 14px; }
+  .start-card .tagline b, .start-card .sub b { color: var(--accent); }
+  .start-steps { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin: 0 auto 18px; max-width: 880px; }
   .start-steps > div { flex: 1 1 220px; max-width: 280px; text-align: left;
-                       background: rgba(11,14,17,.85); border: 1px solid #1f2a33;
-                       border-radius: 8px; padding: 10px 12px; color: #9fb0bd;
-                       font-size: 12px; line-height: 1.55; }
-  .start-steps span { display: block; color: #00d47e; letter-spacing: .14em;
-                      font-size: 11px; margin-bottom: 4px; }
-  .start-steps b { color: #d7e0e8; }
-  .start-card .sub b { color: #d7e0e8; }
-  .start-card .close { position: absolute; top: 0; right: 6px; background: none; border: none;
-                       color: #6b7b88; font: inherit; font-size: 18px; cursor: pointer; }
-  #startGrid { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
-  .bot-card { width: 205px; background: rgba(11,14,17,.85); border: 1px solid #1f2a33;
-              border-radius: 10px; padding: 10px 10px 12px; transition: border-color .2s; }
-  .bot-card:hover { border-color: #1f6e4c; }
+                       background: var(--panel); border: 1px solid var(--line);
+                       border-radius: var(--r-sm); padding: 11px 13px; color: var(--fg-2); font-size: 12px; line-height: 1.55; }
+  .start-steps span { display: block; color: var(--accent); letter-spacing: .12em; font-size: 11px; margin-bottom: 4px; }
+  .start-steps b { color: var(--fg); }
+  .start-card .close { position: absolute; top: 2px; right: 6px; background: none; border: none;
+                       color: var(--fg-dim); font: inherit; font-size: 18px; cursor: pointer; }
+  .start-card .close:hover { color: var(--bad); }
+  #startGrid { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .bot-card { width: 210px; background: var(--panel); border: 1px solid var(--line);
+              border-radius: var(--r); padding: 12px; transition: border-color .15s, background .15s; }
+  .bot-card:hover { border-color: var(--accent); background: var(--panel-2); }
   .bot-card canvas { width: 165px; height: 140px; display: block; margin: 0 auto; }
-  .bot-card h3 { color: #d7e0e8; margin: 6px 0 2px; font-size: 12px; letter-spacing: .14em; }
-  .bot-card .tag { color: #6b7b88; font-size: 11px; min-height: 30px; }
-  .bot-card .tasks { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
-  .bot-card .tasks button { background: #10161c; border: 1px solid #2a3a46; color: #9fb0bd;
-              border-radius: 5px; font: inherit; font-size: 11px; padding: 6px;
-              cursor: pointer; letter-spacing: .06em; }
-  .bot-card .tasks button:hover { color: #00d47e; border-color: #1f6e4c; }
-  .start-foot { color: #4a5a66; margin-top: 18px; }
-  .start-foot b { color: #6b7b88; }
+  .bot-card h3 { color: var(--fg); margin: 8px 0 2px; font-size: 12.5px; letter-spacing: .1em; }
+  .bot-card .tag { color: var(--fg-dim); font-size: 11px; min-height: 30px; }
+  .bot-card .tasks { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .bot-card .tasks button { background: var(--panel-2); border: 1px solid var(--line); color: var(--fg-2);
+              border-radius: var(--r-sm); font: inherit; font-size: 11.5px; padding: 7px; cursor: pointer;
+              letter-spacing: .04em; transition: color .12s, border-color .12s, background .12s; }
+  .bot-card .tasks button:hover { color: var(--accent); border-color: var(--accent-dim); background: #0e1a12; }
+  .start-foot { color: var(--fg-dim); margin-top: 18px; font-size: 12px; }
+  .start-foot b { color: var(--fg-2); }
+
+  /* the ROS / real-robot card */
+  .ros-card { display: flex; flex-direction: column; }
+  .ros-card .ros-ic { width: 165px; height: 140px; margin: 0 auto; display: flex;
+        align-items: center; justify-content: center; font-size: 54px; color: var(--accent); opacity: .85; }
+  .ros-card .ros-sub { color: var(--accent); font-size: 10px; letter-spacing: .12em; margin-top: 2px; }
+  .ros-hint { color: var(--fg-dim); font-size: 11px; line-height: 1.5; padding: 6px 2px; }
+  .ros-hint b { color: var(--fg-2); }
+  .ros-card .tasks button .live { color: var(--accent); font-size: 9px; letter-spacing: .1em;
+        border: 1px solid var(--accent-dim); border-radius: var(--r-sm); padding: 1px 6px; margin-left: 6px; }
+  .ros-connect { display: flex; gap: 6px; margin-top: 6px; }
+  .ros-connect input { flex: 1; min-width: 0; background: var(--panel-2); color: var(--fg);
+        border: 1px solid var(--line); border-radius: var(--r-sm); font: inherit; font-size: 11.5px; padding: 7px 8px; }
+  .ros-connect input:focus { outline: none; border-color: var(--accent); }
+  .ros-connect button { background: var(--accent); color: #06120a; border: 1px solid var(--accent);
+        border-radius: var(--r-sm); font: inherit; font-size: 11.5px; font-weight: 600; padding: 7px 12px; cursor: pointer; }
+  .ros-connect button:hover { background: #1ee08c; }
+  .ros-card .ros-scan { width: 100%; margin-top: 4px; background: var(--panel-2); color: var(--blue);
+        border: 1px solid var(--line); border-radius: var(--r-sm); font: inherit; font-size: 11.5px;
+        padding: 8px; cursor: pointer; letter-spacing: .03em; }
+  .ros-card .ros-scan:hover { background: #14222e; border-color: var(--blue); }
+  .ros-card .ros-scan:disabled { opacity: .7; cursor: default; }
+
+  /* the FLEET card */
+  .fleet-card .fleet-ic { width: 165px; height: 92px; margin: 0 auto; display: flex;
+        align-items: center; justify-content: center; font-size: 38px; color: var(--blue); opacity: .9; letter-spacing: -.18em; }
+  .fleet-card h3 .fleet-sub { color: var(--blue); font-size: 10px; letter-spacing: .12em; margin-top: 2px; }
+  .fleet-ctrls { display: flex; flex-direction: column; gap: 7px; margin: 6px 2px 2px; }
+  .fleet-ctrls .fc { display: flex; flex-direction: column; gap: 2px; }
+  .fleet-ctrls .fc .lbl { display: flex; justify-content: space-between; font-size: 10.5px; }
+  .fleet-ctrls .fc .lbl span:first-child { color: var(--fg-2); letter-spacing: .04em; }
+  .fleet-ctrls .fc .lbl b { color: var(--blue); font-weight: 400; font-variant-numeric: tabular-nums; }
+  .fleet-ctrls input[type=range] { -webkit-appearance: none; appearance: none; height: 3px;
+        border-radius: 3px; background: var(--line); outline: none; }
+  .fleet-ctrls input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px;
+        height: 12px; border-radius: 50%; background: var(--blue); cursor: pointer; }
+  .fleet-ctrls input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border: 0;
+        border-radius: 50%; background: var(--blue); cursor: pointer; }
+  .fleet-card .fleet-go { background: var(--panel-2); color: var(--blue); border: 1px solid var(--line);
+        border-radius: var(--r-sm); font: inherit; font-size: 11.5px; padding: 8px; cursor: pointer;
+        letter-spacing: .06em; margin-top: 8px; width: 100%; }
+  .fleet-card .fleet-go:hover { background: #14222e; border-color: var(--blue); }
 
   /* RUN is the one button a first-time visitor must find */
   #btnRun { background: #0d3325 !important; color: #00d47e !important;
@@ -199,9 +248,330 @@
   .vstate.good { color: #00d47e; }
   .vstate.bad { color: #d84a4a; }
   .run-row video { width: 100%; margin-top: 6px; border-radius: 4px; }
+/* ════════════════════════════════════════════════════════════════════
+   ROBOT COCKPIT — a connected robot gets a ground-control station, not a
+   game with a robot in it. The camera is the hero; everything else is a
+   glass HUD over it. Shown only in robot mode; the game panels + 3D arena
+   are fully suppressed.
+   ════════════════════════════════════════════════════════════════════ */
+/* the cockpit is the only view: one shell for every source. A robot's
+   camera and a sim's 3D render are both just "the stream"; the map,
+   timeline and telemetry are derived from inputs both sources provide. */
+body.cockpit #toolbar, body.cockpit #keys, body.cockpit #toasts,
+body.cockpit .panel, body.cockpit #win { display: none !important; }
+/* the robot+task picker (LEVELS) must still open in cockpit mode */
+body.cockpit #start { display: none !important; }
+body.cockpit #start.show { display: grid !important; }
+body.cockpit { background: #06080a; }
+/* robot source: camera feed is the hero, the 3D arena canvas is unused */
+body.cockpit.src-robot canvas.webgl { display: none !important; }
+/* sim source: the 3D arena render IS the stream — show it behind the chrome */
+body.cockpit.src-sim #ck-cam { display: none !important; }
+body.cockpit.src-sim #ck-stage { background: transparent !important; }
+body.cockpit.src-sim #ck-mapcv { } /* sim feeds the same map */
+#ck-levels { display: none; } body.cockpit.src-sim #ck-levels { display: inline-block; }
+
+#cockpit { position: fixed; inset: 0; z-index: 20; display: none;
+           flex-direction: column; pointer-events: none; }
+#cockpit > * { pointer-events: auto; }
+#ck-stage { pointer-events: none; }
+body.cockpit #cockpit { display: flex; }
+
+/* hero camera fills the stage */
+#ck-stage { position: absolute; inset: 0; overflow: hidden; background:
+            radial-gradient(120% 120% at 50% 0%, #0c1116 0%, #06080a 70%); }
+#ck-cam { position: absolute; inset: 0; width: 100%; height: 100%;
+          object-fit: cover; filter: saturate(1.05) contrast(1.03); }
+#ck-overlay { position: absolute; inset: 0; pointer-events: none; }
+/* cinematic vignette so a flat sim render reads as a feed */
+#ck-stage::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+   background: radial-gradient(130% 100% at 50% 50%, transparent 58%, rgba(0,0,0,.55) 100%);
+   mix-blend-mode: multiply; }
+
+/* top identity bar */
+#ck-top { position: relative; z-index: 30; display: flex; align-items: center;
+          gap: 14px; margin: 14px 16px 0; padding: 9px 16px;
+          background: rgba(8,12,15,.72); backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
+          border: 1px solid rgba(42,58,70,.5); border-radius: 13px;
+          box-shadow: 0 8px 30px rgba(0,0,0,.45); }
+#ck-id { display: flex; align-items: center; gap: 9px; font-size: 13px;
+         letter-spacing: .12em; color: #d7e0e8; font-weight: 700; }
+#ck-id .glyph { font-size: 15px; color: #00d47e; }
+#ck-live { display: flex; align-items: center; gap: 6px; font-size: 10px;
+           letter-spacing: .16em; color: #00d47e; }
+#ck-live .dot { width: 7px; height: 7px; border-radius: 50%; background: #00d47e;
+                box-shadow: 0 0 0 0 rgba(0,212,126,.6); animation: ckPulse 1.8s infinite; }
+@keyframes ckPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(0,212,126,.55);}
+                     50% { box-shadow: 0 0 0 7px rgba(0,212,126,0);} }
+#ck-where { color: #6b7b88; font-size: 11px; letter-spacing: .06em; }
+#ck-tele { display: flex; gap: 7px; margin-left: auto; }
+.ck-chip { display: flex; flex-direction: column; align-items: center;
+           min-width: 58px; padding: 3px 11px; border-radius: 8px;
+           background: rgba(16,22,28,.7); border: 1px solid rgba(42,58,70,.5); }
+.ck-chip .k { font-size: 8.5px; letter-spacing: .18em; color: #5a6b78; }
+.ck-chip .v { font-size: 15px; color: #00d47e; font-variant-numeric: tabular-nums;
+              line-height: 1.15; }
+.ck-chip.warn .v { color: #e0a030; }
+#ck-actions { display: flex; gap: 7px; align-items: center; }
+.ck-btn { background: rgba(16,22,28,.8); color: #aebcc7; border: 1px solid #2a3a46;
+          border-radius: 8px; font: inherit; font-size: 12.5px; letter-spacing: .06em;
+          padding: 8px 14px; min-height: 32px; cursor: pointer; transition: all .15s; }
+.ck-btn:hover { color: #d7e0e8; border-color: #3a4d5a; }
+.ck-btn.hot { color: #06080a; background: #00d47e; border-color: #00d47e; font-weight: 700; }
+.ck-btn.hot:hover { background: #1ee08c; }
+.ck-btn.danger { color: #e0a030; border-color: #4a3f1f; }
+.ck-btn.danger:hover { color: #ffce5a; border-color: #6a5a2a; }
+#ck-src { background: rgba(16,22,28,.8); color: #9fb0bd; border: 1px solid #2a3a46;
+          border-radius: 8px; font: inherit; font-size: 11px; padding: 6px 8px; cursor: pointer; }
+
+/* OSD reticle + corner readouts over the feed */
+#ck-reticle { position: absolute; top: 50%; left: 50%; width: 46px; height: 46px;
+              transform: translate(-50%,-50%); z-index: 24; opacity: .5; }
+#ck-reticle::before, #ck-reticle::after { content: ""; position: absolute;
+   background: rgba(0,212,126,.7); }
+#ck-reticle::before { left: 50%; top: 0; width: 1px; height: 100%; transform: translateX(-.5px); }
+#ck-reticle::after { top: 50%; left: 0; height: 1px; width: 100%; transform: translateY(-.5px); }
+.ck-osd { position: absolute; z-index: 24; font-size: 11px; letter-spacing: .1em;
+          color: rgba(0,212,126,.85); text-shadow: 0 0 8px rgba(0,0,0,.9);
+          font-variant-numeric: tabular-nums; }
+#ck-osd-tl { top: 86px; left: 28px; }
+#ck-osd-tr { top: 86px; right: 28px; text-align: right; }
+/* bottom-center, clear of the timeline (left) and tactical map (right) */
+#ck-osd-bl { bottom: 26px; left: 50%; transform: translateX(-50%); text-align: center;
+             padding: 5px 14px; border-radius: 9px; background: rgba(8,12,15,.6);
+             border: 1px solid rgba(42,58,70,.4); backdrop-filter: blur(8px); }
+.ck-osd .lbl { color: rgba(159,176,189,.6); }
+
+/* detection boxes drawn over the feed */
+.ck-det { position: absolute; border: 1.5px solid #00d47e; border-radius: 3px;
+          box-shadow: 0 0 12px rgba(0,212,126,.3); }
+.ck-det .tag { position: absolute; top: -17px; left: -1px; font-size: 10px;
+               background: #00d47e; color: #06080a; padding: 0 5px; border-radius: 3px;
+               white-space: nowrap; font-weight: 700; letter-spacing: .04em; }
+
+/* bottom-right minimap */
+#ck-map { position: absolute; right: 16px; bottom: 64px; z-index: 26; width: 280px;
+          background: rgba(8,12,15,.74); backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px); border: 1px solid rgba(42,58,70,.5);
+          border-radius: 13px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,.45); }
+#ck-map .hd { display: flex; justify-content: space-between; padding: 6px 11px;
+              font-size: 9.5px; letter-spacing: .16em; color: #6b7b88;
+              border-bottom: 1px solid rgba(31,42,51,.7); }
+#ck-map .hd b { color: #00d47e; }
+#ck-map canvas { display: block; width: 100%; height: 230px; }
+
+/* policy slide-in (the live behavior, edited in place) */
+/* a framed floating panel that clears the top bar — header, editor and the
+   DEPLOY/STOP bar all visible, rounded, not a full-height code slab */
+#ck-policy { position: absolute; left: 16px; top: 76px; bottom: 16px; z-index: 28; width: 460px;
+             max-width: 86vw; transform: translateX(calc(-100% - 26px));
+             transition: transform .22s ease; display: flex; flex-direction: column;
+             background: rgba(8,11,14,.94); backdrop-filter: blur(18px);
+             -webkit-backdrop-filter: blur(18px); border: 1px solid rgba(42,58,70,.6);
+             border-radius: 14px; overflow: hidden; box-shadow: 0 18px 50px rgba(0,0,0,.6); }
+#ck-policy.open { transform: translateX(0); }
+/* expand: a roomy editor that's actually comfortable to code in */
+#ck-policy.wide { width: min(1000px, 80vw); }
+#ck-policy.wide #ck-hl, #ck-policy.wide #ck-code { font-size: 13.5px; line-height: 1.7; }
+#ck-policy .hd { display: flex; align-items: center; gap: 10px; padding: 13px 16px; flex: none;
+                 background: rgba(16,22,28,.7); border-bottom: 1px solid #1f2a33; }
+#ck-policy .hd b { color: #00d47e; letter-spacing: .14em; font-size: 12px; }
+#ck-policy .hd .sub { color: #6b7b88; font-size: 11px; flex: 1; overflow: hidden;
+                      text-overflow: ellipsis; white-space: nowrap; }
+#ck-policy .hd .cl { cursor: pointer; color: #8a96a3; font-size: 14px; flex: none;
+                     width: 22px; height: 22px; line-height: 22px; text-align: center;
+                     border-radius: 6px; border: 1px solid #2a3a46; }
+#ck-policy .hd .cl:hover { color: #fff; border-color: #d84a4a; background: rgba(216,74,74,.12); }
+/* syntax-highlighted editor: a colored <pre> underlay behind a transparent
+   textarea, kept in perfect sync — looks like a real editor, stays editable */
+#ck-edhost { flex: 1; min-height: 0; position: relative; overflow: hidden; background: #0a0f13; }
+#ck-hl, #ck-code { position: absolute; inset: 0; margin: 0; box-sizing: border-box;
+            padding: 14px 16px; border: 0; width: 100%; height: 100%;
+            font: 12.5px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
+            white-space: pre; tab-size: 4; overflow: auto; }
+#ck-hl { z-index: 1; pointer-events: none; color: #d7e0e8; }
+#ck-hl code { font: inherit; }
+#ck-code { z-index: 2; background: transparent; color: transparent;
+           caret-color: #00d47e; resize: none; }
+#ck-code:focus { outline: none; }
+/* python token colors */
+.tk-kw { color: #c678dd; } .tk-def { color: #61afef; } .tk-str { color: #98c379; }
+.tk-com { color: #5a6b78; font-style: italic; } .tk-num { color: #d19a66; }
+.tk-dec { color: #e0a030; } .tk-bn { color: #56b6c2; }
+#ck-bar { display: flex; gap: 9px; align-items: center; padding: 11px 16px;
+          border-top: 1px solid #1f2a33; }
+#ck-bar .stat { color: #6b7b88; font-size: 11px; flex: 1; text-align: right;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#ck-bar .stat.ok { color: #00d47e; } #ck-bar .stat.err { color: #d84a4a; }
+
+/* bottom-left timeline — the event stream the robot generates from what it
+   sees and decides; mirrors the tactical map on the right */
+#ck-timeline { position: absolute; left: 16px; bottom: 16px; z-index: 26; width: 360px;
+               max-width: 40vw; background: rgba(8,12,15,.74); backdrop-filter: blur(14px);
+               -webkit-backdrop-filter: blur(14px); border: 1px solid rgba(42,58,70,.5);
+               border-radius: 13px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,.45); }
+#ck-timeline .hd { display: flex; justify-content: space-between; padding: 8px 13px;
+                   font-size: 9.5px; letter-spacing: .16em; color: #6b7b88;
+                   border-bottom: 1px solid rgba(31,42,51,.7); }
+#ck-timeline .hd b { color: #00d47e; font-weight: 400; }
+#ck-tl-list { max-height: 168px; overflow: hidden; display: flex; flex-direction: column; }
+.ck-tl-row { display: flex; align-items: baseline; gap: 9px; padding: 5px 13px;
+             font-size: 11.5px; border-bottom: 1px solid rgba(31,42,51,.32);
+             animation: ckRowIn .2s ease-out; }
+@keyframes ckRowIn { from { opacity: 0; transform: translateY(-4px); } }
+.ck-tl-row .t { color: #4a5a66; font-size: 10px; flex: none; font-variant-numeric: tabular-nums; }
+.ck-tl-row .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; align-self: center; }
+.ck-tl-row .m { color: #9fb0bd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* source picker — a centered modal, not a cramped dropdown */
+#ck-sources { position: fixed; inset: 0; z-index: 90; display: none;
+              align-items: center; justify-content: center;
+              background: rgba(4,6,8,.62); backdrop-filter: blur(5px); }
+#ck-sources.open { display: flex; }
+#ck-sources .box { width: 480px; max-width: 92vw; background: rgba(11,15,19,.98);
+                   border: 1px solid rgba(42,58,70,.6); border-radius: 16px; overflow: hidden;
+                   box-shadow: 0 30px 80px rgba(0,0,0,.7); }
+#ck-sources .hd { display: flex; justify-content: space-between; align-items: center;
+                  padding: 16px 20px; font-size: 11px; letter-spacing: .16em; color: #6b7b88;
+                  border-bottom: 1px solid rgba(31,42,51,.7); }
+#ck-sources .hd .cl { cursor: pointer; color: #8a96a3; font-size: 15px; width: 24px; height: 24px;
+                      line-height: 24px; text-align: center; border-radius: 7px; border: 1px solid #2a3a46; }
+#ck-sources .hd .cl:hover { color: #fff; border-color: #d84a4a; }
+#ck-sources .ft { padding: 13px 20px; font-size: 11px; color: #5a6b78;
+                  border-top: 1px solid rgba(31,42,51,.6); }
+.ck-source { display: flex; align-items: center; gap: 15px; padding: 17px 20px; cursor: pointer;
+             border-bottom: 1px solid rgba(31,42,51,.45); transition: background .12s; }
+.ck-source:hover { background: rgba(0,212,126,.08); }
+.ck-source .ic { font-size: 22px; width: 28px; text-align: center; color: #6b7b88; }
+.ck-source.active .ic, .ck-source.active .nm { color: #00d47e; }
+.ck-source .meta { flex: 1; min-width: 0; }
+.ck-source .nm { font-size: 15px; color: #d7e0e8; letter-spacing: .06em; }
+.ck-source .sub { font-size: 12px; color: #6b7b88; margin-top: 2px; white-space: nowrap;
+                  overflow: hidden; text-overflow: ellipsis; }
+.ck-source .badge { font-size: 9.5px; letter-spacing: .12em; padding: 3px 9px; border-radius: 7px;
+                    flex: none; }
+.ck-source .badge.live { color: #00d47e; border: 1px solid rgba(0,212,126,.4); }
+.ck-source .badge.go { color: #06080a; background: #00d47e; font-weight: 700; }
+
+/* in-app confirmation modal — replaces the native browser confirm() */
+#ck-confirm { position: fixed; inset: 0; z-index: 95; display: none;
+              align-items: center; justify-content: center;
+              background: rgba(4,6,8,.66); backdrop-filter: blur(6px); }
+#ck-confirm.open { display: flex; }
+#ck-confirm .box { width: 440px; max-width: 92vw; padding: 24px 26px;
+                   background: rgba(11,15,19,.99); border: 1px solid rgba(224,160,48,.4);
+                   border-radius: 16px; box-shadow: 0 30px 80px rgba(0,0,0,.7); }
+#ck-confirm .ttl { font-size: 15px; color: #e0a030; letter-spacing: .04em; margin-bottom: 10px; }
+#ck-confirm .msg { font-size: 13px; line-height: 1.6; color: #9fb0bd; margin-bottom: 22px; }
+#ck-confirm .row { display: flex; gap: 11px; justify-content: flex-end; }
+.ck-cbtn { background: rgba(16,22,28,.9); color: #9fb0bd; border: 1px solid #2a3a46;
+           border-radius: 9px; font: inherit; font-size: 12.5px; letter-spacing: .06em;
+           padding: 9px 20px; cursor: pointer; transition: all .14s; }
+.ck-cbtn:hover { color: #d7e0e8; border-color: #3a4d5a; }
+.ck-cbtn.yes { color: #06080a; background: #00d47e; border-color: #00d47e; font-weight: 700; }
+.ck-cbtn.yes:hover { background: #1ee08c; }
+
+/* network-robot chip — BELOW the top bar so it never blocks the actions */
+#ck-net { position: fixed; right: 16px; top: 76px; z-index: 29; padding: 8px 14px;
+          border-radius: 11px; font-size: 11px; letter-spacing: .04em; cursor: pointer;
+          background: rgba(8,12,15,.85); backdrop-filter: blur(12px); color: #00d47e;
+          border: 1px solid rgba(0,212,126,.4); box-shadow: 0 6px 22px rgba(0,0,0,.4);
+          display: none; }
 </style>
 </head>
 <body>
+
+<!-- ROBOT COCKPIT — ground-control station, shown only in robot mode -->
+<div id="cockpit">
+  <div id="ck-stage">
+    <img id="ck-cam" alt="robot camera">
+    <div id="ck-overlay"></div>
+    <div id="ck-reticle"></div>
+    <div class="ck-osd" id="ck-osd-tl"></div>
+    <div class="ck-osd" id="ck-osd-tr"></div>
+    <div class="ck-osd" id="ck-osd-bl"></div>
+  </div>
+
+  <div id="ck-top">
+    <div id="ck-id"><span class="glyph" id="ck-glyph">◈</span><span id="ck-type">ROBOT</span></div>
+    <div id="ck-live"><span class="dot"></span><span>LIVE</span></div>
+    <div id="ck-where">—</div>
+    <div id="ck-tele">
+      <div class="ck-chip"><span class="k">ALT</span><span class="v" id="ck-alt">—</span></div>
+      <div class="ck-chip"><span class="k">SPEED</span><span class="v" id="ck-spd">—</span></div>
+      <div class="ck-chip"><span class="k">HDG</span><span class="v" id="ck-hdg">—</span></div>
+    </div>
+    <div id="ck-actions">
+      <button class="ck-btn" id="ck-levels" title="pick a sim robot + task">⊞ LEVELS</button>
+      <button class="ck-btn" id="ck-source-btn" title="choose what to control">⊞ SOURCE</button>
+      <select id="ck-src" title="camera source">
+        <option value="robot">robot cam</option>
+        <option value="webcam">webcam</option>
+      </select>
+      <button class="ck-btn" id="ck-policy-btn" title="edit the running behavior">⌨ POLICY</button>
+      <button class="ck-btn danger" id="ck-hold" title="stop the behavior; robot holds">⏸ HOLD</button>
+      <span id="ck-views" style="position:relative">
+        <button class="ck-btn" id="ck-views-btn" title="dashboards">▤ VIEWS</button>
+        <span id="ck-views-menu" style="display:none;position:absolute;right:0;top:110%;z-index:50;background:#0d120c;border:1px solid #1e2a1f;border-radius:8px;padding:6px;min-width:140px">
+          <a href="/scenarios" style="display:block;padding:6px 10px;color:#7aaf90;text-decoration:none;font-size:12px">⊞ Scenarios</a>
+          <a href="/search" style="display:block;padding:6px 10px;color:#7aaf90;text-decoration:none;font-size:12px">🔍 Search over time</a>
+          <a href="/timeline" style="display:block;padding:6px 10px;color:#7aaf90;text-decoration:none;font-size:12px">🕓 Timeline</a>
+          <a href="/analytics" style="display:block;padding:6px 10px;color:#7aaf90;text-decoration:none;font-size:12px">📊 Analytics</a>
+          <a href="/fleet" style="display:block;padding:6px 10px;color:#7aaf90;text-decoration:none;font-size:12px">⬡ Fleet Lab</a>
+        </span>
+      </span>
+    </div>
+  </div>
+  <script>(function(){var b=document.getElementById("ck-views-btn"),m=document.getElementById("ck-views-menu");if(b)b.onclick=function(e){e.stopPropagation();m.style.display=m.style.display==="none"?"block":"none";};document.addEventListener("click",function(){if(m)m.style.display="none";});})();</script>
+
+  <!-- source picker: every robot/sim/camera this runtime can reach -->
+  <div id="ck-sources">
+    <div class="box">
+      <div class="hd"><span>SOURCE — WHAT YOU'RE CONTROLLING</span><span class="cl" id="ck-src-close">✕</span></div>
+      <div id="ck-src-list"></div>
+      <div class="ft">a robot on your wifi appears here automatically</div>
+    </div>
+  </div>
+
+  <div id="ck-map">
+    <div class="hd"><span>TACTICAL</span><b id="ck-map-tag">lidar · trail</b></div>
+    <canvas id="ck-mapcv" width="280" height="230"></canvas>
+  </div>
+
+  <div id="ck-policy">
+    <div class="hd"><b>BEHAVIOR</b><span class="sub" id="ck-pname">—</span><span class="cl" id="ck-policy-expand" title="expand / collapse">⤢</span><span class="cl" id="ck-policy-close">✕</span></div>
+    <div id="ck-edhost"><pre id="ck-hl"><code></code></pre><textarea id="ck-code" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea></div>
+    <div id="ck-bar">
+      <button class="ck-btn hot" id="ck-deploy">▶ DEPLOY</button>
+      <button class="ck-btn" id="ck-stop">■ STOP</button>
+      <span class="stat" id="ck-pstat">—</span>
+    </div>
+  </div>
+
+  <div id="ck-timeline">
+    <div class="hd"><span>TIMELINE</span><b id="ck-tl-sub">live decisions &amp; sightings</b></div>
+    <div id="ck-tl-list"></div>
+  </div>
+
+</div>
+
+<!-- styled confirmation — body-level so the deck (not just the cockpit) can
+     use it; replaces the native browser confirm() everywhere -->
+<div id="ck-confirm">
+  <div class="box">
+    <div class="ttl" id="ck-confirm-ttl">⚠ Deploy to the connected robot?</div>
+    <div class="msg" id="ck-confirm-msg"></div>
+    <div class="row">
+      <button class="ck-cbtn" id="ck-confirm-no">Cancel</button>
+      <button class="ck-cbtn yes" id="ck-confirm-yes">▶ DEPLOY</button>
+    </div>
+  </div>
+</div>
+
+<div id="ck-net"></div>
+
+<a id="ck-home" href="/" title="back to the dashboard">← Dashboard</a>
 
 <div id="toolbar">
   <button id="btnLevels" title="pick a robot + task">⊞ LEVELS</button>
@@ -211,6 +581,8 @@
   <button data-panel="p-map">MAP</button>
   <button data-panel="p-view1">VIEW 1</button>
   <button data-panel="p-view2">VIEW 2</button>
+  <button data-panel="p-eyes" id="btnEyes" style="display:none">EYES</button>
+  <button data-panel="p-tele">SPEED</button>
   <button data-panel="p-runs">RUNS</button>
   <div class="sep"></div>
   <select id="mainCamSel" class="camSel" title="main view camera — C cycles">
@@ -222,7 +594,28 @@
   <div class="sep"></div>
   <button id="btnConnect" class="accent">⚡ CONNECT AGENT</button>
   <button id="btnReset" title="restore default layout">reset</button>
+  <div class="sep" style="margin-left:auto"></div>
+  <a id="projChip" href="/projects" title="active project / environment — data records here"
+     style="text-decoration:none;color:#aebcc7;border:1px solid #2a3a46;border-radius:6px;padding:6px 10px;font-size:12px">◇ scratch</a>
+  <span id="tb-views" style="position:relative">
+    <button id="tb-views-btn" title="go to a dashboard">▤ VIEWS ▾</button>
+    <span id="tb-views-menu" style="display:none;position:absolute;right:0;top:120%;z-index:60;background:#0d120c;border:1px solid #1e2a1f;border-radius:8px;padding:6px;min-width:150px;text-align:left">
+      <a href="/" style="display:block;padding:6px 9px;color:#00d47e;text-decoration:none;border-radius:5px">⌂ Dashboard (home)</a>
+      <a href="/setup" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">set up a robot / sim</a>
+      <a href="/projects" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">projects</a>
+      <a href="/browser" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">data browser</a>
+      <a href="/scenarios" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">scenarios</a>
+      <a href="/timeline" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">timeline</a>
+      <a href="/analytics" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">analytics</a>
+      <a href="/fleet" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">fleet lab (comms)</a>
+      <a href="/fleet-sim" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">fleet sim (warehouse)</a>
+      <a href="/search" style="display:block;padding:6px 9px;color:#cfe;text-decoration:none;border-radius:5px">search</a>
+    </span>
+  </span>
 </div>
+<script>(function(){var b=document.getElementById("tb-views-btn"),m=document.getElementById("tb-views-menu");if(b)b.onclick=function(e){e.stopPropagation();m.style.display=m.style.display==="none"?"block":"none";};document.addEventListener("click",function(){if(m)m.style.display="none";});
+// live active-project chip — shows where recordings land
+fetch("/api/projects/active").then(function(r){return r.json();}).then(function(d){var c=document.getElementById("projChip");if(!c)return;if(d.active){c.textContent="◆ "+d.active.project+" / "+d.active.environment;c.style.color="#00d47e";c.style.borderColor="#1f4434";}else{c.textContent="◇ scratch";}}).catch(function(){});})();</script>
 
 <div class="panel" id="p-brief">
   <div class="p-head"><b>MISSION</b><select id="levelSel"></select><span class="x">✕</span></div>
@@ -249,17 +642,28 @@
 <div class="panel" id="p-status">
   <div class="p-head"><b>STATUS</b><span class="x">✕</span></div>
   <div class="p-body">
-    <div>⏱ <span id="clock">0.0s</span> <span class="rec" id="rec"></span></div>
+    <div class="st-top">⏱ <span id="clock">0.0s</span> <span class="rec" id="rec"></span></div>
     <div class="link off" id="link">behaviors: searching…</div>
     <div class="intent" id="intent"></div>
-    <button id="btnSeal" title="stop, seal, and store this run — recording restarts fresh"
-      style="margin-top:6px;background:#10161c;color:#00d47e;border:1px solid #1f4434;
-             border-radius:4px;font:inherit;font-size:11px;padding:2px 10px;cursor:pointer">
-      ✦ seal run → RUNS</button>
-    <div id="cmdline">cmd —</div>
-    <div class="tele" id="teleRoom">room —</div>
-    <div class="tele" id="teleOdo">odometer 0.0 m</div>
-    <div class="tele" id="telePose">x 0.0 · z 0.0</div>
+    <button id="btnSeal" class="btn sm" title="stop, seal, and store this run — recording restarts fresh"
+      style="margin:8px 0 10px;color:#00d47e">✦ seal run → RUNS</button>
+    <div class="kv">
+      <div class="k">cmd</div><div class="v" id="cmdline">—</div>
+      <div class="k">room</div><div class="v" id="teleRoom">—</div>
+      <div class="k">odometer</div><div class="v" id="teleOdo">0.0 m</div>
+      <div class="k">pose</div><div class="v" id="telePose">—</div>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="p-tele">
+  <div class="p-head"><b>SPEED</b><span style="color:#6a7a86">m/s · last 14s</span><span class="x">✕</span></div>
+  <div class="p-body" style="padding:8px 10px">
+    <canvas id="teleSpark" style="width:100%;height:64px;display:block"></canvas>
+    <div class="kv" style="margin-top:8px">
+      <div class="k">now</div><div class="v"><span id="teleSpdNow">0.0</span> m/s</div>
+      <div class="k">peak</div><div class="v"><span id="teleSpdMax">0.0</span> m/s</div>
+    </div>
   </div>
 </div>
 
@@ -291,24 +695,24 @@
   <div class="p-body"><div id="runsList"></div></div>
 </div>
 
+<!-- robot camera panel (deck robot mode): the real camera feed + YOLO -->
+<div class="panel hidden" id="p-eyes">
+  <div class="p-head"><b>EYES</b><span>— live robot camera</span>
+    <select id="eyesSrc" class="camSel"><option value="robot">robot cam</option><option value="webcam">webcam</option></select>
+    <span class="x">✕</span></div>
+  <div class="p-body" style="padding:0;background:#000;position:relative">
+    <img id="robotEyesImg" style="display:block;width:100%;height:100%;object-fit:cover">
+    <div id="robotEyesOv" style="position:absolute;inset:0;pointer-events:none"></div>
+  </div>
+</div>
+
 <div id="start"><div class="start-card">
   <button class="close" id="startClose">✕</button>
-  <h1>ROBORUN ARENA</h1>
-  <p class="tagline">Code a robot in Python, right here. Beat the chamber.
-  <b>The same file drives a real robot.</b></p>
-  <div class="start-steps">
-    <div><span>01 · WRITE</span>a ~10-line policy against <b>pose / lidar / see / move</b> —
-      or just press RUN, a starter is loaded</div>
-    <div><span>02 · WATCH</span>it drives the robot at 10 Hz through real physics —
-      camera, lidar cloud, live map</div>
-    <div><span>03 · SHIP</span><b>roborun connect &lt;robot-ip&gt;</b> runs the same file
-      on a Go2, a drone, anything ROS</div>
-  </div>
-  <p class="sub">Pick a robot, pick a task.
-  Grab the wheel anytime with <b>WASD</b> (counts as practice, not autonomous).</p>
+  <h1>PICK A ROBOT &amp; TASK</h1>
+  <p class="sub">Swap the sim level. Grab the wheel anytime with <b>WASD</b>.
+  Want to set up a project, connect a real robot, or run a fleet?
+  <a href="/setup" style="color:#00d47e">open Setup →</a> · <a href="/" style="color:#9fb0bd">← Dashboard</a></p>
   <div id="startGrid"></div>
-  <div class="start-foot">your policy is real python on a real robot handle —
-  <b>the same code drives ROS 1/2 robots</b> · every run is a merkle-sealed recording</div>
 </div></div>
 
 <div id="connect"><div class="card">

@@ -4,7 +4,7 @@
 
 <h1 align="center">RoboRun: Write a Robot Behavior Once, Run It on Any ROS 1/2 Robot</h1>
 
-<p align="center"><b>The base layer for coding robots: <code>see / move / ask</code> primitives, hot-reload Python behaviors,<br>the same file from webcam + MuJoCo to real hardware. MCP-native for AI agents, every run flight-recorded.</b></p>
+<p align="center"><b>The base layer for coding robots: <code>see / move / ask</code> primitives, hot-reload Python behaviors,<br>the same file from webcam + MuJoCo to real hardware. MCP-native for AI agents — and every run is flight-recorded, sealed, and searchable, so you can find anything your robots ever saw, across all of time.</b></p>
 
 <p align="center">
   <a href="https://pypi.org/project/ros-agent/"><img src="https://img.shields.io/pypi/v/ros-agent?style=flat-square&color=00d47e&label=pip%20install%20ros-agent" alt="PyPI"></a>
@@ -19,10 +19,19 @@
 
 ```bash
 pip install ros-agent     # the package keeps its PyPI name; the command is roborun
-roborun
+roborun                   # serves the UI at http://localhost:8765 (prints the URL)
 ```
 
-The browser opens live, and a `behaviors/` folder appears with the robot's brain. Open **`/arena`** — a robot dog in a browser sim, body and eyes in the same world (what it does changes what it sees). Nothing else to install; the base package is three small dependencies, no torch. The robot's brain:
+Open the printed URL and a `behaviors/` folder appears with the robot's brain. Open **`/arena`** — a robot dog in a browser sim, body and eyes in the same world (what it does changes what it sees). Nothing else to install; the base package is three small dependencies, no torch.
+
+Prefer the terminal? It runs fully without the web UI:
+
+```bash
+roborun run     # headless: drives behaviors, streams the see/move/ask loop to stdout
+roborun tui     # full-screen terminal dashboard (pip install 'ros-agent[tui]')
+```
+
+The robot's brain:
 
 ```python
 # behaviors/follow_person.py (already running)
@@ -55,6 +64,7 @@ Want real eyes instead of the sim? `pip install 'ros-agent[vision]'` (YOLO + CLI
 | `robot.delegate("fix my search pattern")` | async LLM **with tools** — it can call any MCP tool, including rewriting the running policy (hot reload applies it live) |
 | `robot.tool("navigate", x=2, y=3)` | call any MCP tool from inside the policy |
 | `robot.lidar()` | 360° ranges in meters, `[0]` = straight ahead |
+| `robot.go_to_place("the charging dock")` | semantic navigation — recall where it last saw something, then drive there |
 | `robot.remember(k, v)` / `robot.recall(k)` | memory that survives restarts |
 | `robot.state` | dict that survives across loop ticks |
 
@@ -101,6 +111,33 @@ What this proves: the recorded run — images, detections, and decisions include
 
 The UI at `http://localhost:8765` is the flight deck itself: live camera with YOLO boxes, the black box streaming, the live anchor badge, a command bar, and director keys. `M` record/seal · `V` verify · `T` tamper · `R` runs/replay · `C` sources.
 
+## Track and search everything over time
+
+Every run — sim, real robot, or webcam — flows through one loop: **YOLO + CLIP → sealed MCAP → a live index you can search across all of history.** So "where did I last see the forklift", "who was in the lobby yesterday", "every red mug across the fleet" are one query — semantic (CLIP), label (YOLO), place, or time window — over every run and robot.
+
+The cockpit's **▤ VIEWS** menu opens the dashboards (also `roborun demo` to populate them instantly):
+
+- **/search** — find anything/anyone over time; export the hits as a labeled dataset (sealed provenance).
+- **/scenarios** — give a behavior a task, run it, and see if it passed; group runs into suites with a pass-rate, and re-run after every change.
+- **/run** — per-run trajectory · velocity · clearance · LiDAR, with **synced playback** (scrub a moment → the frame the robot saw) and **⚑ Flag** to bookmark incidents to revisit.
+- **/analytics** — detections over time, suite pass-rates, per-robot fleet activity.
+- **/timeline** — the live event stream + recent sightings.
+
+From the local runner, no browser needed:
+
+```bash
+roborun demo                     # load sample data so the dashboards aren't empty
+roborun ask "patrol the lobby"   # tell the robot what to do in plain English
+roborun search "person"          # across every recorded run, all-time
+roborun scenarios run mjx_reach  # score a scenario (vectorized MuJoCo, sealed)
+roborun dataset "forklift" ./ds  # curate a labeled training set from a search
+roborun status                   # is it running, what's connected, how much recorded
+```
+
+(`roborun help` lists every verb.)
+
+The robot handle gets it too: `robot.go_to_place("the charging dock")` navigates to where it last saw something (semantic memory), and the same `recall_place` is an MCP tool any agent can call.
+
 ## Connect a real robot
 
 ```bash
@@ -109,7 +146,7 @@ roborun connect 192.168.1.42 --move   # proves it: clamped 0.5s nudge, then stop
 roborun connect --scan                # DDS discovery — nothing to install on the robot
 ```
 
-If rosbridge isn't running on the robot yet, the command prints the exact two lines to run there — that's the whole setup. **No ROS install on your machine.** Once connected, plain `roborun` drives that robot and the same `behaviors/*.py` files now move real hardware: Unitree Go2/G1, TurtleBot, arms, drones, NVIDIA Isaac Sim, Gazebo. `robot.move()` goes to the sim if it's running, otherwise to the connected robot, always through the same safety clamps.
+If rosbridge isn't running on the robot yet, the command prints the exact two lines to run there — that's the whole setup. **No ROS install on your machine, and it works with both ROS 1 and ROS 2** — rosbridge speaks both, and RoboRun detects which (the DDS path is ROS 2-only). Once connected, plain `roborun` drives that robot and the same `behaviors/*.py` files now move real hardware: Unitree Go2/G1, TurtleBot, arms, drones, NVIDIA Isaac Sim, Gazebo. `robot.move()` goes to the sim if it's running, otherwise to the connected robot, always through the same safety clamps.
 
 Optional extras: `pip install ros-agent[vision]` (YOLO + CLIP), `[sim]` (MuJoCo), `[ros]` (direct DDS), `[crypto]` (Ed25519 signing), `[anchor]` (RFC 3161 timestamping), `[fleet]` (R2 + DuckDB cross-robot), `[all]`.
 

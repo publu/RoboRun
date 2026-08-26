@@ -60,6 +60,15 @@ SCHEMAS: dict[str, dict] = {
             "format": {"type": "string"},
         },
     },
+    "foxglove.CompressedVideo": {
+        "type": "object",
+        "properties": {
+            "timestamp": {"type": "object"},
+            "frame_id": {"type": "string"},
+            "data": {"type": "string", "contentEncoding": "base64"},
+            "format": {"type": "string"},
+        },
+    },
     "foxglove.PoseInFrame": {
         "type": "object",
         "properties": {
@@ -112,11 +121,53 @@ SCHEMAS: dict[str, dict] = {
             "prev": {"type": "string"},
         },
     },
+    "roborun.Command": {
+        "type": "object",
+        "properties": {
+            "timestamp": {"type": "object"},
+            "forward": {"type": "number"}, "strafe": {"type": "number"},
+            "turn": {"type": "number"}, "climb": {"type": "number"},
+            "grip": {"type": "boolean"}, "source": {"type": "string"},
+            "clamped": {"type": "boolean"},
+        },
+    },
+    "roborun.Telemetry": {
+        "type": "object",
+        "properties": {
+            "timestamp": {"type": "object"},
+            "channel": {"type": "string"}, "data": {"type": "object"},
+        },
+    },
+    "sensor_msgs/NavSatFix": {
+        "type": "object",
+        "properties": {
+            "timestamp": {"type": "object"},
+            "latitude": {"type": "number"}, "longitude": {"type": "number"},
+            "altitude": {"type": "number"}, "status": {"type": "integer"},
+        },
+    },
+    "foxglove.PointCloud": {
+        "type": "object",
+        "properties": {
+            "timestamp": {"type": "object"}, "frame_id": {"type": "string"},
+            "point_count": {"type": "integer"},
+            "points": {"type": "string", "contentEncoding": "base64"},
+        },
+    },
     "roborun.Json": {"type": "object"},
 }
 
 
 def runs_root() -> Path:
+    # When a project/environment is active, scope runs under it (spec 07/08);
+    # otherwise the legacy flat layout — fully back-compatible.
+    try:
+        from roborun import projects
+        dr = projects.data_root()
+        if dr is not None:
+            return dr / "runs"
+    except Exception:
+        pass
     base = os.environ.get("ROBORUN_STATE_DIR")
     root = Path(base) if base else Path.home() / ".roborun"
     return root / "runs"
@@ -198,6 +249,8 @@ class RunRecorder:
         self.started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         self.prev_run = _latest_sealed_run(self._root)
         self._closed = False
+        self._video: dict[str, Any] = {}  # per-camera H.264 encoders
+        self.extractor = None  # optional StreamingExtractor (live indexing)
 
         self._bus_queue: queue.Queue | None = None
         self._bus_thread: threading.Thread | None = None
@@ -246,6 +299,41 @@ class RunRecorder:
             "timestamp": _ts_obj(ts), "frame_id": frame_id,
             "data": base64.b64encode(jpeg).decode(), "format": "jpeg",
         }, ts)
+        if self.extractor is not None:
+            try:
+                self.extractor.on_camera(ts, f"/camera/{name}", source_id=name)
+            except Exception:
+                pass
+
+    def write_video(self, frame_bgr, name: str = "webcam", fps: int = 30,
+                    ts: float | None = None, frame_id: str = "camera") -> None:
+        """Encode a BGR frame to H.264 and write any resulting packets to the
+        `foxglove.CompressedVideo` channel — 10–50× smaller than per-frame JPEG.
+        Lazily spins up one encoder per camera. Needs the `av` extra."""
+        import numpy as np
+        ts = ts if ts is not None else time.time()
+        enc = self._video.get(name)
+        if enc is None:
+            from roborun.video import H264Encoder
+            h, w = frame_bgr.shape[:2]
+            enc = H264Encoder(w, h, fps=fps)
+            self._video[name] = enc
+        for pkt in enc.add(np.ascontiguousarray(frame_bgr)):
+            self.write_json(f"/camera/{name}", "foxglove.CompressedVideo", {
+                "timestamp": _ts_obj(ts), "frame_id": frame_id,
+                "data": base64.b64encode(pkt).decode(), "format": "h264",
+            }, ts)
+
+    def _flush_video(self) -> None:
+        for name, enc in list(getattr(self, "_video", {}).items()):
+            try:
+                for pkt in enc.flush():
+                    self.write_json(f"/camera/{name}", "foxglove.CompressedVideo", {
+                        "timestamp": _ts_obj(time.time()), "frame_id": "camera",
+                        "data": base64.b64encode(pkt).decode(), "format": "h264",
+                    })
+            except Exception:
+                pass
 
     def write_detections(self, detections: list[dict], name: str = "yolo",
                          ts: float | None = None) -> None:
@@ -253,6 +341,11 @@ class RunRecorder:
         self.write_json(f"/detections/{name}", "roborun.Detections", {
             "timestamp": _ts_obj(ts), "detections": detections,
         }, ts)
+        if self.extractor is not None:
+            try:
+                self.extractor.on_detections(ts, detections)
+            except Exception:
+                pass
 
     def write_clip(self, embedding, frame_topic: str = "/camera/webcam",
                    label: str | None = None, ts: float | None = None) -> None:
@@ -264,6 +357,11 @@ class RunRecorder:
             "vec": base64.b64encode(vec.tobytes()).decode(),
             "frame_topic": frame_topic, "label": label or "",
         }, ts)
+        if self.extractor is not None:
+            try:
+                self.extractor.on_clip(ts, vec)
+            except Exception:
+                pass
 
     def write_pose(self, x: float, y: float, z: float = 0.0,
                    orientation: dict | None = None, frame_id: str = "world",
@@ -277,6 +375,56 @@ class RunRecorder:
             "timestamp": _ts_obj(ts), "frame_id": frame_id,
             "pose": {"position": {"x": x, "y": y, "z": z},
                      "orientation": orientation or {"x": 0, "y": 0, "z": 0, "w": 1}},
+        }, ts)
+        if self.extractor is not None:
+            try:
+                self.extractor.on_pose(ts, x, y, z)
+            except Exception:
+                pass
+
+    def write_cmd(self, forward: float = 0.0, strafe: float = 0.0,
+                  turn: float = 0.0, climb: float = 0.0, grip: bool = False,
+                  source: str = "", clamped: bool = False,
+                  ts: float | None = None) -> None:
+        """The commanded action actually sent to the robot (post safety-clamp).
+        Records *why* it moved, not just what it saw — the spine of replay."""
+        ts = ts if ts is not None else time.time()
+        self.write_json("/cmd", "roborun.Command", {
+            "timestamp": _ts_obj(ts), "forward": forward, "strafe": strafe,
+            "turn": turn, "climb": climb, "grip": bool(grip),
+            "source": source, "clamped": bool(clamped),
+        }, ts)
+
+    def write_telemetry(self, channel: str, data: dict,
+                        ts: float | None = None) -> None:
+        """A telemetry series sample (battery/imu/joints/velocity/…) as a durable
+        MCAP channel, not just the ephemeral in-memory ring."""
+        ts = ts if ts is not None else time.time()
+        self.write_json(f"/telemetry/{channel}", "roborun.Telemetry", {
+            "timestamp": _ts_obj(ts), "channel": channel, "data": data,
+        }, ts)
+
+    def write_gps(self, latitude: float, longitude: float, altitude: float = 0.0,
+                  status: int = 0, ts: float | None = None) -> None:
+        ts = ts if ts is not None else time.time()
+        self.write_json("/gps", "sensor_msgs/NavSatFix", {
+            "timestamp": _ts_obj(ts), "latitude": latitude,
+            "longitude": longitude, "altitude": altitude, "status": status,
+        }, ts)
+
+    def write_cloud(self, name: str, points: list, frame_id: str = "world",
+                    ts: float | None = None) -> None:
+        """A point cloud (lidar/depth/gz) as foxglove.PointCloud. `points` is a
+        flat [x,y,z,...] float list, base64-packed; full cloud lives here, a
+        summary (centroid/bbox) goes to the hot index (PERCEPTION_DATA_SPEC)."""
+        import base64
+        import struct
+        ts = ts if ts is not None else time.time()
+        flat = [float(v) for v in points]
+        packed = base64.b64encode(struct.pack(f"<{len(flat)}f", *flat)).decode()
+        self.write_json(f"/cloud/{name}", "foxglove.PointCloud", {
+            "timestamp": _ts_obj(ts), "frame_id": frame_id,
+            "point_count": len(flat) // 3, "points": packed,
         }, ts)
 
     def write_scan(self, ranges: list, x: float, y: float, heading: float,
@@ -392,6 +540,11 @@ class RunRecorder:
         with self._lock:
             self._checkpoint_locked()
 
+    def channels(self) -> list[str]:
+        """The topics written so far — the run manifest's channel list (spec 01)."""
+        with self._lock:
+            return sorted(self._channel_ids.keys())
+
     def status(self) -> dict[str, Any]:
         with self._lock:
             return {
@@ -399,15 +552,26 @@ class RunRecorder:
                 "mcap": str(self.mcap_path), "bytes": self._stream.offset,
                 "segments": len(self._segments),
                 "messages": dict(self._message_counts),
+                "channels": sorted(self._channel_ids.keys()),
                 "recording": not self._closed,
             }
 
-    def close(self, do_anchor: bool = True) -> dict[str, Any]:
-        """Finish the MCAP, seal it (O(1) seal + Merkle root), anchor the root."""
+    def close(self, do_anchor: bool = True,
+              anchor_async: bool = True) -> dict[str, Any]:
+        """Finish the MCAP and seal it (O(1) Merkle root + Ed25519 signature).
+
+        The signature is computed synchronously — that IS the integrity anchor,
+        and it binds the run at seal time. The *external timestamp* (RFC 3161) is
+        deferred to a background thread by default (`anchor_async`), so sealing no
+        longer blocks on TSA HTTP (was up to 10 s/TSA). `verify` already reports
+        `consistent_unanchored` → `verified_anchored` once the `.tsr` lands, so
+        async anchoring is exactly the existing offline path made the default —
+        no new trust assumption. Pass `anchor_async=False` for a blocking stamp."""
         with self._lock:
             if self._closed:
                 return json.loads(self.seal_path.read_text())
             self._detach_event_bus()
+            self._flush_video()  # drain any pending H.264 packets first
             self._writer.finish()
             self._checkpoint_locked()  # footer bytes
             self._closed = True
@@ -431,21 +595,41 @@ class RunRecorder:
                 "prev_run": self.prev_run,
                 "signature": sign_message(
                     f"{root}|{len(self._segments)}|{sealed_at}".encode()),
+                "anchor": {"status": "unanchored"},
             }
-            anchor_info: dict[str, Any] = {"status": "unanchored"}
-            if do_anchor:
-                tsr_bytes = anchor.stamp_digest(bytes.fromhex(root))
-                if tsr_bytes is not None:
-                    tsr_path = self.seal_path.with_suffix(".seal.tsr")
-                    tsr_path.write_bytes(tsr_bytes)
-                    anchor_info = {**anchor.status(
-                        tsr_path, expected_digest=bytes.fromhex(root)),
-                        "tsr": tsr_path.name}
-                else:
-                    anchor_info["reason"] = "offline or asn1crypto unavailable"
+            # Write the sealed (signed) record immediately — integrity is anchored.
+            self.seal_path.write_text(json.dumps(seal, indent=1))
+
+        if do_anchor:
+            if anchor_async:
+                threading.Thread(target=self._anchor_into_seal, args=(root,),
+                                 daemon=True, name=f"anchor-{self.run_id}").start()
+            else:
+                self._anchor_into_seal(root)
+                return json.loads(self.seal_path.read_text())
+        return seal
+
+    def _anchor_into_seal(self, root: str) -> dict[str, Any]:
+        """Stamp the Merkle root with an RFC 3161 TSA and fold the proof into the
+        already-written seal. Safe to run in a background thread."""
+        anchor_info: dict[str, Any] = {"status": "unanchored"}
+        try:
+            tsr_bytes = anchor.stamp_digest(bytes.fromhex(root))
+            if tsr_bytes is not None:
+                tsr_path = self.seal_path.with_suffix(".seal.tsr")
+                tsr_path.write_bytes(tsr_bytes)
+                anchor_info = {**anchor.status(
+                    tsr_path, expected_digest=bytes.fromhex(root)),
+                    "tsr": tsr_path.name}
+            else:
+                anchor_info["reason"] = "offline or asn1crypto unavailable"
+        except Exception as exc:  # never let anchoring crash a finished run
+            anchor_info["reason"] = f"anchor error: {exc}"
+        with self._lock:
+            seal = json.loads(self.seal_path.read_text())
             seal["anchor"] = anchor_info
             self.seal_path.write_text(json.dumps(seal, indent=1))
-            return seal
+        return anchor_info
 
 
 # ── verification ─────────────────────────────────────────────────────────
@@ -661,13 +845,24 @@ _active: RunRecorder | None = None
 _active_lock = threading.Lock()
 
 
-def start_recording(robot_id: str = "local", **kwargs) -> RunRecorder:
+def start_recording(robot_id: str = "local", stream_index: bool = False,
+                    **kwargs) -> RunRecorder:
+    """Open a run. `stream_index=True` wires a StreamingExtractor so Observations
+    are indexed live (search works mid-run, no close-time spike)."""
     global _active
     with _active_lock:
         if _active is not None and not _active._closed:
             return _active
         _active = RunRecorder(robot_id=robot_id, **kwargs)
         _active.attach_event_bus()
+        if stream_index:
+            try:
+                from roborun.observations import StreamingExtractor
+                from roborun.spatial_memory import SpatialMemoryStore
+                _active.extractor = StreamingExtractor(
+                    SpatialMemoryStore(), robot_id=robot_id, run_id=_active.run_id)
+            except Exception:
+                pass
         return _active
 
 

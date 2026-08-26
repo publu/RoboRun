@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script src="./runtime-base.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoboRun · Scenarios</title>
+<link rel="stylesheet" href="./ui.css">
+<script src="./shell.js"></script>
+<style>
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--mono); }
+  /* shell strips this <header>; intro lives in <main> so it survives */
+  header{ display:flex; align-items:baseline; gap:16px; padding:18px 24px;
+          border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1{ font-size:16px; margin:0; letter-spacing:.5px; }
+  main{ min-width:0; }
+
+  /* ── page intro ───────────────────────────────────────────────────────── */
+  .intro{ color:var(--fg-2); font-size:12.5px; max-width:680px; margin:0 0 4px; }
+  .intro b{ color:var(--fg); }
+
+  /* ── section heading: label + optional count + right-aligned aside ─────── */
+  .sec{ display:flex; align-items:center; gap:10px; margin:30px 0 12px; }
+  .sec:first-of-type{ margin-top:22px; }
+  .sec h2{ font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:var(--fg-dim); margin:0; }
+  .sec .ct{ font-size:11px; color:var(--fg-dim); font-variant-numeric:tabular-nums; }
+  .sec .rule{ flex:1; height:1px; background:var(--line-soft); }
+
+  .cards{ display:grid; grid-template-columns:repeat(auto-fill,minmax(248px,1fr)); gap:12px; }
+
+  /* ── runnable launch card ─────────────────────────────────────────────── */
+  .lcard{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r);
+          padding:13px 15px; display:flex; flex-direction:column; }
+  .lcard .head{ display:flex; justify-content:space-between; align-items:center; gap:8px;
+                padding-bottom:9px; margin-bottom:9px; border-bottom:1px solid var(--line-soft); }
+  .lcard .head .name{ font-weight:600; font-size:12.5px; }
+  .lcard .head .n{ color:var(--fg-dim); font-size:10.5px; font-weight:400; margin-left:6px; }
+  .lrow{ display:flex; justify-content:space-between; align-items:center; gap:8px; padding:4px 0; }
+  .lrow .scn{ min-width:0; }
+  .lrow .scn .nm{ font-size:12px; color:var(--fg); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .lrow .scn .doc{ font-size:10.5px; color:var(--fg-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .lrow .btn{ flex:none; }
+
+  /* ── suite card with donut ────────────────────────────────────────────── */
+  .scard{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r);
+          padding:13px 15px; cursor:pointer; transition:border-color .15s, background .15s;
+          display:flex; gap:13px; align-items:center; }
+  .scard:hover{ border-color:#2c3b2c; } .scard.sel{ border-color:var(--accent); background:#0e150f; }
+  .scard .donut{ width:46px; height:46px; }
+  .scard .donut span{ font-size:11px; }
+  .scard .meta{ min-width:0; flex:1; }
+  .scard .name{ font-weight:600; word-break:break-word; font-size:13px; }
+  .scard .sm{ color:var(--fg-dim); font-size:11px; margin-top:3px; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .scard .sm .sep{ opacity:.5; }
+  .scard .sm b{ color:var(--fg-2); font-weight:600; }
+
+  /* ── suite detail ─────────────────────────────────────────────────────── */
+  #suiteDetail{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:18px; margin-top:12px; }
+  .sd-head{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .sd-grid{ display:grid; grid-template-columns:1fr 1fr; gap:28px; margin-top:18px; }
+  @media(max-width:760px){ .sd-grid{ grid-template-columns:1fr; gap:20px; } }
+  .hist{ min-height:80px; }
+  .srow{ display:flex; align-items:center; gap:12px; padding:7px 0; border-bottom:1px solid var(--line-soft); }
+  .srow:last-child{ border-bottom:none; }
+  .srow .nm{ flex:none; width:150px; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .srow .dotrow{ flex:1; justify-content:flex-end; }
+  .srow .rt{ color:var(--fg-2); font-size:12px; width:38px; text-align:right; font-variant-numeric:tabular-nums; }
+
+  /* ── runs table ───────────────────────────────────────────────────────── */
+  .tablewrap{ border:1px solid var(--line); border-radius:var(--r); overflow:hidden; }
+  table{ width:100%; border-collapse:collapse; }
+  th,td{ text-align:left; padding:7px 12px; border-bottom:1px solid var(--line-soft); font-size:12px; vertical-align:top; }
+  thead th{ color:var(--fg-dim); font-weight:500; text-transform:uppercase; letter-spacing:.06em;
+            font-size:10.5px; background:var(--panel); position:sticky; top:0; }
+  tbody tr:last-child td{ border-bottom:none; }
+  tbody tr:hover td{ background:var(--bg-2); }
+  td.metrics{ color:var(--fg-2); font-variant-numeric:tabular-nums; }
+  td .reason{ color:var(--fg-dim); font-size:10.5px; margin-top:3px; max-width:240px; }
+  .scnlink{ color:var(--accent); text-decoration:none; }
+  .scnlink:hover{ text-decoration:underline; }
+  .tnum{ font-variant-numeric:tabular-nums; }
+
+  /* ── filter bar ───────────────────────────────────────────────────────── */
+  .filterbar{ display:flex; gap:6px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  .filterbar .lbl{ font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--fg-dim); margin-right:2px; }
+  .filterbar .div{ width:1px; height:18px; background:var(--line); margin:0 4px; }
+  .filterbar .chip a{ color:var(--fg-dim); text-decoration:none; margin-left:1px; }
+  .filterbar .chip a:hover{ color:var(--bad); }
+
+  .empty{ color:var(--fg-dim); padding:36px 24px; text-align:center; font-size:12px; line-height:1.7; }
+  .empty code{ color:var(--fg-2); background:var(--panel-2); padding:1px 5px; border-radius:4px; }
+  .empty.lite{ padding:22px; }
+
+  @media(max-width:700px){ .tablewrap{ overflow-x:auto; } main{ padding:16px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>SCENARIOS</h1>
+</header>
+<main>
+  <p class="intro">Test your robot's behaviors and see how they score. Click a scenario to run it — every run is recorded and <b>tamper-proof</b>. Results group into suites with a live pass-rate.</p>
+
+  <div class="sec"><h2>Run a scenario</h2><span class="ct" id="runnableCt"></span><span class="rule"></span></div>
+  <div id="runnable" class="cards"><div class="empty lite">loading…</div></div>
+
+  <div class="sec"><h2>Suites</h2><span class="ct" id="suitesCt"></span><span class="rule"></span></div>
+  <div id="suites" class="cards"><div class="empty lite">loading…</div></div>
+  <div id="suiteDetail" hidden></div>
+
+  <div class="sec"><h2 id="runsHead">Runs</h2><span class="rule"></span></div>
+  <div class="filterbar" id="filterbar"></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Result</th><th>Scenario</th><th>Suite</th>
+        <th title="random seed — same seed reproduces the exact run">Seed</th>
+        <th>Measurements</th><th>Scores</th><th>Dur</th><th>When</th></tr></thead>
+      <tbody id="runs"><tr><td colspan="8" class="empty">loading…</td></tr></tbody>
+    </table>
+  </div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+let state = { suite:null, outcome:"", tag:null };
+let allTags = [];           // tags discovered from scenario defs (for the facet)
+
+async function j(u){ const r = await fetch(u); return r.json(); }
+const pct = x => Math.round((x||0)*100);
+const rateColor = p => p>=70 ? "var(--ok)" : p>=40 ? "var(--warn)" : "var(--bad)";
+const when = s => (s||"").replace("T"," ").replace("Z","").split(".")[0];
+const esc = s => String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const dur = d => d==null ? "—" : (d<1 ? Math.round(d*1000)+"ms" : (+d).toFixed(1)+"s");
+
+// ── launch ──────────────────────────────────────────────────────────────
+async function runScenario(name){ await post({scenario:name}); }
+async function runSuite(suite){ await post({suite}); }
+async function post(body){
+  const el=$("#runnable"); el.style.opacity=.5;
+  try{ await fetch("/api/scenarios/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); }catch(e){}
+  el.style.opacity=1; loadSuites(); loadRuns(); if(state.suite) loadSuiteDetail();
+}
+async function loadRunnable(){
+  let d; try{ d=await j("/api/scenarios/defs"); }catch(e){ return; }
+  const el=$("#runnable");
+  // collect tags for the filter facet
+  allTags = [...new Set((d.defs||[]).flatMap(x=>x.tags||[]))].sort();
+  renderFilters();
+  if(!d.defs || !d.defs.length){
+    $("#runnableCt").textContent="";
+    el.innerHTML='<div class="empty">No scenarios available.<br>Built-in demos load automatically; add your own with <code>@scenario_def</code>.</div>';
+    return;
+  }
+  $("#runnableCt").textContent = d.defs.length+" in "+Object.keys(d.defs.reduce((a,x)=>(a[x.suite||"(none)"]=1,a),{})).length+" suites";
+  const bySuite={}; d.defs.forEach(x=>(bySuite[x.suite||"(none)"]=bySuite[x.suite||"(none)"]||[]).push(x));
+  el.innerHTML=Object.entries(bySuite).map(([s,defs])=>`
+    <div class="lcard">
+      <div class="head">
+        <span class="name">${esc(s)}<span class="n">${defs.length}</span></span>
+        <button class="btn sm accent" onclick="runSuite('${esc(s)}')">▶ run suite</button>
+      </div>
+      ${defs.map(x=>`<div class="lrow">
+        <span class="scn">
+          <div class="nm">${esc(x.name)}</div>
+          ${x.doc?`<div class="doc" title="${esc(x.doc)}">${esc(x.doc)}</div>`:""}
+        </span>
+        <button class="btn sm" onclick="runScenario('${esc(x.name)}')">run</button>
+      </div>`).join("")}
+    </div>`).join("");
+}
+
+// ── suites (donut cards) ────────────────────────────────────────────────
+async function loadSuites(){
+  const d = await j("/api/scenarios/suites");
+  const el = $("#suites");
+  $("#suitesCt").textContent = (d.suites&&d.suites.length) ? d.suites.length+(d.suites.length===1?" suite":" suites") : "";
+  if(!d.suites || !d.suites.length){ paint(el,'<div class="empty">No suites yet.<br>Run a scenario above — results appear here grouped by suite with a live pass-rate.</div>'); return; }
+  if(paint(el, d.suites.map(c => { const p=pct(c.pass_rate); return `
+    <div class="scard ${state.suite===c.suite?'sel':''}" data-suite="${esc(c.suite)}">
+      <div class="donut" style="--p:${p};--c:${rateColor(p)}"><span>${p}%</span></div>
+      <div class="meta">
+        <div class="name">${esc(c.suite)}</div>
+        <div class="sm"><b>${c.passed}</b>/${c.runs} pass<span class="sep">·</span>${(c.scenarios||[]).length} scn</div>
+        <div class="sm">${when(c.latest)?"last "+when(c.latest):"never run"}</div>
+      </div>
+    </div>`; }).join(""))){
+    el.querySelectorAll(".scard").forEach(card => card.onclick = () => {
+      state.suite = state.suite===card.dataset.suite ? null : card.dataset.suite;
+      loadSuites(); loadSuiteDetail(); loadRuns(); renderFilters();
+    });
+  }
+}
+
+// ── suite detail: KPIs + per-scenario pass/fail timelines ───────────────
+async function loadSuiteDetail(){
+  const box=$("#suiteDetail");
+  if(!state.suite){ box.hidden=true; return; }
+  box.hidden=false;
+  const d = await j("/api/scenarios?suite="+encodeURIComponent(state.suite)+"&limit=200");
+  const runs = d.results||[];
+  const passed = runs.filter(r=>r.outcome==="passed").length;
+  const rate = runs.length? Math.round(passed/runs.length*100):0;
+  const names = [...new Set(runs.map(r=>r.name))];
+  const durs = runs.map(r=>r.duration_s).filter(v=>v!=null);
+  const avgDur = durs.length ? durs.reduce((a,b)=>a+b,0)/durs.length : null;
+  // group by scenario name, chronological (oldest→newest) for the dotted timeline
+  const groups = names.map(n=>{
+    const rs = runs.filter(r=>r.name===n).slice().reverse();
+    const p = rs.filter(r=>r.outcome==="passed").length;
+    return { name:n, runs:rs, rate: rs.length? Math.round(p/rs.length*100):0 };
+  });
+  const kpi=(n,l,c)=>`<div class="kpi"><div class="n"${c?` style="color:${c}"`:""}>${n}</div><div class="l">${l}</div></div>`;
+  const dots = rs => `<span class="dotrow">${rs.map(r=>
+    `<span class="dot ${r.outcome==='passed'?'pass':r.outcome==='failed'?'fail':'warn'}" title="${esc(r.name)} · ${esc(r.outcome)} · ${when(r.ended)}"></span>`).join("")}</span>`;
+  box.innerHTML = `
+    <div class="sd-head">
+      <span class="rd-title">${esc(state.suite)}</span>
+      <span class="pill ${rate>=70?'ok':rate>=40?'warn':'bad'}">${rate}% pass</span>
+      <span class="metrics" style="color:var(--fg-dim);font-size:11.5px">${passed}/${runs.length} runs green</span>
+      <a class="btn sm" style="margin-left:auto" href="#runsHead" onclick="state.outcome='';renderFilters();loadRuns()">view runs ↓</a>
+    </div>
+    <div class="kpis" style="margin-top:16px">
+      ${kpi(runs.length,"Total Runs")}
+      ${kpi(rate+"%","Pass Rate",rateColor(rate))}
+      ${kpi(names.length,"Scenarios")}
+      ${kpi(dur(avgDur),"Avg Duration")}
+    </div>
+    <div class="sd-grid">
+      <div>
+        <div class="seclabel">Pass-rate by scenario</div>
+        <div class="hist">${groups.slice(0,8).map(g=>{
+          const r=g.rate; return `<div class="col" title="${esc(g.name)} · ${r}% pass">
+            <div class="histbar">
+            <div class="pass" style="height:${r}%"></div><div class="fail" style="height:${100-r}%"></div></div>
+            <div class="cap">${esc(g.name)}</div></div>`; }).join("")}</div>
+      </div>
+      <div>
+        <div class="seclabel">Recent runs · oldest→newest</div>
+        ${groups.map(g=>`<div class="srow"><span class="nm" title="${esc(g.name)}">${esc(g.name)}</span>${dots(g.runs.slice(-16))}<span class="rt" style="color:${rateColor(g.rate)}">${g.rate}%</span></div>`).join("")||'<div class="rd-none">no runs</div>'}
+      </div>
+    </div>`;
+}
+
+// ── faceted filter bar (outcome + suite + tag facets, active chips, reset) ─
+function renderFilters(){
+  const bar=$("#filterbar");
+  const out=(o,l)=>`<button class="btn sm ${state.outcome===o?'on':''}" data-o="${o}">${l}</button>`;
+  // tag facet (from discovered scenario tags)
+  let tagBtns="";
+  if(allTags.length){
+    tagBtns = `<span class="div"></span><span class="lbl">tag</span>` +
+      allTags.map(t=>`<button class="btn sm ${state.tag===t?'on':''}" data-t="${esc(t)}">${esc(t)}</button>`).join("");
+  }
+  // active selection chips
+  let chips="";
+  if(state.suite) chips+=`<span class="chip">suite <b>${esc(state.suite)}</b> <a href="#" data-clear="suite">✕</a></span>`;
+  const reset=(state.suite||state.outcome||state.tag)?`<button class="btn sm" id="reset">↺ reset</button>`:"";
+  bar.innerHTML =
+    `<span class="lbl">result</span>` + out("","all")+out("passed","passed")+out("failed","failed")+out("error","error")
+    + tagBtns
+    + (chips?`<span class="div"></span>${chips}`:"")
+    + (reset?`<span style="margin-left:auto"></span>${reset}`:"");
+  bar.querySelectorAll("[data-o]").forEach(b=>b.onclick=()=>{ state.outcome=b.dataset.o; renderFilters(); loadRuns(); });
+  bar.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{ state.tag = state.tag===b.dataset.t ? null : b.dataset.t; renderFilters(); loadRuns(); });
+  bar.querySelectorAll("[data-clear]").forEach(a=>a.onclick=e=>{ e.preventDefault(); state[a.dataset.clear]=null; loadSuites(); loadSuiteDetail(); renderFilters(); loadRuns(); });
+  const rb=$("#reset"); if(rb) rb.onclick=()=>{ state.suite=null; state.outcome=""; state.tag=null; loadSuites(); loadSuiteDetail(); renderFilters(); loadRuns(); };
+}
+
+// ── runs table ──────────────────────────────────────────────────────────
+async function loadRuns(){
+  const qs = new URLSearchParams();
+  if(state.suite) qs.set("suite", state.suite);
+  if(state.outcome) qs.set("outcome", state.outcome);
+  if(state.tag) qs.set("tag", state.tag);
+  const d = await j("/api/scenarios?"+qs.toString());
+  const filtered = state.suite||state.outcome||state.tag;
+  $("#runsHead").textContent = "Runs" + (state.suite? " · "+state.suite : "") + ` (${d.total})`;
+  const tb = $("#runs");
+  if(!d.results || !d.results.length){
+    const msg = filtered
+      ? 'No runs match this filter. <a href="#" id="emptyReset" style="color:var(--accent);text-decoration:none">clear filters</a>'
+      : 'No runs recorded yet. Run a scenario above (or <code>roborun demo</code>) to see scored results here.';
+    if(paint(tb,`<tr><td colspan="8" class="empty">${msg}</td></tr>`)){
+      const er=$("#emptyReset"); if(er) er.onclick=e=>{ e.preventDefault(); state.suite=null; state.outcome=""; state.tag=null; loadSuites(); loadSuiteDetail(); renderFilters(); loadRuns(); };
+    }
+    return;
+  }
+  paint(tb, d.results.map(r => {
+    const m = Object.entries(r.metrics||{}).filter(([k])=>!k.startsWith("_")).slice(0,4).map(([k,v])=>`${k} ${v}`).join("  ·  ");
+    const ev = Object.entries(r.evaluation||{}).map(([g,vs])=>`${g}{${Object.entries(vs).map(([k,v])=>k+":"+v).join(",")}}`).join(" ");
+    const nameCell = r.run_id ? `<a href="/run?id=${encodeURIComponent(r.run_id)}" class="scnlink">${esc(r.name)} ↗</a>` : esc(r.name);
+    return `<tr>
+      <td><span class="pill ${r.outcome}">${esc(r.outcome)}</span>${r.reason?`<div class="reason" title="${esc(r.reason)}">${esc(r.reason)}</div>`:""}</td>
+      <td>${nameCell}</td><td class="metrics">${esc(r.suite)||"—"}</td>
+      <td class="metrics tnum">${r.seed??"—"}</td>
+      <td class="metrics">${esc(m)||"—"}</td><td class="metrics">${esc(ev)||"—"}</td>
+      <td class="metrics tnum">${dur(r.duration_s)}</td>
+      <td class="metrics tnum">${when(r.ended)}</td>
+    </tr>`;
+  }).join(""));
+}
+
+renderFilters(); loadRunnable(); loadSuites(); loadRuns();
+setInterval(()=>{ loadSuites(); loadRuns(); if(state.suite) loadSuiteDetail(); }, 5000);
+</script>
+</body>
+</html>
