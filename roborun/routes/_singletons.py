@@ -26,15 +26,29 @@ def get_simulator():
     return _simulator
 
 
+_spatial_memory_key = None
+
+
 def get_memory():
-    global _spatial_memory
-    if _spatial_memory is None:
+    """The search index for the active project/environment. Rebuilt when the
+    active context switches so each project searches only its own data."""
+    global _spatial_memory, _spatial_memory_key
+    key = None
+    try:
+        from roborun import projects
+        a = projects.active()
+        if a:
+            key = (a["project"], a["environment"])
+    except Exception:
+        pass
+    if _spatial_memory is None or _spatial_memory_key != key:
         from roborun.spatial_memory import SpatialMemoryStore
         _spatial_memory = SpatialMemoryStore(
             s3_bucket=os.environ.get("ROBORUN_S3_BUCKET"),
             s3_prefix=os.environ.get("ROBORUN_S3_PREFIX", "roborun/memories/"),
             s3_endpoint=os.environ.get("ROBORUN_S3_ENDPOINT"),
         )
+        _spatial_memory_key = key
     return _spatial_memory
 
 

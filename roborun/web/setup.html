@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script src="./runtime-base.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoboRun · Set up</title>
+<link rel="stylesheet" href="./ui.css">
+<script src="./shell.js"></script>
+<style>
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--mono); }
+
+  .intro{ color:var(--fg-2); font-size:13px; margin:0 0 20px; max-width:760px; }
+  .intro b{ color:var(--fg); font-weight:600; }
+
+  /* ── step card ─────────────────────────────────────────────────────────── */
+  .step{ position:relative; background:var(--panel); border:1px solid var(--line);
+    border-radius:var(--r); padding:18px 20px 20px 56px; margin-bottom:14px;
+    transition:border-color .15s, box-shadow .15s; }
+  .step.active{ border-color:var(--accent-dim); box-shadow:0 0 0 1px var(--accent-dim) inset; }
+  .step h2{ display:flex; align-items:baseline; gap:8px; font-size:11px; text-transform:uppercase;
+    letter-spacing:.12em; color:var(--fg-dim); margin:0 0 14px; }
+  .step h2 .hint{ margin-left:auto; text-transform:none; letter-spacing:0; font-size:11px;
+    color:var(--fg-dim); font-weight:400; }
+  /* numbered badge in the gutter */
+  .stepn{ position:absolute; left:18px; top:18px; width:26px; height:26px; border-radius:50%;
+    display:grid; place-items:center; font-size:12px; font-weight:700;
+    color:var(--fg-dim); background:var(--panel-2); border:1px solid var(--line);
+    transition:color .15s, border-color .15s, background .15s; }
+  .step.active .stepn{ color:#06120a; background:var(--accent); border-color:var(--accent); }
+
+  /* ── sub-label inside a step ───────────────────────────────────────────── */
+  .sublbl{ font-size:10px; text-transform:uppercase; letter-spacing:.1em; color:var(--fg-dim);
+    margin:0 0 9px; }
+  .sublbl + .opts, .sublbl + *{ margin-top:0; }
+  .gap{ height:16px; }
+
+  /* ── option cards ──────────────────────────────────────────────────────── */
+  .opts{ display:grid; grid-template-columns:repeat(auto-fill, minmax(168px, 1fr)); gap:10px; }
+  .opt{ position:relative; background:var(--panel-2); border:1px solid var(--line);
+    border-radius:var(--r-sm); padding:12px 14px; cursor:pointer;
+    transition:border-color .12s, background .12s, transform .06s; }
+  .opt:hover{ border-color:#2c3b2c; }
+  .opt.sel{ border-color:var(--accent); background:#0e1a12; }
+  .opt.sel::after{ content:"✓"; position:absolute; top:9px; right:11px; font-size:12px;
+    font-weight:700; color:var(--accent); }
+  .opt.off{ opacity:.42; cursor:not-allowed; }
+  .opt.off:hover{ border-color:var(--line); }
+  .opt .t{ font-weight:600; font-size:13px; color:var(--fg); padding-right:16px; }
+  .opt .d{ color:var(--fg-dim); font-size:11px; margin-top:3px; line-height:1.35; }
+  .opt .st{ font-size:9.5px; text-transform:uppercase; letter-spacing:.07em; margin-top:7px;
+    font-weight:600; display:inline-flex; align-items:center; gap:5px; }
+  .opt .st::before{ content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .opt .caps{ display:flex; flex-wrap:wrap; gap:4px; margin-top:8px; }
+  .opt .cap{ font-size:9px; text-transform:uppercase; letter-spacing:.05em; color:var(--fg-dim);
+    border:1px solid var(--line); border-radius:3px; padding:1px 5px; }
+  /* compact tiles (tasks) lay out tighter */
+  .opts.tight{ grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); }
+
+  /* ── inputs ────────────────────────────────────────────────────────────── */
+  input,select{ background:var(--panel-2); color:var(--fg); border:1px solid var(--line);
+    border-radius:var(--r-sm); font:inherit; font-size:13px; padding:9px 11px; transition:border-color .12s; }
+  input:focus,select:focus{ outline:none; border-color:var(--accent); }
+  input::placeholder{ color:var(--fg-dim); }
+  .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .sep{ color:var(--fg-dim); font-size:12px; }
+
+  /* ── launch bar + summary ──────────────────────────────────────────────── */
+  .launch{ position:sticky; bottom:0; z-index:20; margin-top:18px; background:var(--bg);
+    padding:16px 0 8px; border-top:1px solid var(--line); display:flex; gap:18px;
+    align-items:center; flex-wrap:wrap; }
+  #launch{ font-size:14px; padding:11px 22px; flex:none; }
+  #launch:disabled{ opacity:.6; cursor:default; }
+  .sumcard{ flex:1; min-width:220px; display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; }
+  .summary{ color:var(--fg-dim); font-size:12px; }
+  .sumcard .summary{ color:var(--fg-2); }
+  .hide{ display:none; }
+
+  /* ── wizard: one step at a time ──────────────────────────────────────────── */
+  .wizsteps{ display:flex; align-items:center; gap:0; margin:0 0 18px; max-width:560px; }
+  .wdot{ width:30px; height:30px; border-radius:50%; display:grid; place-items:center;
+    font-size:12px; font-weight:700; color:var(--fg-dim); background:var(--panel-2);
+    border:1px solid var(--line); flex:none; transition:all .15s; }
+  .wdot.on{ color:#06120a; background:var(--accent); border-color:var(--accent); }
+  .wdot.done{ color:var(--accent); background:#0e1a12; border-color:var(--accent-dim); cursor:pointer; }
+  .wbar{ flex:1; height:2px; background:var(--line); min-width:20px; }
+  .wbar.done{ background:var(--accent-dim); }
+  .wstep{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r);
+    padding:22px 24px; margin-bottom:8px; animation:wfade .18s ease-out; }
+  @keyframes wfade{ from{ opacity:0; transform:translateY(4px); } }
+  .wstep h2{ display:flex; align-items:center; gap:11px; font-size:15px; text-transform:none;
+    letter-spacing:.01em; color:var(--fg); margin:0 0 6px; font-weight:600; }
+  .wstep h2 .stepn{ position:static; width:25px; height:25px; color:#06120a;
+    background:var(--accent); border-color:var(--accent); flex:none; }
+  .wstep h2 .hint{ margin-left:auto; text-transform:none; letter-spacing:0; font-size:11px;
+    color:var(--fg-dim); font-weight:400; }
+  .wstep-lead{ color:var(--fg-2); font-size:12.5px; margin:0 0 16px; max-width:62ch; line-height:1.55; }
+  .wstep-lead b{ color:var(--fg); }
+  .wiznav{ position:sticky; bottom:0; z-index:20; margin-top:14px; background:var(--bg);
+    padding:16px 0 10px; border-top:1px solid var(--line); display:flex; align-items:center; gap:16px; }
+  .wiznav .sumcard{ flex:1; min-width:0; }
+  #wzNext, #launch{ font-size:14px; padding:10px 20px; flex:none; }
+  #launch:disabled{ opacity:.6; cursor:default; }
+
+  @media (max-width:560px){
+    .step{ padding-left:20px; padding-top:48px; }
+    .stepn{ left:18px; top:14px; }
+    .launch{ flex-direction:column; align-items:stretch; }
+    #launch{ width:100%; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <p class="intro">Set up a robot or simulation in four quick steps — one at a time.</p>
+
+  <div class="wizsteps" id="wizsteps"></div>
+
+  <section class="wstep" id="wzProject">
+    <h2>Project <span class="hint">where the data lives</span></h2>
+    <p class="wstep-lead">Everything you record scopes to a project. Reuse one, make a new one, or use the throwaway <b>scratch</b> space.</p>
+    <div class="row">
+      <select id="proj"><option value="">scratch (throwaway)</option></select>
+      <span class="sep">or</span>
+      <input id="newProj" placeholder="new project name">
+    </div>
+  </section>
+
+  <section class="wstep" id="wzBackend" style="display:none">
+    <h2>Backend <span class="hint">what drives it</span></h2>
+    <p class="wstep-lead"><b>Rapier</b> runs right here in the browser — pick it to play immediately. MuJoCo / MJX / Gazebo / Isaac run server-side or externally (you connect to a running sim); <b>real robot</b> connects over ROS.</p>
+    <div class="opts" id="backends"><div class="summary">loading backends…</div></div>
+  </section>
+
+  <section class="wstep" id="wzWhat" style="display:none">
+    <h2><span id="whatTitle">What to run</span> <span class="hint" id="whatHint">robot + task, or a fleet</span></h2>
+    <div id="simStep">
+      <p class="sublbl">Robot</p>
+      <div class="opts" id="robots"></div>
+      <div class="gap"></div>
+      <p class="sublbl">Task / world</p>
+      <div class="opts tight" id="tasks"></div>
+    </div>
+    <div id="realStep" style="display:none">
+      <p class="wstep-lead">Runs the same Python on a Go2 / drone / any ROS robot over rosbridge.</p>
+      <div class="row"><input id="ip" placeholder="rosbridge IP — e.g. 192.168.1.42" style="width:280px;max-width:100%"></div>
+    </div>
+  </section>
+
+  <section class="wstep" id="wzEnv" style="display:none">
+    <h2>Environment <span class="hint">name + persistence</span></h2>
+    <p class="wstep-lead">A named space inside the project — its own map, cameras and retention. Scratch is auto-pruned; test/production are kept.</p>
+    <div class="row">
+      <input id="envName" placeholder="environment name" style="width:240px;max-width:100%">
+      <select id="mode"><option value="scratch">scratch (ephemeral)</option><option value="test">test (kept)</option><option value="production">production</option></select>
+    </div>
+  </section>
+
+  <div class="wiznav">
+    <button class="btn" id="wzBack" style="visibility:hidden">← Back</button>
+    <div class="sumcard"><span class="summary" id="summary"></span></div>
+    <button class="btn accent" id="wzNext">Next →</button>
+    <button class="btn accent" id="launch" style="display:none">▶ Launch</button>
+  </div>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const slug=s=>(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"env";
+async function j(u){ return (await fetch(u)).json(); }
+async function post(u,b){ return (await fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b||{})})).json(); }
+
+// sim levels (mirror arena.js LEVELS) — robot → tasks
+const LEVELS={
+  dog:[["dog-sandbox","Sandbox"],["dog-census","Door census"],["dog-reddoor","Find the red door"],["dog-patrol","Patrol"]],
+  biped:[["biped-sandbox","Sandbox"],["biped-buttons","Press the buttons"],["biped-carry","Carry"]],
+  drone:[["drone-sandbox","Sandbox"],["drone-rings","Ring run"]],
+};
+const ROBOTS=[["dog","Quadruped","trot, explore, lidar+camera"],["biped","Humanoid","walk, press, carry"],["drone","Drone","fly the rings"]];
+const SIM_BACKENDS=new Set(["rapier","mujoco","mjx","gazebo","isaac"]);
+let S={ backend:"rapier", robot:"dog", level:"dog-sandbox", fleet:false };
+
+async function loadProjects(){
+  const d=await j("/api/projects"); const sel=$("#proj");
+  (d.projects||[]).forEach(p=>{ const o=document.createElement("option"); o.value=p.id; o.textContent=p.name; sel.appendChild(o); });
+  if(d.active) sel.value=d.active.project;
+}
+async function loadBackends(){
+  let d; try{ d=await j("/api/backends"); }catch(e){ $("#backends").innerHTML='<div class="summary">○ offline — start the <code>roborun</code> server to list backends</div>'; return; }
+  const col={ready:"var(--ok)",available:"var(--warn)",optional:"var(--blue)",planned:"var(--fg-dim)"};
+  const capTags=c=>{ if(!c) return ""; const tags=[];
+    if(c.fleet) tags.push("fleet"); if(c.headless) tags.push("headless");
+    if(c.vectorized) tags.push("vectorized"); if(c.photoreal) tags.push("photoreal");
+    if(c.camera) tags.push("camera"); if(c.lidar) tags.push("lidar");
+    return tags.length?`<div class="caps">${tags.slice(0,4).map(t=>`<span class="cap">${t}</span>`).join("")}</div>`:""; };
+  $("#backends").innerHTML=d.backends.map(b=>`
+    <div class="opt ${b.id===S.backend?'sel':''} ${b.status==='planned'?'off':''}" data-b="${b.id}" data-kind="${b.kind}">
+      <div class="t">${esc(b.name)}</div><div class="d">${b.kind==='real'?'your hardware':'simulation'}</div>
+      ${capTags(b.caps)}
+      <div class="st" style="color:${col[b.status]||'var(--fg-dim)'}">${esc(b.status)}</div></div>`).join("");
+  $("#backends").querySelectorAll(".opt").forEach(o=>{ if(o.classList.contains("off"))return;
+    o.onclick=()=>{ S.backend=o.dataset.b; $("#backends").querySelectorAll(".opt").forEach(x=>x.classList.toggle("sel",x===o)); renderWhat(); };
+  });
+  renderWhat();
+}
+function renderWhat(){
+  const real=!SIM_BACKENDS.has(S.backend);
+  $("#simStep").style.display=real?"none":"block";
+  $("#realStep").style.display=real?"block":"none";
+  $("#whatTitle").textContent = real ? "Connect a real robot" : "What to run";
+  $("#whatHint").textContent = real ? "same Python, your hardware" : "robot + task";
+  if(!real){
+    // a single robot + task. A fleet is its own thing (its own page + controls).
+    $("#robots").innerHTML=ROBOTS.map(([id,t,d])=>`<div class="opt ${id===S.robot?'sel':''}" data-r="${id}"><div class="t">${t}</div><div class="d">${d}</div></div>`).join("");
+    $("#robots").querySelectorAll(".opt").forEach(o=>o.onclick=()=>{
+      S.robot=o.dataset.r; S.level=LEVELS[S.robot][0][0];
+      $("#robots").querySelectorAll(".opt").forEach(x=>x.classList.toggle("sel",x===o)); renderTasks(); summary();
+    });
+    renderTasks();
+  }
+  summary();
+}
+function renderTasks(){
+  $("#tasks").innerHTML=(LEVELS[S.robot]||[]).map(([lv,t])=>`<div class="opt ${lv===S.level?'sel':''}" data-l="${lv}"><div class="t">${t}</div></div>`).join("")
+    +`<div style="margin-top:12px;font-size:12px;color:var(--fg-dim)">Running a swarm instead? A fleet is its own thing → <a href="/fleet-sim" style="color:var(--accent);text-decoration:none">Fleet Sim</a></div>`;
+  $("#tasks").querySelectorAll(".opt").forEach(o=>o.onclick=()=>{ S.level=o.dataset.l; $("#tasks").querySelectorAll(".opt").forEach(x=>x.classList.toggle("sel",x===o)); summary(); });
+}
+function suggestName(){
+  if(!SIM_BACKENDS.has(S.backend)) return S.backend+"-robot";
+  return S.robot+"-"+S.backend;
+}
+function summary(){
+  if(!$("#envName").value) $("#envName").placeholder=suggestName();
+  // only show the full launch summary on the FINAL step — earlier steps show a
+  // simple "Step X of 4" so it doesn't look like decisions are already made
+  if(typeof wi==="number" && wi!==WSTEPS.length-1){
+    $("#summary").textContent = `Step ${wi+1} of ${WSTEPS.length}`;
+    return;
+  }
+  const real=!SIM_BACKENDS.has(S.backend);
+  const proj=($("#newProj").value.trim()||$("#proj").value||"scratch");
+  const env=$("#envName").value.trim()||suggestName();
+  const what = real ? `connect a real robot via ROS` : `${S.robot} · ${S.level}`;
+  $("#summary").textContent = `Ready to launch — ${what} on ${S.backend} → ${proj}/${env}`;
+}
+// ── wizard: show one step at a time ───────────────────────────────────────
+const WSTEPS=["wzProject","wzBackend","wzWhat","wzEnv"];
+let wi=0;
+function renderStepper(){
+  let h="";
+  for(let i=0;i<WSTEPS.length;i++){
+    const cls=i===wi?"on":i<wi?"done":"";
+    h+=`<span class="wdot ${cls}" data-i="${i}">${i<wi?"✓":i+1}</span>`;
+    if(i<WSTEPS.length-1) h+=`<span class="wbar ${i<wi?"done":""}"></span>`;
+  }
+  $("#wizsteps").innerHTML=h;
+  $("#wizsteps").querySelectorAll(".wdot").forEach(d=>d.onclick=()=>{ if(+d.dataset.i<wi) showStep(+d.dataset.i); });
+}
+function showStep(i){
+  wi=Math.max(0,Math.min(WSTEPS.length-1,i));
+  WSTEPS.forEach((s,k)=>$("#"+s).style.display=(k===wi)?"block":"none");
+  $("#wzBack").style.visibility=wi===0?"hidden":"visible";
+  const last=wi===WSTEPS.length-1;
+  $("#wzNext").style.display=last?"none":"inline-block";
+  $("#launch").style.display=last?"inline-block":"none";
+  renderStepper(); summary();
+  window.scrollTo(0,0);
+}
+$("#wzNext").onclick=()=>showStep(wi+1);
+$("#wzBack").onclick=()=>showStep(wi-1);
+
+$("#launch").onclick=async()=>{
+  const projName=$("#newProj").value.trim(), proj=projName||$("#proj").value;
+  const real=!SIM_BACKENDS.has(S.backend);
+  const envName=$("#envName").value.trim()||suggestName();
+  $("#launch").textContent="launching…"; $("#launch").disabled=true;
+  try{
+    if(projName) await post("/api/projects",{name:projName});
+    const project = projName? slug(projName) : (proj||"scratch");
+    if(project && project!=="scratch"){
+      await post("/api/environments",{project,name:envName,backend:S.backend,mode:$("#mode").value});
+      await post("/api/projects/active",{project,environment:slug(envName)});
+    }
+    // route to the right surface (fleet is its own thing — set up via /fleet-sim)
+    if(real){ location.href="/sim"; }                 // cockpit + connect overlay
+    else { location.href="/sim?level="+encodeURIComponent(S.level); }
+  }catch(e){ $("#launch").textContent="▶ Launch"; $("#launch").disabled=false; $("#summary").textContent="launch failed: "+e; }
+};
+$("#envName").oninput=summary;
+$("#newProj").oninput=summary;
+$("#proj").onchange=summary;
+loadProjects().then(summary); loadBackends(); showStep(0);
+</script>
+</body>
+</html>

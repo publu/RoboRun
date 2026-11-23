@@ -121,12 +121,15 @@ class RosbridgeClient:
             self._ws.send(json.dumps(msg))
 
     def _recv_loop(self) -> None:
+        from websocket import WebSocketTimeoutException
         while self._connected and self._ws:
             try:
                 raw = self._ws.recv()
                 if not raw:
                     break
                 msg = json.loads(raw)
+            except WebSocketTimeoutException:
+                continue  # a quiet socket is not a dead socket
             except Exception:
                 break
             self._dispatch(msg)
@@ -163,6 +166,20 @@ class RosbridgeClient:
         topics = values.get("topics", [])
         types = values.get("types", [])
         return [{"topic": t, "type": tp} for t, tp in zip(topics, types)]
+
+    def ros_version(self, timeout: float = 5.0) -> str:
+        """ROS1 or ROS2 from topic/type heuristics over the same rosbridge link
+        (rosbridge_suite speaks both). 'ros2' if ROS2-only signals present,
+        'ros1' for ROS1-only signals, else 'unknown'."""
+        topics = self.list_topics(timeout=timeout)
+        names = {t["topic"] for t in topics}
+        types = {t["type"] for t in topics}
+        if "/parameter_events" in names or any(
+                str(tp).startswith("rcl_interfaces/") for tp in types):
+            return "ros2"
+        if "/rosout_agg" in names or "rosgraph_msgs/Log" in types:
+            return "ros1"
+        return "unknown"
 
     def publish(self, topic: str, msg_type: str, message: dict) -> None:
         self._send({"op": "publish", "topic": topic,

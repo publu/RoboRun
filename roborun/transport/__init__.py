@@ -46,6 +46,14 @@ CAPABILITY_MATRIX: dict[str, dict[str, Any]] = {
         "services": True, "actions": True, "params": True,
         "types": "any (rclpy)",
     },
+    "gazebo": {
+        # gz-sim publishes standard ROS 2 topics → sensing/actuation flow over
+        # the existing transports; gz adds deterministic clock control + spawn.
+        "discovery": True, "subscribe": True, "publish": True,
+        "services": True, "actions": True, "params": True,
+        "clock_control": True, "spawn": True,
+        "types": "any (ros_gz bridge)",
+    },
 }
 
 

@@ -31,6 +31,63 @@ def _runs() -> list[Path]:
     return sorted([p for p in root.iterdir() if (p / "run.jsonl").exists()])
 
 
+@get("/api/run/series")
+def run_series_route(h):
+    """Per-run telemetry series for the Analyze panels. ?id=<run>&robot=<id>"""
+    from urllib.parse import parse_qs, urlparse
+    from roborun.run_series import run_series
+    q = parse_qs(urlparse(h.path).query)
+    run_id = (q.get("id") or q.get("run") or [""])[0]
+    robot = (q.get("robot") or [None])[0]
+    if not run_id:
+        send_json(h, 400, {"ok": False, "error": "id required"})
+        return
+    send_json(h, 200, run_series(run_id, robot))
+
+
+@post("/api/incidents/flag")
+def incident_flag(h, payload):
+    """Flag a moment in a run to revisit. Body: {run_id, ts?, note?, tag?}."""
+    from roborun.incidents import flag
+    run_id = str(payload.get("run_id", "")).strip()
+    if not run_id:
+        send_json(h, 400, {"ok": False, "error": "run_id required"})
+        return
+    rec = flag(run_id, ts=payload.get("ts"), note=str(payload.get("note", "")),
+               tag=str(payload.get("tag", "incident")),
+               robot_id=payload.get("robot_id"))
+    send_json(h, 200, {"ok": True, "incident": rec})
+
+
+@get("/api/incidents")
+def incidents_list(h):
+    """List incidents, optional ?run=<id>&tag=<t>."""
+    from urllib.parse import parse_qs, urlparse
+    from roborun.incidents import list_incidents
+    q = parse_qs(urlparse(h.path).query)
+    rows = list_incidents(run_id=(q.get("run") or [None])[0],
+                          tag=(q.get("tag") or [None])[0])
+    send_json(h, 200, {"ok": True, "incidents": rows, "total": len(rows)})
+
+
+@get("/api/run/frame")
+def run_frame(h):
+    """Synced-playback frame: the camera JPEG nearest ?t= in run ?id=."""
+    from urllib.parse import parse_qs, urlparse
+    from roborun.run_series import frame_at
+    q = parse_qs(urlparse(h.path).query)
+    run_id = (q.get("id") or [""])[0]
+    t = float((q.get("t") or ["0"])[0])
+    jpeg = frame_at(run_id, t, (q.get("robot") or [None])[0]) if run_id else None
+    if jpeg is None:
+        h.send_response(404); h.end_headers(); return
+    h.send_response(200)
+    h.send_header("Content-Type", "image/jpeg")
+    h.send_header("Content-Length", str(len(jpeg)))
+    h.end_headers()
+    h.wfile.write(jpeg)
+
+
 @get("/api/run/events")
 def run_events(h):
     """Events of a recorded run, for replay. ?run=<name>&limit=N"""
@@ -68,6 +125,10 @@ def _mcap_path(payload: dict) -> Path | None:
 @post("/api/run/record/start")
 def record_start(h, payload):
     rec = rec_mod.start_recording(robot_id=payload.get("robot_id", "local"))
+    from roborun import run_manifest
+    run_manifest.write_start(rec.mcap_path, rec.run_id,
+                             payload.get("robot_id", "local"),
+                             backend=payload.get("backend"))
     bus.emit("system", "recorder", f"RECORDING · {rec.run_id}",
              {"run": rec.run_id, "mcap": str(rec.mcap_path)})
     send_json(h, 200, {"ok": True, **rec.status()})
@@ -75,11 +136,16 @@ def record_start(h, payload):
 
 @post("/api/run/record/stop")
 def record_stop(h, payload):
+    # capture the channel list before the recorder closes (manifest, spec 01)
+    _live = rec_mod.active_recorder()
+    _channels = _live.channels() if _live is not None else None
     seal = rec_mod.stop_recording(do_anchor=not payload.get("no_anchor", False))
     if seal is None:
         send_json(h, 200, {"ok": False, "error": "nothing is recording"})
         return
     mcap_path = rec_mod.runs_root() / seal["robot_id"] / f"{seal['run']}.mcap"
+    from roborun import run_manifest
+    run_manifest.finalize(mcap_path, seal=seal, channels=_channels)
     indexed = None
     try:
         from roborun.observations import extract_run
@@ -215,6 +281,32 @@ def badge(h):
                        "state": result["state"], "reason": result.get("reason"),
                        "anchor": result.get("anchor"),
                        "sealed_at": result.get("sealed_at")})
+
+
+_demo_seeding = {"running": False}
+
+
+@post("/api/demo/seed")
+def demo_seed(h, payload):
+    """Populate a fresh install with sample recorded+indexed runs so Runs/Search/
+    Analytics aren't empty on first open. Runs in a thread (~couple seconds)."""
+    import threading
+    if _demo_seeding["running"]:
+        send_json(h, 200, {"ok": True, "seeding": True, "already": True})
+        return
+
+    def _go():
+        _demo_seeding["running"] = True
+        try:
+            from roborun.cli import demo_cli
+            demo_cli([])
+        except Exception as exc:
+            bus.emit("system", "demo", f"demo seed failed: {exc}", {})
+        finally:
+            _demo_seeding["running"] = False
+
+    threading.Thread(target=_go, daemon=True, name="DemoSeed").start()
+    send_json(h, 200, {"ok": True, "seeding": True})
 
 
 @get("/api/run/list")

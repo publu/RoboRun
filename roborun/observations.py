@@ -94,6 +94,49 @@ def _pose_xyz(pose_msg: dict | None) -> tuple[float | None, float | None, float 
     return pos.get("x"), pos.get("y"), pos.get("z")
 
 
+class StreamingExtractor:
+    """Index Observations *while recording* instead of only on close
+    (PERCEPTION_DATA_SPEC "sync"). The recorder forwards each write here; a
+    camera frame is stored immediately, joined with the most-recent detections /
+    CLIP / pose within JOIN_TOLERANCE. Removes the close-time extraction spike
+    and makes search live during a run."""
+
+    def __init__(self, store, robot_id: str = "local", run_id: str | None = None,
+                 join_tol: float = JOIN_TOLERANCE, source: str = "stream") -> None:
+        self.store = store
+        self.robot_id = robot_id
+        self.run_id = run_id
+        self.join_tol = join_tol
+        self.source = source  # mode tag (sim/robot/production) for the index
+        self._det: tuple[float, list] | None = None
+        self._clip: tuple[float, Any] | None = None
+        self._pose: tuple[float, tuple] | None = None
+        self.inserted = 0
+
+    def _fresh(self, slot, ts):
+        return slot is not None and abs(slot[0] - ts) <= self.join_tol
+
+    def on_detections(self, ts: float, dets: list) -> None:
+        self._det = (ts, dets or [])
+
+    def on_clip(self, ts: float, vec) -> None:
+        self._clip = (ts, vec)
+
+    def on_pose(self, ts: float, x, y, z) -> None:
+        self._pose = (ts, (x, y, z))
+
+    def on_camera(self, ts: float, topic: str, source_id: str | None = None) -> None:
+        x, y, z = self._pose[1] if self._fresh(self._pose, ts) else (None, None, None)
+        emb = self._clip[1] if self._fresh(self._clip, ts) else None
+        dets = self._det[1] if self._fresh(self._det, ts) else []
+        self.store.store(frame=None, embedding=emb, detections=dets,
+                         x=x, y=y, z=z, robot_id=self.robot_id, ts=ts,
+                         run_id=self.run_id, frame_topic=topic,
+                         frame_log_time=int(ts * 1e9), source=self.source,
+                         source_id=source_id)
+        self.inserted += 1
+
+
 def extract_run(mcap_path: str | Path, store=None,
                 robot_id: str | None = None, thumbnails: bool = True) -> dict[str, Any]:
     """MCAP → Observation rows in the hot store. Runs on run close (spec §2.3).

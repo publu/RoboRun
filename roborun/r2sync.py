@@ -73,10 +73,14 @@ class R2Store:
         except Exception:
             return None
 
-    def list_keys(self, prefix: str, limit: int = 1000) -> list[str]:
+    def list_keys(self, prefix: str, limit: int = 1000,
+                  start_after: str | None = None) -> list[str]:
+        """List keys under `prefix`. `start_after` pushes the cursor server-side
+        (S3 StartAfter) so callers fetch only new keys, not the whole prefix."""
         out: list[str] = []
         paginator = self._s3.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=self.bucket, Prefix=self._key(prefix)):
+        kw = {"StartAfter": self._key(start_after)} if start_after else {}
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=self._key(prefix), **kw):
             for item in page.get("Contents", []):
                 key = item["Key"]
                 if self.prefix and key.startswith(self.prefix):

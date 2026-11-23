@@ -1,0 +1,49 @@
+/* RoboRun Studio theme — conforms to the RoboRun Design System
+ * (claude.ai/design project f84aeaa8). Dashboards are set in the SYSTEM
+ * monospace stack (no webfont; IBM Plex is cockpit-only). Depth comes from
+ * flat layered surfaces + ONE soft shadow — never glow. Tokens mirror ui.css. */
+
+:root {
+  /* ui.css already defines --bg/--panel/--accent/--mono/--r/--r-sm etc.
+   * These are the DS additions it doesn't carry. */
+  --accent-fill: #0e1a12;            /* the recurring "active" tile fill */
+  --ok-wash: rgba(0, 212, 126, 0.15);
+  --bad-wash: rgba(224, 86, 63, 0.15);
+  --warn-wash: rgba(212, 160, 48, 0.15);
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  --rr-hero-grad:
+    radial-gradient(120% 140% at 100% 0%, rgba(0, 212, 126, 0.1), transparent 60%),
+    linear-gradient(180deg, #0e1a12, #0b110d);
+  --rr-sidebar-w: 232px;
+  --rr-main-max: 1280px;
+  --rr-topbar-h: 53px;
+  --rr-dur-fast: 0.12s;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  height: 100%;
+  /* control-station: monospace everywhere, tabular numerals line up metrics */
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  color: var(--fg);
+  background: var(--bg); /* flat — no grid, no ambient gradient */
+}
+
+.mono, .panel-head, .nav-group, .app-title, .seclabel { font-family: var(--mono); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: var(--line-soft); }
+
+/* the one "live" flourish the DS allows: a slow pulse ring on status dots */
+@keyframes rr-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(0, 212, 126, 0.45); }
+  70% { box-shadow: 0 0 0 6px rgba(0, 212, 126, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 212, 126, 0); }
+}

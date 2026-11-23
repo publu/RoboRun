@@ -65,6 +65,21 @@ _thoughts: dict[tuple[str, str], dict] = {}
 _thoughts_lock = threading.Lock()
 
 
+def _sim_backend():
+    """A SimBackend over the running MuJoCo sim, so pose()/lidar() sense the sim
+    through the handle when no arena is open (LOCAL_SIM_SPEC Phase 1). None if no
+    sim is running."""
+    try:
+        from roborun.routes._singletons import get_simulator
+        sim = get_simulator()
+        if getattr(sim, "is_running", False):
+            from roborun.sim_backend import SimBackend
+            return SimBackend(sim)
+    except Exception:
+        pass
+    return None
+
+
 def behavior(hz: float | None = None, every: float | None = None,
              name: str | None = None, autostart: bool = True) -> Callable:
     """Mark a function as a behavior loop. `hz` for control loops,
@@ -280,6 +295,11 @@ class Robot:
                 return a.pose()
         except Exception:
             pass
+        sb = _sim_backend()
+        if sb is not None:
+            p = sb.pose()
+            if p is not None:
+                return p
         try:
             from roborun.ros_telemetry import get_bridge
             return get_bridge().handle_pose()
@@ -524,6 +544,12 @@ class Robot:
                 return a.lidar()
         except Exception:
             pass
+        sb = _sim_backend()
+        if sb is not None:
+            try:
+                return sb.lidar()
+            except Exception:
+                pass
         try:
             from roborun.ros_telemetry import get_bridge
             return get_bridge().handle_lidar()
@@ -551,18 +577,21 @@ class Robot:
 
     def move(self, forward: float = 0.0, strafe: float = 0.0, turn: float = 0.0,
              climb: float = 0.0) -> None:
+        raw = (forward, strafe, turn, climb)
         forward = max(-MAX_LINEAR, min(MAX_LINEAR, forward))
         strafe = max(-MAX_LINEAR, min(MAX_LINEAR, strafe))
         turn = max(-MAX_ANGULAR, min(MAX_ANGULAR, turn))
         climb = max(-MAX_LINEAR, min(MAX_LINEAR, climb))  # Twist linear.z
+        clamped = (forward, strafe, turn, climb) != raw
 
         sent = False
+        target = "sim"   # where the command actually went — keeps the timeline honest
         try:
             from roborun.arena import get_arena
             arena = get_arena()
             if arena.is_active():
                 arena.set_cmd(forward, strafe, turn, climb)
-                sent = True
+                sent = True; target = "sim"
         except Exception:
             pass
         if not sent:
@@ -571,7 +600,7 @@ class Robot:
                 sim = get_simulator()
                 if sim.is_running:
                     sim.set_cmd_vel(forward, strafe, turn)
-                    sent = True
+                    sent = True; target = "sim"
             except Exception:
                 pass
         if not sent:
@@ -585,7 +614,7 @@ class Robot:
                     from roborun.ros_telemetry import get_bridge
                     client.move(forward, strafe, turn,
                                 get_bridge().cmd_vel_topic, linear_z=climb)
-                    sent = True
+                    sent = True; target = "robot"
             except Exception:
                 pass
 
@@ -599,6 +628,17 @@ class Robot:
             return
         self._warned_no_actuator = False
 
+        # Record the command actually sent (post-clamp) into the sealed run, so
+        # replay answers "why did it move", not just "what did it see".
+        try:
+            from roborun.recorder import active_recorder
+            rec = active_recorder()
+            if rec is not None:
+                rec.write_cmd(forward, strafe, turn, climb,
+                              source=self._name, clamped=clamped)
+        except Exception:
+            pass
+
         # Real actuator: log on sharp changes immediately, otherwise ≤1/sec.
         cmd = (forward, strafe, turn)
         delta = max(abs(a - b) for a, b in zip(cmd, self._last_cmd))
@@ -606,7 +646,7 @@ class Robot:
         if delta >= 0.3 or (delta > 0.01 and now - self._last_move_emit >= 1.0):
             self._last_cmd = cmd
             self._last_move_emit = now
-            emit("ros", self._name, f"move fwd={forward:.2f} turn={turn:.2f}",
+            emit(target, self._name, f"move fwd={forward:.2f} turn={turn:.2f}",
                  {"forward": round(forward, 2), "strafe": round(strafe, 2),
                   "turn": round(turn, 2)})
 
@@ -663,6 +703,34 @@ class Robot:
 
     def recall(self, key: str, default: Any = None) -> Any:
         return self._load_memory().get(key, default)
+
+    # ---- semantic spatial recall + navigation (dimOS-style, over the index) ----
+
+    def recall_place(self, query: str, by: str = "label") -> dict | None:
+        """Where/when did I see <query>? Searches the persistent, all-time spatial
+        index (CLIP semantic / YOLO label) and returns the best-matching past
+        observation that has a position: {x, y, ts, label, robot_id, ...}, or None.
+        This is the memory behind 'go to where you last saw the red mug'."""
+        try:
+            from roborun.routes._singletons import get_memory
+            from roborun.session import search
+            for h in search(get_memory(), query, by=by, k=15):
+                if h.get("x") is not None:
+                    return h
+        except Exception:
+            pass
+        return None
+
+    def go_to_place(self, query: str, by: str = "label", tol: float = 0.5) -> bool:
+        """Semantic navigation: recall where <query> was seen, then goto it. True
+        when arrived, False if the place isn't in memory. Composes recall_place +
+        goto — the natural-language 'take me to X' verb, grounded in the seal."""
+        place = self.recall_place(query, by=by)
+        if place is None:
+            self.stop()
+            return False
+        self._intent("go_to_place", query, (place["x"], place.get("y", 0.0)))
+        return self.goto(place["x"], place.get("y", 0.0), tol=tol)
 
     @staticmethod
     def _load_memory() -> dict:

@@ -25,7 +25,20 @@ STANDARD_TOPICS = [
     ("/cmd_vel", "geometry_msgs/Twist"),
     ("/scan", "sensor_msgs/LaserScan"),
     ("/tf", "tf2_msgs/TFMessage"),
+    ("/gps/fix", "sensor_msgs/NavSatFix"),
+    ("/fix", "sensor_msgs/NavSatFix"),
+    ("/navsat/fix", "sensor_msgs/NavSatFix"),
 ]
+
+
+def _saved_robot_type() -> str | None:
+    """Type `roborun connect` wrote to ~/.roborun/robot.json, if any."""
+    import json
+    from pathlib import Path
+    try:
+        return json.loads((Path.home() / ".roborun" / "robot.json").read_text()).get("type")
+    except Exception:
+        return None
 
 _instance: RosTelemetryBridge | None = None
 _lock = threading.Lock()
@@ -148,17 +161,18 @@ class RosTelemetryBridge:
             except Exception:
                 pass
 
-        if not host:
-            return
-
-        client = get_client(host, auto_connect=False)
+        # no configured host: ride whatever connection `roborun connect` /
+        # boot already established rather than demanding a profile entry
+        client = (get_client(host, auto_connect=False) if host
+                  else get_client(auto_connect=False))
         if not client or not client.is_connected:
             self._subscribed_topics.clear()
             return
 
-        if self._last_host != host:
+        key = host or "active-client"
+        if self._last_host != key:
             self._subscribed_topics.clear()
-            self._last_host = host
+            self._last_host = key
 
         self._subscribe_client(bus, client)
 
@@ -170,14 +184,32 @@ class RosTelemetryBridge:
         try:
             available = client.list_topics(timeout=3.0)
         except Exception:
-            return
+            available = []
 
         available_names = {t["topic"] for t in available}
 
-        # the robot's own topic map (mavros drones, etc.) extends the
-        # standard table — same handlers, the robot's topic names
-        from roborun.robot_types import detect_type, get_profile
-        self.robot_type = detect_type(ros_topics=sorted(available_names))
+        # rosapi topic discovery is flaky over rosbridge (the /rosapi/topics
+        # service times out on some setups). When it comes back empty, don't
+        # go dark: trust the type `roborun connect` saved and subscribe to the
+        # candidate topics blind — a subscribe to a not-yet-seen topic is
+        # harmless and starts flowing the moment the topic appears.
+        discovery_ok = bool(available_names)
+
+        from roborun.robot_types import detect_type, get_profile, RobotType
+        if discovery_ok:
+            self.robot_type = detect_type(ros_topics=sorted(available_names))
+        elif self.robot_type is None:
+            saved = None
+            try:
+                from roborun.routes.dashboard import load_profile
+                saved = (load_profile().get("robotType")
+                         or _saved_robot_type())
+            except Exception:
+                pass
+            try:
+                self.robot_type = RobotType(saved) if saved else None
+            except Exception:
+                self.robot_type = None
         type_topics = (get_profile(self.robot_type) or {}).get("ros_topics", {})
         self.cmd_vel_topic = type_topics.get("cmd_vel", "/cmd_vel")
         _TYPE_MSG = {"odom": "nav_msgs/Odometry",
@@ -192,7 +224,8 @@ class RosTelemetryBridge:
         for topic, msg_type in table:
             if topic in self._subscribed_topics:
                 continue
-            if topic not in available_names:
+            # gate on availability only when discovery actually worked
+            if discovery_ok and topic not in available_names:
                 continue
 
             handler = self._make_handler(topic, msg_type, bus)
@@ -224,6 +257,27 @@ class RosTelemetryBridge:
                     "temperature": msg.get("temperature", 0),
                 })
             return on_battery
+
+        if "NavSatFix" in msg_type:
+            def on_gps(msg: dict) -> None:
+                lat = msg.get("latitude", 0.0)
+                lon = msg.get("longitude", 0.0)
+                alt = msg.get("altitude", 0.0)
+                st = msg.get("status", 0)
+                if isinstance(st, dict):
+                    st = st.get("status", 0)
+                bus.push(robot_id, "gps", {"latitude": lat, "longitude": lon,
+                                           "altitude": alt, "status": st})
+                # fold GPS into the run's MCAP (spec 01 — /gps NavSatFix channel)
+                try:
+                    from roborun.recorder import active_recorder
+                    rec = active_recorder()
+                    if rec is not None:
+                        rec.write_gps(float(lat), float(lon), float(alt),
+                                      status=int(st or 0))
+                except Exception:
+                    pass
+            return on_gps
 
         if "Odometry" in msg_type:
             def on_odom(msg: dict) -> None:

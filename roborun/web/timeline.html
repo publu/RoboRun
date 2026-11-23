@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script src="./runtime-base.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoboRun · Timeline</title>
+<link rel="stylesheet" href="./ui.css">
+<script src="./shell.js"></script>
+<script src="./run-detail.js"></script>
+<style>
+  /* Tokens + components live in ui.css; this page only lays out its two panes.
+   * The app shell (shell.js) injects the sidebar + top bar and wraps <main>. */
+  *{ box-sizing:border-box; }
+
+  /* two-pane browser, sized to the shell's content column */
+  .tl{ display:grid; grid-template-columns:316px minmax(0,1fr);
+       gap:18px; align-items:start; }
+
+  /* ── left rail — the per-run list ─────────────────────────────────────── */
+  .rail{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r);
+         overflow:hidden; position:sticky; top:0;
+         display:flex; flex-direction:column; max-height:calc(100vh - 116px); }
+  .rail-head{ padding:12px 14px 10px; border-bottom:1px solid var(--line);
+              background:var(--panel-head); }
+  .rail-title{ font-size:12px; font-weight:600; color:var(--fg);
+               display:flex; align-items:center; gap:8px; }
+  .rail-title .ct{ margin-left:auto; font-size:11px; color:var(--fg-dim);
+                   font-variant-numeric:tabular-nums; }
+  .rail-sub{ font-size:11px; color:var(--fg-dim); margin-top:3px; }
+  .filt{ display:flex; gap:6px; margin-top:10px; }
+  .filt button{ flex:1; }            /* .btn.sm comes from ui.css */
+  .runlist{ overflow-y:auto; flex:1; }
+
+  .run{ display:block; padding:11px 14px 11px 16px; border-bottom:1px solid var(--line-soft);
+        cursor:pointer; text-decoration:none; color:var(--fg); position:relative;
+        border-left:2px solid transparent; transition:background .12s, border-color .12s; }
+  .run:last-child{ border-bottom:none; }
+  .run:hover{ background:var(--bg-2); }
+  .run.sel{ background:#0e1a12; border-left-color:var(--accent); }
+  .run .o{ display:inline-flex; align-items:center; gap:6px;
+           font-size:10px; font-weight:700; letter-spacing:.06em; }
+  .run .o::before{ content:""; width:7px; height:7px; border-radius:50%;
+                   background:var(--fg-dim); flex:none; }
+  .run .o.passed{ color:var(--ok); } .run .o.passed::before{ background:var(--ok); }
+  .run .o.failed{ color:var(--bad); } .run .o.failed::before{ background:var(--bad); }
+  .run .nm{ font-size:13px; color:var(--fg); margin:3px 0 2px;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .run .meta{ font-size:10.5px; color:var(--fg-dim); font-variant-numeric:tabular-nums; }
+  .run .tags{ display:flex; gap:4px; flex-wrap:wrap; margin-top:6px; }
+  .run .tags span{ font-size:9.5px; background:var(--panel-2); border:1px solid var(--line);
+                   color:var(--fg-2); border-radius:4px; padding:1px 6px; line-height:1.5; }
+
+  /* ── right pane — the selected run's record + timeline extras ─────────── */
+  .pane{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r);
+         padding:22px 24px; min-height:calc(100vh - 116px); }
+
+  /* flagged-moments feed */
+  .feed{ border-left:2px solid var(--line); margin-left:5px; }
+  .ev{ position:relative; padding:7px 0 7px 18px; font-size:13px; color:var(--fg); }
+  .ev::before{ content:""; position:absolute; left:-5px; top:12px; width:8px; height:8px;
+               border-radius:50%; background:var(--amber);
+               box-shadow:0 0 0 3px var(--panel); }
+  .ev .ti{ color:var(--fg-dim); font-size:11px; margin-right:8px;
+           font-variant-numeric:tabular-nums; }
+
+  /* camera snapshot strip */
+  .strip{ display:flex; gap:8px; overflow-x:auto; padding-bottom:6px; }
+  .strip .f{ flex:0 0 auto; width:124px; }
+  .strip img{ width:124px; height:86px; object-fit:cover; border-radius:var(--r-sm);
+              background:var(--bg); display:block; border:1px solid var(--line); }
+  .strip .t{ font-size:10px; color:var(--fg-dim); margin-top:4px;
+             font-variant-numeric:tabular-nums; }
+
+  /* shared empty / loading state */
+  .empty{ color:var(--fg-dim); font-size:12.5px; line-height:1.7; padding:26px 24px; }
+  .empty code{ color:var(--fg-2); }
+  .sub{ color:var(--fg-dim); font-size:12px; }
+
+  @media (max-width: 820px){
+    .tl{ grid-template-columns:1fr; }
+    .rail{ position:static; max-height:none; }
+    .runlist{ max-height:340px; }
+    .pane{ min-height:0; }
+  }
+</style>
+</head>
+<body>
+<main class="tl">
+  <aside class="rail">
+    <div class="rail-head">
+      <div class="rail-title">🕓 Runs <span class="ct" id="runct"></span></div>
+      <div class="rail-sub">Every run is its own record — pick one to replay.</div>
+      <div class="filt" id="filt">
+        <button class="btn sm on" data-o="">all</button>
+        <button class="btn sm" data-o="passed">passed</button>
+        <button class="btn sm" data-o="failed">failed</button>
+      </div>
+    </div>
+    <div class="runlist" id="runs"><div class="empty">Loading runs…</div></div>
+  </aside>
+  <section class="pane" id="pane"><div class="empty">Select a run on the left to see its timeline — metadata, scores, flagged moments, and a link to the full synced replay.</div></section>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const time=ts=>new Date((ts||0)*1000).toLocaleTimeString();
+const when=s=>(s||"").replace("T"," ").replace("Z","");
+let state={ outcome:"", sel:null, runs:[] };
+
+async function j(u){ const r=await fetch(u); return r.json(); }
+
+async function loadRuns(){
+  const qs=new URLSearchParams({limit:"60"});
+  if(state.outcome) qs.set("outcome", state.outcome);
+  let d; try{ d=await j("/api/scenarios?"+qs.toString()); }catch(e){ return; }
+  state.runs=d.results||[];
+  const el=$("#runs");
+  const ct=$("#runct"); if(ct) ct.textContent=state.runs.length? state.runs.length:"";
+  if(!state.runs.length){ paint(el,'<div class="empty">No runs'+(state.outcome?(" "+state.outcome):"")+' yet. Run a scenario (or <code>roborun demo</code>) and it shows up here.</div>'); return; }
+  const html=state.runs.map(r=>{
+    const tags=(r.tags||[]).slice(0,3).map(t=>`<span>${t}</span>`).join("");
+    return `<a class="run" data-id="${r.run_id||''}" data-key="${r.id||r.run_id||r.name}">
+      <div class="o ${r.outcome||''}">${(r.outcome||'pending').toUpperCase()}</div>
+      <div class="nm">${r.name||'(run)'}</div>
+      <div class="meta">${r.suite?r.suite+' · ':''}${when(r.ended)||'—'}</div>
+      ${tags?`<div class="tags">${tags}</div>`:''}</a>`;
+  }).join("");
+  if(paint(el, html)){
+    el.querySelectorAll(".run").forEach(a=>a.onclick=e=>{ e.preventDefault(); select(a.dataset.id, a.dataset.key); });
+    el.querySelectorAll(".run").forEach(a=>a.classList.toggle("sel", a.dataset.id===state.sel || a.dataset.key===state.sel));
+  }
+  // auto-select once (first load or deep-link) — never on a poll, or the pane flashes
+  if(!state.inited){
+    state.inited=true;
+    const qid=new URLSearchParams(location.search).get("run");
+    if(qid) select(qid, qid);
+    else if(state.runs[0]){ const r=state.runs[0]; select(r.run_id||"", r.id||r.run_id||r.name); }
+  }
+}
+
+async function select(runId, key){
+  state.sel=runId||key;
+  document.querySelectorAll(".run").forEach(a=>a.classList.toggle("sel", a.dataset.id===runId || a.dataset.key===key));
+  if(runId) history.replaceState(null,"","/timeline?run="+encodeURIComponent(runId));
+  const r=state.runs.find(x=>(x.run_id===runId)||((x.id||x.run_id||x.name)===key));
+  if(!r){ $("#pane").innerHTML='<div class="empty">Run not found.</div>'; return; }
+  const replay = r.run_id
+    ? `<a class="btn sm accent" href="/run?id=${encodeURIComponent(r.run_id)}">▶ Open replay</a>`
+    : "";
+  // same run-detail component as /run — metadata/params/results/evaluation/tags
+  renderRunRecord($("#pane"), r, {actions: replay});
+  // timeline-only extras below the shared component
+  $("#pane").insertAdjacentHTML("beforeend",
+    `<div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--line-soft)">`+
+    `<div class="seclabel">Flagged moments</div><div id="flags"><div class="rd-none">…</div></div>`+
+    `<div class="seclabel" style="margin-top:22px">Camera snapshots</div><div class="strip" id="strip"><div class="rd-none">…</div></div>`+
+    `</div>`);
+  loadFlags(r.run_id); loadStrip(r.run_id);
+}
+
+async function loadFlags(runId){
+  const box=$("#flags"); if(!box) return;
+  if(!runId){ box.innerHTML='<div class="sub">no recording</div>'; return; }
+  try{
+    const d=await j("/api/incidents?run="+encodeURIComponent(runId));
+    const f=d.incidents||d.flags||[];
+    box.innerHTML=f.length? `<div class="feed">${f.map(x=>`<div class="ev"><span class="ti">${time(x.ts)}</span>${x.note||x.title||'flag'}</div>`).join("")}</div>`
+      : '<div class="sub">No flagged moments. Open the replay and hit ⚑ Flag to bookmark one.</div>';
+  }catch(e){ box.innerHTML='<div class="sub">—</div>'; }
+}
+
+async function loadStrip(runId){
+  const box=$("#strip"); if(!box) return;
+  try{
+    const d=await j("/api/timeline?limit=12"+(runId?("&run="+encodeURIComponent(runId)):""));
+    const e=d.entries||[];
+    box.innerHTML=e.length? e.map(m=>`<div class="f"><img loading="lazy" src="/api/memory/thumb/${m.id}" onerror="this.style.visibility='hidden'"><div class="t">${time(m.ts)}</div></div>`).join("")
+      : '<div class="sub">No snapshots for this run.</div>';
+  }catch(e){ box.innerHTML='<div class="sub">—</div>'; }
+}
+
+$("#filt").querySelectorAll("button").forEach(b=>b.onclick=()=>{
+  state.outcome=b.dataset.o; state.sel=null;
+  $("#filt").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
+  loadRuns();
+});
+
+loadRuns();
+setInterval(loadRuns, 8000);
+</script>
+</body>
+</html>

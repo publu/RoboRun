@@ -208,6 +208,8 @@ class SimulatorRunner:
         self._model: mujoco.MjModel | None = None
         self._data: mujoco.MjData | None = None
         self._policy: _Go1Policy | _G1Policy | None = None
+        # set on start(); init here so get_state() works on an idle runner
+        self._drone_ctrl: _DroneController | None = None
         self._lock = RLock()
         self._should_stop = Event()
         self._should_reset = Event()
@@ -236,7 +238,8 @@ class SimulatorRunner:
             })
         return robots
 
-    def start(self, robot_id: str = "unitree_go1", width: int = 960, height: int = 540) -> dict[str, Any]:
+    def start(self, robot_id: str = "unitree_go1", width: int = 960, height: int = 540,
+              render: bool = True) -> dict[str, Any]:
         if self.is_running:
             return {"ok": True, "already_running": True}
 
@@ -285,12 +288,14 @@ class SimulatorRunner:
         self._should_stop.clear()
         self._state = "running"
 
+        self._render = render
         self._thread = Thread(
-            target=self._sim_loop, args=(width, height),
+            target=self._sim_loop, args=(width, height, render),
             daemon=True, name="SimulatorRunner",
         )
         self._thread.start()
-        return {"ok": True, "robot": robot_id, "resolution": f"{width}x{height}", "has_policy": self._policy is not None}
+        return {"ok": True, "robot": robot_id, "resolution": f"{width}x{height}",
+                "has_policy": self._policy is not None, "render": render}
 
     def stop(self) -> dict[str, Any]:
         self._should_stop.set()
@@ -375,16 +380,21 @@ class SimulatorRunner:
             return {"ok": True}
         return {"ok": False, "error": "Not a drone"}
 
-    def _sim_loop(self, width: int, height: int) -> None:
+    def _sim_loop(self, width: int, height: int, render: bool = True) -> None:
         fps_window: list[float] = []
         target_fps = 30.0
-        renderer = mujoco.Renderer(self._model, height=height, width=width)
-        camera = mujoco.MjvCamera()
-        camera.type = mujoco.mjtCamera.mjCAMERA_TRACKING
-        camera.trackbodyid = 0
-        camera.distance = 3.0 if not self._drone_ctrl else 6.0
-        camera.elevation = -20.0 if not self._drone_ctrl else -35.0
-        camera.azimuth = 180.0
+        # Headless (render=False) skips the Renderer + per-step JPEG entirely —
+        # full physics SPS for training/scenarios (PERF #9 / LOCAL_SIM Phase 1).
+        renderer = None
+        camera = None
+        if render:
+            renderer = mujoco.Renderer(self._model, height=height, width=width)
+            camera = mujoco.MjvCamera()
+            camera.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+            camera.trackbodyid = 0
+            camera.distance = 3.0 if not self._drone_ctrl else 6.0
+            camera.elevation = -20.0 if not self._drone_ctrl else -35.0
+            camera.azimuth = 180.0
 
         telemetry_counter = 0
 
@@ -437,30 +447,31 @@ class SimulatorRunner:
                             mujoco.mj_step(self._model, self._data)
                         self._sim_time = self._data.time
 
-                quat = self._data.qpos[3:7]
-                w, x, y, z = quat
-                yaw = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
-                camera.lookat[:] = self._data.qpos[0:3]
-                camera.azimuth = 180.0 + np.degrees(yaw)
-                renderer.update_scene(self._data, camera)
-                frame_rgb = renderer.render().copy()
-                frame_bgr = frame_rgb[:, :, ::-1]
-
-                annotated = self._annotate(frame_bgr)
-                ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                if ok:
-                    FRAME_PATH.write_bytes(buf.tobytes())
-
-                # Depth rendering
-                try:
-                    renderer.enable_depth_rendering(True)
+                if render:
+                    quat = self._data.qpos[3:7]
+                    w, x, y, z = quat
+                    yaw = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+                    camera.lookat[:] = self._data.qpos[0:3]
+                    camera.azimuth = 180.0 + np.degrees(yaw)
                     renderer.update_scene(self._data, camera)
-                    depth = renderer.render().copy()
-                    renderer.enable_depth_rendering(False)
-                    from roborun.depth import DepthProcessor
-                    DepthProcessor.get().update(depth, frame_rgb)
-                except Exception:
-                    pass
+                    frame_rgb = renderer.render().copy()
+                    frame_bgr = frame_rgb[:, :, ::-1]
+
+                    annotated = self._annotate(frame_bgr)
+                    ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                    if ok:
+                        FRAME_PATH.write_bytes(buf.tobytes())
+
+                    # Depth rendering
+                    try:
+                        renderer.enable_depth_rendering(True)
+                        renderer.update_scene(self._data, camera)
+                        depth = renderer.render().copy()
+                        renderer.enable_depth_rendering(False)
+                        from roborun.depth import DepthProcessor
+                        DepthProcessor.get().update(depth, frame_rgb)
+                    except Exception:
+                        pass
 
                 # Push telemetry every ~5 frames (~6Hz)
                 telemetry_counter += 1
@@ -496,13 +507,15 @@ class SimulatorRunner:
                     fps_window.pop(0)
                 self._fps = 1.0 / (sum(fps_window) / len(fps_window)) if fps_window else 0
 
-                sleep_dur = max(0, (1.0 / target_fps) - elapsed)
-                if sleep_dur > 0:
-                    time.sleep(sleep_dur)
+                if render:  # headless runs at full SPS, no frame-pacing
+                    sleep_dur = max(0, (1.0 / target_fps) - elapsed)
+                    if sleep_dur > 0:
+                        time.sleep(sleep_dur)
         except Exception:
             pass
         finally:
-            renderer.close()
+            if renderer is not None:
+                renderer.close()
             self._state = "idle"
 
     def _annotate(self, frame: np.ndarray) -> np.ndarray:

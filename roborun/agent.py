@@ -163,7 +163,52 @@ Use tools for physical actions and memory:
 - get_telemetry: battery, position, velocity, joints
 
 You already have the live camera frame — don't call perception tools redundantly.
-After actions, verify via the updated frame in the next turn. Be concise."""
+After actions, verify via the updated frame in the next turn. Be concise.
+
+## Authoring behaviors (the real superpower)
+move only nudges the robot once. The lasting way to give it a skill is to WRITE A
+BEHAVIOR: a small Python control loop that runs at 10 Hz with no LLM in the loop.
+Prefer authoring a behavior for any standing task ("patrol", "follow me", "back off
+from walls"); use move only for one-off pokes. The closed loop you run:
+
+  1. write_behavior(name, source)  → creates behaviors/<name>.py, hot-reloads and
+     starts within ~1s. The tool reports back whether it loaded and any error.
+  2. arena_status + read_timeline  → watch what it actually did (pose, detections,
+     anything it logged, and crashes). This is how you debug "why did it fail".
+  3. read_behavior → write_behavior again to fix it. Iterate until it works.
+  4. set_behavior(name, "disable") to stop it; "enable" to resume.
+  list_behaviors shows everything running, its run/error counts and last error.
+
+A behavior is ONE file. Use exactly this handle — nothing else is portable:
+
+    from roborun.behaviors import behavior
+
+    @behavior(hz=10)              # control loop; or @behavior(every=5.0) for slow loops
+    def patrol(robot):
+        people = robot.see("person")         # list of {cx,cy,w,h,label,conf,dist}
+        if people:
+            robot.say("person spotted")
+            return robot.stop()
+        ahead = robot.lidar()[0]             # 36 floats, meters, [0] = straight ahead
+        if ahead < 0.8:
+            return robot.move(turn=1.0)      # too close to a wall, turn
+        robot.move(forward=0.4)              # forward / strafe / turn / climb, each in [-1,1]
+
+Handle reference (the whole contract — same file runs sim → real robot):
+  robot.see(label) · robot.move(forward,strafe,turn,climb) · robot.stop()
+  robot.lidar() → 36 floats · robot.pose() → {x,z,heading} · robot.say(t)/robot.log(t)
+  robot.remember(k,v)/robot.recall(k) · robot.state (dict persists across ticks)
+  robot.goto(x,z) · robot.approach(thing) · robot.seen(label)
+Keep behaviors short and readable — a person should grasp the file in ten seconds.
+
+## Triaging from the eval scoreboard
+Behaviors are scored by *scenarios* (named runs with pass/fail + metrics), grouped
+into *suites* with a pass-rate. When asked to improve the robot, start from the
+scoreboard, don't guess: list_suites → find the lowest pass-rate → list_scenarios
+(suite=…, outcome="failed") to see which scenarios fail and why → read_behavior on
+the behavior behind it → write_behavior to fix → re-observe. That's the same
+"reproduce, find the failure mode, fix, re-validate" loop a robotics engineer runs,
+but at software speed."""
 
 _FAST_TOOLS = [
     {
@@ -274,6 +319,78 @@ _FAST_TOOLS = [
             },
             "required": ["label"],
         },
+    },
+    {
+        "name": "list_behaviors",
+        "description": "List every behavior currently loaded — name, file, whether it's running (enabled), tick count, error count, and last error. Use this to see what skills the robot has before writing or editing one.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "read_behavior",
+        "description": "Read the Python source of a behavior so you can edit it. Pass the behavior name (or file stem).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string", "description": "Behavior name / file stem, e.g. 'patrol'"}},
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "write_behavior",
+        "description": "Create or overwrite behaviors/<name>.py with a full @behavior-decorated control loop. It hot-reloads and starts within ~1s; this tool waits and reports back whether it loaded and any runtime error so you can iterate. This is how you give the robot a lasting skill from natural language.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "snake_case file stem, e.g. 'perimeter_patrol'"},
+                "source": {"type": "string", "description": "Complete Python source: 'from roborun.behaviors import behavior' + an @behavior(hz=...) function taking (robot)."},
+            },
+            "required": ["name", "source"],
+        },
+    },
+    {
+        "name": "set_behavior",
+        "description": "Start (enable) or stop (disable) a loaded behavior by name. Disabling stops the robot and halts that loop; enabling resumes it.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "action": {"type": "string", "enum": ["enable", "disable"]},
+            },
+            "required": ["name", "action"],
+        },
+    },
+    {
+        "name": "read_timeline",
+        "description": "Read the most recent events from the run timeline — behavior loads/errors, things the robot said or logged, detections, agent actions. This is how you observe what a behavior actually did and debug why it failed.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "How many recent events (default 25)"},
+                "contains": {"type": "string", "description": "Optional: only events whose source or title contains this substring (e.g. a behavior name)"},
+            },
+        },
+    },
+    {
+        "name": "arena_status",
+        "description": "Get the sim's ground-truth state — whether the arena is open, the robot's pose, the current level, and occlusion-checked detections. Use it to verify a behavior is moving the robot the way you intended.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "list_scenarios",
+        "description": "List recent scored scenario runs — name, outcome (passed/failed/error), suite, tags, key metrics. This is the eval record: how the robot's behaviors have actually performed. Filter by suite, outcome, or scenario name.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "Max rows (default 15)"},
+                "suite": {"type": "string"},
+                "outcome": {"type": "string", "enum": ["passed", "failed", "error"]},
+                "name": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "list_suites",
+        "description": "List scenario suites with their pass-rate, run count, and latest activity — the scoreboard of how each capability is doing. Start here to find what's failing, then list_scenarios(suite=…) to drill in, then read_behavior / write_behavior to fix the behavior behind it.",
+        "input_schema": {"type": "object", "properties": {}},
     },
 ]
 
@@ -395,7 +512,127 @@ def _execute_fast_tool(name: str, args: dict) -> str:
     elif name == "find_object":
         return _find_object(args.get("label", ""), float(args.get("max_rotation_deg", 360)))
 
+    elif name == "list_behaviors":
+        from roborun.behaviors import BehaviorRunner
+        rows = BehaviorRunner.get().statuses()
+        if not rows:
+            return "No behaviors loaded. Write one with write_behavior."
+        lines = []
+        for s in rows:
+            run = "running" if s.get("enabled") else "stopped"
+            tail = f" · last_error: {s['last_error']}" if s.get("last_error") else ""
+            lines.append(f"{s['name']} [{run}] {Path(s['file']).name} "
+                         f"· {s.get('runs',0)} ticks, {s.get('errors',0)} errors{tail}")
+        return "\n".join(lines)
+
+    elif name == "read_behavior":
+        return _read_behavior_source(str(args.get("name", "")))
+
+    elif name == "write_behavior":
+        from roborun.behaviors import write_behavior_file
+        bname = str(args.get("name", ""))
+        result = write_behavior_file(bname, str(args.get("source", "")))
+        if not result.get("ok"):
+            return f"Not written: {result.get('error')}"
+        # Give hot reload a beat, then report whether it actually loaded + ran.
+        time.sleep(1.4)
+        return f"Wrote {result['path']}. " + _behavior_health(bname)
+
+    elif name == "set_behavior":
+        from roborun.behaviors import BehaviorRunner
+        bname = str(args.get("name", "")).strip()
+        action = str(args.get("action", "enable"))
+        ok = BehaviorRunner.get().set_enabled(bname, action == "enable")
+        return (f"{bname} {action}d." if ok else f"No behavior named {bname!r}.")
+
+    elif name == "read_timeline":
+        from roborun.events import recent
+        limit = int(args.get("limit", 25))
+        contains = str(args.get("contains", "")).lower().strip()
+        rows = recent(limit if not contains else 200)
+        if contains:
+            rows = [e for e in rows
+                    if contains in str(e.get("source", "")).lower()
+                    or contains in str(e.get("title", "")).lower()][-limit:]
+        if not rows:
+            return "Timeline empty (no matching events)."
+        return "\n".join(f"[{e.get('type','?')}/{e.get('source','?')}] {e.get('title','')}"
+                         for e in rows)
+
+    elif name == "arena_status":
+        from roborun.ros_mcp import _tool_arena_status
+        r = _tool_arena_status({})
+        if not r.get("active"):
+            return r.get("hint", "Arena not open.")
+        dets = r.get("detections") or []
+        labels = ", ".join(sorted({d.get("label", "?") for d in dets})) or "none"
+        return (f"Arena live · level={r.get('level')} · pose={r.get('pose')} · "
+                f"sees: {labels}")
+
+    elif name == "list_scenarios":
+        from roborun.scenario import list_results
+        rows = list_results(limit=int(args.get("limit", 15)),
+                            suite=args.get("suite"), outcome=args.get("outcome"),
+                            name=args.get("name"))
+        if not rows:
+            return "No scenario runs recorded yet."
+        lines = []
+        for r in rows:
+            ev = r.get("evaluation") or {}
+            ev_s = (" · " + ", ".join(f"{g}:{v}" for g, v in ev.items())) if ev else ""
+            tail = f" — {r['reason']}" if r.get("reason") else ""
+            lines.append(f"{r['name']} [{r['outcome']}] "
+                         f"suite={r.get('suite') or '-'} "
+                         f"{r.get('metrics', {})}{ev_s}{tail}")
+        return "\n".join(lines)
+
+    elif name == "list_suites":
+        from roborun.scenario import list_suites
+        cards = list_suites()
+        if not cards:
+            return "No suites yet — runs scored with a suite= group here."
+        return "\n".join(
+            f"{c['suite']}: {int(c['pass_rate']*100)}% pass "
+            f"({c['passed']}/{c['runs']} runs) · {', '.join(c['scenarios'][:6])}"
+            for c in cards)
+
     return f"Unknown tool: {name}"
+
+
+def _resolve_behavior_path(name: str) -> Path | None:
+    """Map a behavior name / file stem to its source file."""
+    from roborun.behaviors import BehaviorRunner
+    stem = name.strip().removesuffix(".py")
+    for s in BehaviorRunner.get().statuses():
+        if s.get("name") == name or Path(s.get("file", "")).stem == stem:
+            return Path(s["file"])
+    cand = Path("behaviors") / f"{stem}.py"
+    return cand if cand.exists() else None
+
+
+def _read_behavior_source(name: str) -> str:
+    path = _resolve_behavior_path(name)
+    if path is None:
+        return f"No behavior file for {name!r}. Use list_behaviors to see what exists."
+    try:
+        return f"# {path}\n{path.read_text()}"
+    except Exception as exc:
+        return f"Could not read {path}: {exc}"
+
+
+def _behavior_health(name: str) -> str:
+    """One-line health for a just-written behavior, by file stem."""
+    from roborun.behaviors import BehaviorRunner
+    stem = name.strip().removesuffix(".py")
+    for s in BehaviorRunner.get().statuses():
+        if Path(s.get("file", "")).stem == stem:
+            if s.get("last_error"):
+                return (f"Loaded but erroring: {s['last_error']} "
+                        f"({s.get('errors',0)} errors). Read the timeline and fix it.")
+            run = "running" if s.get("enabled") else "loaded (stopped)"
+            return f"It's {run} — {s.get('runs',0)} ticks, no errors so far."
+    return ("Not visible in the runner yet — it may have failed to import. "
+            "Check read_timeline for a load error.")
 
 
 def _find_object(label: str, max_rotation_deg: float = 360) -> str:
@@ -443,7 +680,7 @@ class FastRobotAgent:
     Requires ANTHROPIC_API_KEY in environment.
     """
 
-    MAX_TOOL_ROUNDS = 6
+    MAX_TOOL_ROUNDS = 12  # authoring loops (write → observe → fix) need headroom
 
     @property
     def MODEL(self) -> str:

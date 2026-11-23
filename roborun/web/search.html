@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script src="./runtime-base.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoboRun · Search over time</title>
+<link rel="stylesheet" href="./ui.css">
+<script src="./shell.js"></script>
+<style>
+  /* Page-specific styles only — tokens + base components come from ui.css. */
+
+  /* ── search console: the controls, grouped so they breathe ────────────── */
+  .console{ background:var(--panel); border:1px solid var(--line);
+            border-radius:var(--r); padding:14px; margin-bottom:18px; }
+
+  /* primary row: mode segment + the query field + run, big and obvious */
+  .primary{ display:flex; gap:10px; align-items:stretch; flex-wrap:wrap; }
+  .q-wrap{ flex:1; min-width:260px; display:flex; align-items:center; gap:8px;
+           background:var(--bg-2); border:1px solid var(--line);
+           border-radius:var(--r-sm); padding:0 12px; transition:border-color .12s; }
+  .q-wrap:focus-within{ border-color:var(--accent-dim); }
+  .q-wrap .q-ic{ color:var(--fg-dim); font-size:14px; }
+  input#q{ flex:1; min-width:0; background:transparent; color:var(--fg);
+           border:0; outline:none; padding:11px 0; font:inherit; font-size:14px; }
+  input#q::placeholder{ color:var(--fg-dim); }
+
+  /* segmented mode control (reuses look of ui.css .btn family) */
+  .seg{ display:inline-flex; border:1px solid var(--line); border-radius:var(--r-sm);
+        overflow:hidden; flex:none; }
+  .seg button{ border:0; border-radius:0; background:var(--panel-2); color:var(--fg-2);
+        font:inherit; font-size:12.5px; padding:0 13px; min-height:42px; cursor:pointer;
+        border-left:1px solid var(--line); transition:background .12s, color .12s; }
+  .seg button:first-child{ border-left:0; }
+  .seg button:hover{ background:#1b231a; color:var(--fg); }
+  .seg button.on{ background:#0e1a12; color:var(--accent); }
+
+  /* the big run button matches the query height */
+  .btn.run{ min-height:42px; padding:0 20px; font-size:13.5px; }
+
+  /* secondary row: a quiet "filters" toggle + active-filter summary */
+  .subrow{ display:flex; align-items:center; gap:12px; margin-top:12px;
+           flex-wrap:wrap; }
+  .filt-toggle{ background:transparent; border:0; color:var(--fg-dim); font:inherit;
+        font-size:12px; cursor:pointer; padding:2px 0; display:inline-flex;
+        align-items:center; gap:6px; transition:color .12s; }
+  .filt-toggle:hover{ color:var(--fg); }
+  .filt-toggle .caret{ transition:transform .15s; font-size:10px; }
+  .console.open .filt-toggle .caret{ transform:rotate(90deg); }
+  .filt-toggle.active{ color:var(--accent); }
+  .subrow .summary{ color:var(--fg-dim); font-size:11.5px; }
+  .subrow .right{ margin-left:auto; display:flex; gap:8px; align-items:center; }
+
+  /* advanced filter panel — hidden until "filters" is toggled */
+  .filters{ display:none; margin-top:14px; padding-top:14px;
+            border-top:1px solid var(--line-soft); }
+  .console.open .filters{ display:grid;
+            grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+            gap:12px 18px; }
+  .field{ display:flex; flex-direction:column; gap:5px; min-width:0; }
+  .field > label{ font-size:10.5px; text-transform:uppercase; letter-spacing:.1em;
+            color:var(--fg-dim); display:flex; align-items:center; gap:6px; }
+  .field .hint{ color:var(--fg-dim); font-size:10px; letter-spacing:0;
+            text-transform:none; font-weight:400; opacity:.85; }
+  .field input{ background:var(--bg-2); color:var(--fg); border:1px solid var(--line);
+            border-radius:var(--r-sm); padding:8px 11px; font:inherit; font-size:13px;
+            outline:none; transition:border-color .12s; min-width:0; }
+  .field input:focus{ border-color:var(--accent-dim); }
+  .field input::placeholder{ color:var(--fg-dim); }
+  .field.span2{ grid-column:span 2; }
+  @media (max-width:520px){ .field.span2{ grid-column:auto; } }
+  .twin{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+
+  /* ── status line + results grid ───────────────────────────────────────── */
+  .meta{ color:var(--fg-2); font-size:12.5px; margin:0 0 14px; line-height:1.6; }
+  .meta b{ color:var(--fg); }
+
+  .grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(196px,1fr)); gap:14px; }
+  .card{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r);
+         padding:0; overflow:hidden; display:flex; flex-direction:column;
+         transition:border-color .12s, transform .12s; }
+  .card:hover{ border-color:#2c3b2c; transform:translateY(-2px); }
+  .card .thumb{ position:relative; }
+  .card img{ width:100%; height:146px; object-fit:cover; background:#070907; display:block; }
+  .card .noimg{ height:146px; display:flex; align-items:center; justify-content:center;
+         color:var(--fg-dim); font-size:11px; background:var(--bg-2);
+         border-bottom:1px solid var(--line-soft); }
+  .card .score{ position:absolute; top:8px; right:8px; background:rgba(0,0,0,.65);
+         color:var(--accent); font-size:11px; font-weight:600; padding:2px 7px;
+         border-radius:999px; backdrop-filter:blur(2px); font-variant-numeric:tabular-nums; }
+  .card .b{ padding:10px 12px; display:flex; flex-direction:column; gap:7px; }
+  .card .chips{ display:flex; flex-wrap:wrap; gap:4px; }
+  .card .chip{ background:#0e1a12; color:var(--accent); border:0;
+         border-radius:999px; padding:2px 8px; font-size:10.5px; line-height:1.4; }
+  .card .nolabel{ color:var(--fg-dim); font-size:10.5px; font-style:italic; }
+  .card .when{ color:var(--fg-2); font-size:11px; font-variant-numeric:tabular-nums; }
+  .card .where{ color:var(--fg-dim); font-size:10.5px; font-variant-numeric:tabular-nums; }
+  .card .src{ color:var(--fg-dim); font-size:9.5px; text-transform:uppercase;
+         letter-spacing:.06em; border-top:1px solid var(--line-soft); padding-top:6px;
+         display:flex; gap:6px; align-items:center; }
+  .card .src .dot{ width:5px; height:5px; border-radius:50%; background:var(--accent); flex:none; }
+
+  /* ── empty / onboarding states ────────────────────────────────────────── */
+  .state{ grid-column:1/-1; }
+  .empty{ color:var(--fg-2); padding:48px 24px; text-align:center; }
+  .empty .ico{ font-size:30px; opacity:.6; margin-bottom:12px; }
+  .empty h3{ margin:0 0 8px; font-size:15px; color:var(--fg); font-weight:600; }
+  .empty p{ margin:0 auto; max-width:440px; font-size:12.5px; color:var(--fg-dim); line-height:1.7; }
+  .empty code{ background:var(--bg-2); border:1px solid var(--line); border-radius:4px;
+         padding:1px 6px; color:var(--fg-2); }
+  .onboard{ max-width:580px; margin:8px auto; padding:24px;
+         background:var(--panel); border:1px solid var(--line); border-radius:var(--r); }
+  .onboard .hi{ font-size:16px; color:var(--fg); margin-bottom:16px; font-weight:600; }
+  .onboard .step{ display:flex; gap:12px; margin:12px 0; font-size:12.5px;
+         color:var(--fg-2); line-height:1.6; }
+  .onboard .step .n{ flex:none; width:22px; height:22px; border-radius:50%;
+         background:#0e1a12; color:var(--accent); display:grid; place-items:center;
+         font-size:12px; font-weight:700; }
+  .onboard a{ color:var(--accent); text-decoration:none; }
+  .onboard code{ background:var(--bg-2); border:1px solid var(--line); border-radius:4px;
+         padding:1px 6px; color:var(--fg-2); }
+  .onboard .foot{ margin-top:16px; padding-top:14px; border-top:1px solid var(--line-soft);
+         font-size:11.5px; color:var(--fg-dim); line-height:1.7; }
+</style>
+</head>
+<body>
+<main>
+  <div class="console" id="console">
+    <div class="primary">
+      <div class="seg" id="mode" title="how to match — by meaning, by exact object, or the uncertain detections worth labeling (active learning)">
+        <button data-by="label" class="on">by object</button>
+        <button data-by="clip" title="semantic search — needs camera frames with CLIP embeddings (sim/fleet detections are label-only)">by meaning</button>
+        <button data-by="uncertain" title="the examples the model is unsure about — curate these to label and improve it">needs labeling</button>
+      </div>
+      <div class="q-wrap">
+        <span class="q-ic">⌕</span>
+        <input id="q" placeholder="who or what to find — 'person in red', 'forklift', 'red mug'…"
+               onkeydown="if(event.key==='Enter')run()">
+      </div>
+      <button class="btn accent run" onclick="run()">Search</button>
+    </div>
+
+    <div class="subrow">
+      <button class="filt-toggle" id="filtToggle" onclick="toggleFilters()"
+              title="time, camera, and combined-recall filters">
+        <span class="caret">▶</span> Filters <span class="summary" id="filtSummary"></span>
+      </button>
+      <div class="right">
+        <button class="btn sm" onclick="exportDs()"
+                title="save these results as a labeled training dataset (images + labels), with verifiable provenance">⤓ Save as dataset</button>
+      </div>
+    </div>
+
+    <div class="filters" id="filters">
+      <div class="field span2">
+        <label>Time window <span class="hint">limit to a range</span></label>
+        <div class="twin">
+          <input id="since" type="datetime-local" title="only show results after this time">
+          <input id="until" type="datetime-local" title="only show results before this time">
+        </div>
+      </div>
+      <div class="field">
+        <label>Camera</label>
+        <input id="source" placeholder="any — e.g. front, dock" title="limit to one camera, e.g. front or dock">
+      </div>
+      <div class="field">
+        <label>+ Object <span class="hint">also require</span></label>
+        <input id="nlabel" placeholder="e.g. forklift" title="ALSO require this object (combined recall, spec 06)">
+      </div>
+      <div class="field">
+        <label>+ Near <span class="hint">x,y[,r] in env frame</span></label>
+        <input id="near" placeholder="e.g. 5,3,2" title="ALSO require near a spot in the environment frame, e.g. 5,3,2">
+      </div>
+    </div>
+  </div>
+
+  <div class="meta" id="meta">Find any object or person across everything your robots have ever recorded — sim, real robots, and cameras. Type what you're looking for, then narrow it with <b>filters</b> if you need a time range, a camera, or a combined recall.</div>
+  <div class="grid" id="grid"></div>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+let by="label";   // default: by-object — instant + finds the label-only sim/fleet data
+$("#mode").querySelectorAll("button").forEach(b=>b.onclick=()=>{
+  by=b.dataset.by; $("#mode").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
+});
+const toEpoch=v=> v? Math.floor(new Date(v).getTime()/1000): undefined;
+
+// ── advanced filters: collapsible, with a live summary of what's active ───
+function toggleFilters(force){
+  const c=$("#console");
+  const open = force!=null? force : !c.classList.contains("open");
+  c.classList.toggle("open", open);
+}
+function updateFilterSummary(){
+  const bits=[];
+  if($("#since").value||$("#until").value) bits.push("time");
+  if($("#source").value.trim()) bits.push("camera");
+  if($("#nlabel").value.trim()) bits.push("+object");
+  if($("#near").value.trim()) bits.push("+near");
+  const sum=$("#filtSummary"), tog=$("#filtToggle");
+  sum.textContent = bits.length? "· "+bits.join(", ") : "";
+  tog.classList.toggle("active", bits.length>0);
+}
+["#since","#until","#source","#nlabel","#near"].forEach(id=>{
+  const el=$(id); if(el) el.addEventListener("input", updateFilterSummary);
+});
+
+async function exportDs(){
+  const q=$("#q").value.trim(); if(!q){ $("#meta").textContent="Type a query to export."; return; }
+  $("#meta").textContent="Curating dataset…";
+  const body={query:q, by, since:toEpoch($("#since").value), until:toEpoch($("#until").value)};
+  try{ const r=await (await fetch("/api/search/export",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json();
+    $("#meta").textContent=`Dataset curated: ${r.count} images + labels.jsonl → ${r.dir}`;
+  }catch(e){ $("#meta").textContent="Export failed: "+e; }
+}
+function parseNear(v){
+  if(!v||!v.trim()) return null;
+  const p=v.split(",").map(x=>parseFloat(x.trim()));
+  if(p.length<2||!isFinite(p[0])||!isFinite(p[1])) return null;
+  return {x:p[0], y:p[1], radius:isFinite(p[2])?p[2]:2.0};
+}
+async function run(){
+  const s=toEpoch($("#since").value), u=toEpoch($("#until").value);
+  const label=$("#nlabel").value.trim(), near=parseNear($("#near").value);
+  const src=$("#source").value.trim();
+  // combined recall (spec 06) when more than one signal is given
+  if(label || near){
+    const body={ text:$("#q").value.trim()||undefined, label:label||undefined,
+                 near:near||undefined, since:s, until:u, source_id:src||undefined, k:60 };
+    $("#meta").textContent="Recalling (combined)…";
+    let d; try{ d=await (await fetch("/api/recall",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json(); }
+    catch(e){ $("#meta").textContent="Recall failed: "+e; return; }
+    renderResults(d.results||[], "combined recall"+(d.scope?` · ${d.scope.project}/${d.scope.environment}`:""));
+    return;
+  }
+  const body={ query:$("#q").value.trim(), by, k:60 };
+  if(s) body.since=s; if(u) body.until=u;
+  if(src) body.source_id=src;
+  if(!body.query && by!=="time" && by!=="uncertain"){ $("#meta").textContent="Type something to find."; return; }
+  if(by==="uncertain" && !body.query){ $("#meta").textContent="Finding the examples the model is unsure about…"; }
+  $("#meta").textContent="Searching…";
+  let d; try{ d=await (await fetch("/api/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json(); }
+  catch(e){ $("#meta").textContent="Search failed: "+e; return; }
+  renderResults(d.results||[], "across all history"+(body.since||body.until?" · time-windowed":""));
+}
+
+function renderResults(rows, suffix){
+  $("#meta").innerHTML=`<b>${rows.length}</b> hit${rows.length!==1?"s":""} <span style="color:var(--fg-dim)">${suffix||""}</span>`;
+  $("#grid").innerHTML = rows.length? rows.map(r=>{
+    const labels=[...new Set((r.detections||[]).map(x=>x.label))];
+    const when=new Date((r.ts||0)*1000).toLocaleString();
+    const score = r.score!=null? `<span class="score">${(r.score*100|0)}%</span>`:"";
+    const where = (r.x!=null&&r.y!=null)? `<div class="where">@ (${r.x.toFixed(1)}, ${r.y.toFixed(1)})</div>`:"";
+    const img = r.id? `<img loading="lazy" src="/api/memory/thumb/${r.id}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'noimg',textContent:'no thumbnail'}))">`
+                    : `<div class="noimg">no thumbnail</div>`;
+    return `<div class="card"><div class="thumb">${img}${score}</div><div class="b">
+      <div class="chips">${labels.map(l=>`<span class="chip">${l}</span>`).join("")||'<span class="nolabel">no labels</span>'}</div>
+      <div class="when">${when}</div>
+      ${where}
+      <div class="src"><span class="dot"></span>${r.source||"?"} · ${r.source_id||r.robot_id||""}</div>
+    </div></div>`;
+  }).join("") : `<div class="state"><div class="empty">
+      <div class="ico">⌕</div>
+      <h3>Nothing found yet.</h3>
+      <p>If this is a fresh install, there's no data to search — record a run (open the <b>cockpit</b> and press <code>M</code>) or run <code>roborun demo</code> to load sample data. Already have runs? Try the <b>by object</b> tab or widen the time range under <b>filters</b>.</p>
+    </div></div>`;
+}
+
+// First-run: greet a brand-new user with a 3-step quick start (only when empty).
+async function firstRun(){
+  try{
+    const d=await (await fetch("/api/analytics")).json();
+    if((d.observations?.total||0) > 0) return;   // there's data → no onboarding
+    $("#grid").innerHTML = `<div class="state"><div class="onboard">
+      <div class="hi">👋 Welcome — let's get something to search.</div>
+      <div class="step"><span class="n">1</span><div>In your terminal, run <code>roborun demo</code> — it records a few sample runs and indexes them. <i>(Quickest win.)</i></div></div>
+      <div class="step"><span class="n">2</span><div>Or open the <a href="/sim">cockpit</a>, start a sim or camera, and press <code>M</code> to record.</div></div>
+      <div class="step"><span class="n">3</span><div>Then come back and search — by meaning ("person in red") or by object ("forklift"), across everything, over all of time.</div></div>
+      <div class="foot">Once data exists, this page becomes your robots' memory: find anyone or anything they've ever seen, and export the results as a labeled dataset with verifiable provenance.</div>
+    </div></div>`;
+  }catch(e){}
+}
+firstRun();
+</script>
+</body>
+</html>

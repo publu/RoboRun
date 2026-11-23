@@ -1,0 +1,27 @@
+name: no-private-leak
+
+# Hard gate: the public repo must never track private strategy material.
+# This is the backstop for the one footgun that bit us before — a `git add -f`
+# slipping a private/ file past .gitignore. Runs on every push and PR.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail if any private path is tracked
+        run: |
+          set -euo pipefail
+          # Paths that must never be committed to the public repo.
+          forbidden='^(private/|site/|docs/ANTIOCH_PARITY\.md$|docs/DEMO_SPEC\.md$|docs/RL_HARNESS_SPEC\.md$)'
+          hits="$(git ls-files | grep -E "$forbidden" || true)"
+          if [ -n "$hits" ]; then
+            echo "::error::Private material is tracked in the public repo:"
+            echo "$hits"
+            exit 1
+          fi
+          echo "OK — no private paths tracked."

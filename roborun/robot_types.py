@@ -166,6 +166,11 @@ def detect_type(
             if joint_count_hint > 3:
                 return RobotType.HUMANOID
             return RobotType.QUADRUPED
+        # a wheeled / diff-drive ground robot: drives on /cmd_vel, senses with
+        # a laser scanner — no joints, no mavros. Mobile ground robot, so use
+        # the quadruped profile (cmd_vel control + lidar + camera).
+        if "/cmd_vel" in topic_set and ("/scan" in topic_set or "/odom" in topic_set):
+            return RobotType.QUADRUPED
 
     if any(k in slug for k in ("go1", "go2", "a1", "b1", "b2", "spot")):
         return RobotType.QUADRUPED

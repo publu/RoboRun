@@ -43,6 +43,15 @@ EVENT_TYPES = ("mcp_tool", "detection", "ros", "agent", "system", "task", "frame
 
 
 def runs_root() -> Path:
+    # Scope the event journal under the active project/environment (spec 07);
+    # legacy flat layout when nothing is selected.
+    try:
+        from roborun import projects
+        dr = projects.data_root()
+        if dr is not None:
+            return dr / "runs"
+    except Exception:
+        pass
     base = os.environ.get("ROBORUN_STATE_DIR")
     root = Path(base) if base else Path.home() / ".roborun"
     return root / "runs"

@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **FLEET sandbox** (`/fleet`) — a multi-quadruped teaching arena reachable from the right of the robot picker. Configure the radio (range, link reliability), the airtime each robot gets, and its onboard memory + inbox depth, then watch a fleet split a field under four coordination strategies (lone wolves, gossip, claim-and-yield, one commander). Live links, in-flight messages, dropped packets, coverage and wasted re-walks all rendered.
+- Fleet **hover-to-inspect**: mouse over any robot to highlight what *it* knows — tiles it sensed firsthand (filled) vs. only heard from peers (outlined) — with a live knowledge/inbox/data card.
+- Fleet **base station + data points**: discover data and relay it home with greedy geographic routing (multi-hop / data-mule), plus selectable **environments** (open / obstacles / building with line-of-sight-blocking walls).
+- Fleet **CONCEPTS panel** (expandable): in-UI explanations of delivered vs. dropped, overlapping searches, optimisation, "is this libp2p?", swarm intelligence/stigmergy, and the base-station sink — plus hover tooltips on every metric.
+- Fleet **bring-your-own algorithm**: a "✨ Your algorithm" strategy with a live JS editor, and a **Generate** button that asks the local runtime's LLM (`POST /api/fleet/strategy`) to draft a coordination policy from a plain-language goal — runnable on the spot against the same radio limits.
+- **`roborun/swarm/`** — the comms model, four strategies, base-station relay and data points as runnable Python (`python -m roborun.swarm`), the headless twin of the sandbox; ships with the package.
+- ROS card **network scan**: an "Allow network scan to load robots" button that trips the browser's local-network permission and lists every rosbridge robot found as its own one-click view.
+
+### Changed
+- ROS-connected robots land in the **exact same multi-panel deck** as the rapier.js sim — the live camera (EYES) now docks into the deck layout where the sim shows its POV, instead of floating.
+- The FLEET picker card is now a single **Open Fleet Lab** button; every knob lives inside the sandbox.
+- Replaced the last native `confirm()` (deploy-to-robot) with the in-app styled modal, usable from the deck as well as the cockpit.
+
+### Deploy
+- `vercel.json` with `cleanUrls` so `/fleet` resolves on the static Vercel build, matching the local server's route.
+
 ## v0.9.2 — 2026-06-09
 
 ### Fixed

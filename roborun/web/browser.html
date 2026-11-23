@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script src="./runtime-base.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoboRun · Data Browser</title>
+<link rel="stylesheet" href="./ui.css">
+<script src="./shell.js"></script>
+<style>
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--mono); }
+  main{ display:flex; flex-direction:column; gap:26px; }
+
+  /* page intro */
+  .intro h1{ font-size:16px; margin:0 0 4px; letter-spacing:.02em; }
+  .intro p{ color:var(--fg-dim); font-size:12px; margin:0; max-width:640px; }
+
+  /* section heading row: label left, count/legend right */
+  .sec-h{ display:flex; align-items:baseline; gap:12px; margin:0 0 10px; flex-wrap:wrap; }
+  .sec-h .seclabel{ margin:0; }
+  .sec-h .sec-meta{ margin-left:auto; color:var(--fg-dim); font-size:11px;
+    font-variant-numeric:tabular-nums; }
+
+  /* spatial map */
+  .map-card{ padding:0; overflow:hidden; }
+  .map-legend{ display:flex; gap:18px; align-items:center; flex-wrap:wrap;
+    padding:10px 14px; border-bottom:1px solid var(--line-soft); font-size:11px;
+    color:var(--fg-dim); }
+  .map-legend .lg{ display:inline-flex; align-items:center; gap:7px; }
+  .map-legend .sw{ width:13px; height:13px; border-radius:50%; flex:none; }
+  .map-legend .sw.cam{ border-radius:2px; }
+  .map-svg{ display:block; width:100%; height:auto; background:#070a07; }
+  .map-foot{ padding:8px 14px; border-top:1px solid var(--line-soft);
+    color:var(--fg-dim); font-size:11px; font-variant-numeric:tabular-nums; }
+
+  /* runs */
+  .runs{ display:flex; flex-direction:column; gap:7px; }
+  .run{ display:grid; grid-template-columns:1fr auto auto; align-items:center;
+    gap:8px 16px; background:var(--panel); border:1px solid var(--line);
+    border-radius:var(--r-sm); padding:11px 14px; text-decoration:none; color:var(--fg);
+    transition:border-color .12s, background .12s; }
+  .run:hover{ border-color:var(--accent); background:var(--panel-2); }
+  .run .nm{ font-weight:600; font-size:13px; letter-spacing:.01em; }
+  .run .tags{ display:flex; gap:6px; flex-wrap:wrap; align-items:center;
+    grid-column:1 / 2; }
+  .run .tag{ font-size:10.5px; color:var(--fg-dim); background:var(--panel-2);
+    border:1px solid var(--line-soft); border-radius:var(--r-sm); padding:1px 7px;
+    white-space:nowrap; }
+  .run .tag b{ color:var(--fg-2); font-weight:600; }
+  .run .size{ color:var(--fg-2); font-size:11.5px; font-variant-numeric:tabular-nums;
+    text-align:right; white-space:nowrap; }
+  .run .when{ color:var(--fg-dim); font-size:11px; }
+  .run .seal{ justify-self:end; }
+  @media (max-width:680px){
+    .run{ grid-template-columns:1fr auto; }
+    .run .size{ grid-column:1 / 2; text-align:left; }
+  }
+
+  /* backends */
+  .bk{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
+  .bcard{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r-sm);
+    padding:12px 14px; display:flex; flex-direction:column; gap:9px; }
+  .bcard .top{ display:flex; align-items:center; gap:8px; }
+  .bcard .nm{ font-weight:600; font-size:12.5px; }
+  .bcard .knd{ font-size:9.5px; text-transform:uppercase; letter-spacing:.08em;
+    color:var(--fg-dim); border:1px solid var(--line-soft); border-radius:999px;
+    padding:1px 7px; }
+  .bcard .st{ margin-left:auto; }
+  .bcard .where{ font-size:10px; color:var(--fg-dim); }
+  .bcard .caps{ display:flex; flex-wrap:wrap; gap:5px; }
+  .bcard .cap{ font-size:10.5px; padding:2px 7px; border-radius:var(--r-sm);
+    border:1px solid var(--line-soft); background:var(--panel-2); color:var(--fg-dim);
+    white-space:nowrap; }
+  .bcard .cap.on{ color:var(--fg); border-color:var(--accent-dim); }
+  .bcard .cap.off{ opacity:.45; text-decoration:line-through; }
+  .bcard .cap b{ color:var(--fg-2); font-weight:600; }
+
+  .empty{ color:var(--fg-dim); padding:34px 24px; text-align:center; font-size:12.5px;
+    line-height:1.7; border:1px dashed var(--line); border-radius:var(--r);
+    background:var(--panel); }
+  .empty a{ color:var(--accent); text-decoration:none; }
+  .empty a:hover{ text-decoration:underline; }
+</style>
+</head>
+<body>
+<main>
+  <div class="intro">
+    <h1>DATA BROWSER</h1>
+    <p>Every recorded run in the active scope — sim, robot, fleet — with its streams.
+       Open one to scrub the synced telemetry, camera, map and lidar.</p>
+  </div>
+
+  <section>
+    <div class="sec-h">
+      <h2 class="seclabel">Spatial map</h2>
+      <span class="sec-meta" id="spatialMeta"></span>
+    </div>
+    <div id="spatial" class="card map-card"><div class="empty">loading…</div></div>
+  </section>
+
+  <section>
+    <div class="sec-h">
+      <h2 class="seclabel">Runs</h2>
+      <span class="sec-meta" id="runsMeta"></span>
+    </div>
+    <div id="runs" class="runs"><div class="empty">loading…</div></div>
+  </section>
+
+  <section>
+    <div class="sec-h">
+      <h2 class="seclabel">Backends — what this install can run</h2>
+      <span class="sec-meta" id="backendsMeta"></span>
+    </div>
+    <div id="backends" class="bk"><div class="empty">loading…</div></div>
+  </section>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const gb=b=>b>1e9?(b/1e9).toFixed(2)+" GB":b>1e6?(b/1e6).toFixed(1)+" MB":(b/1e3|0)+" KB";
+const when=t=>t?new Date(t*1000).toLocaleString():"";
+
+async function j(u){ return (await fetch(u)).json(); }
+
+// keep #scope present (legacy id) but inert — the shell top-bar shows scope now
+const _scope=document.createElement("div"); _scope.id="scope"; _scope.hidden=true;
+document.body.appendChild(_scope);
+
+async function load(){
+  const d=await j("/api/runs");
+  const el=$("#runs");
+  if(!d.runs||!d.runs.length){
+    $("#runsMeta").textContent="";
+    el.innerHTML='<div class="empty">No recorded runs in this scope yet.<br>'
+      +'Record in the cockpit (press <b>M</b>), run a scenario, or switch project from the top bar.</div>';
+    return;
+  }
+  $("#runsMeta").textContent=d.runs.length+" run"+(d.runs.length!==1?"s":"");
+  el.innerHTML=d.runs.map(r=>{
+    const m=r.manifest||{};
+    const seal = r.anchored?'<span class="pill ok">anchored</span>'
+      : r.sealed?'<span class="pill warn">sealed</span>'
+      : '<span class="pill">open</span>';
+    const cams=(m.cameras||[]).length;
+    const tags=[];
+    if(r.robot_id) tags.push(`<span class="tag">${esc(r.robot_id)}</span>`);
+    if(m.backend)  tags.push(`<span class="tag"><b>${esc(m.backend)}</b></span>`);
+    tags.push(`<span class="tag">${cams} cam${cams!==1?'s':''}</span>`);
+    return `<a class="run" href="/run?id=${encodeURIComponent(r.run)}">
+      <span class="nm">${esc(r.run)}</span>
+      <span class="size">${gb(r.size||0)} · <span class="when">${esc(when(m.ended||m.started))}</span></span>
+      ${seal}
+      <span class="tags">${tags.join("")}</span>
+    </a>`;
+  }).join("");
+}
+
+async function loadBackends(){
+  const d=await j("/api/backends");
+  const color={ready:"ok",available:"warn",optional:"warn",planned:""};
+  const bx=$("#backends");
+  if(!d.backends||!d.backends.length){
+    bx.innerHTML='<div class="empty" style="grid-column:1/-1">No backends registered.</div>';
+    return;
+  }
+  const ready=d.backends.filter(b=>b.status==="ready").length;
+  $("#backendsMeta").textContent=`${ready}/${d.backends.length} ready`;
+  bx.innerHTML=d.backends.map(b=>{
+    const caps=Object.entries(b.caps||{}).map(([k,v])=>{
+      if(v===true)  return `<span class="cap on">${esc(k)}</span>`;
+      if(v===false) return `<span class="cap off">${esc(k)}</span>`;
+      return `<span class="cap on">${esc(k)} <b>${esc(v)}</b></span>`;
+    }).join("");
+    return `<div class="bcard">
+      <div class="top">
+        <span class="nm">${esc(b.name)}</span>
+        ${b.kind?`<span class="knd">${esc(b.kind)}</span>`:""}
+        <span class="pill ${color[b.status]||''} st">${esc(b.status)}</span>
+      </div>
+      ${b.where?`<div class="where">${esc(b.where)}</div>`:""}
+      <div class="caps">${caps}</div>
+    </div>`;
+  }).join("");
+}
+
+async function loadSpatial(){
+  const box=$("#spatial"), meta=$("#spatialMeta");
+  let d; try{ d=await j("/api/spatial"); }catch(e){
+    box.innerHTML='<div class="empty">Spatial data unavailable.</div>'; return; }
+  const tracks=d.tracks||[], cams=d.cameras||[];
+  if(!tracks.length && !cams.length){
+    meta.textContent="";
+    box.innerHTML='<div class="empty">No spatial data in this scope yet.<br>'
+      +'Tag cameras on <a href="/projects">/projects</a> and record detections — '
+      +'tracked objects + camera views map here in the environment frame.</div>';
+    return;
+  }
+  meta.textContent=`${tracks.length} object${tracks.length!==1?'s':''} · ${cams.length} camera${cams.length!==1?'s':''}`;
+
+  // collect all points to auto-scale the env-frame view
+  let xs=[],ys=[];
+  tracks.forEach(t=>{xs.push(t.x);ys.push(t.y);});
+  cams.forEach(c=>(c.frustum||[]).forEach(p=>{xs.push(p.x);ys.push(p.y);}));
+  const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+  const W=720,H=380,pad=42, sx=(maxX-minX)||1, sy=(maxY-minY)||1;
+  const X=x=>pad+((x-minX)/sx)*(W-2*pad), Y=y=>H-(pad+((y-minY)/sy)*(H-2*pad));
+
+  // grid through the env origin (0,0) when it's in view, + a metre scale bar
+  const ox=X(0), oy=Y(0), inX=(0>=minX&&0<=maxX), inY=(0>=minY&&0<=maxY);
+  let grid='';
+  if(inX) grid+=`<line x1="${ox.toFixed(1)}" y1="${pad}" x2="${ox.toFixed(1)}" y2="${H-pad}" stroke="var(--line)" stroke-width="1"/>`;
+  if(inY) grid+=`<line x1="${pad}" y1="${oy.toFixed(1)}" x2="${W-pad}" y2="${oy.toFixed(1)}" stroke="var(--line)" stroke-width="1"/>`;
+  if(inX&&inY) grid+=`<text x="${(ox+5).toFixed(1)}" y="${(oy-6).toFixed(1)}" fill="var(--fg-dim)" font-size="9">0,0</text>`;
+  // axis arrows (env frame: +X right, +Y up)
+  const ax=`<g stroke="var(--fg-dim)" fill="var(--fg-dim)" font-size="9">
+    <line x1="${pad}" y1="${H-pad}" x2="${pad+34}" y2="${H-pad}" stroke-width="1"/>
+    <text x="${pad+38}" y="${H-pad+3}">+x</text>
+    <line x1="${pad}" y1="${H-pad}" x2="${pad}" y2="${H-pad-34}" stroke-width="1"/>
+    <text x="${pad-4}" y="${H-pad-40}">+y</text></g>`;
+
+  const frusta=cams.map(c=>{const f=c.frustum||[];if(f.length<3)return"";
+    return `<polygon points="${f.map(p=>`${X(p.x).toFixed(1)},${Y(p.y).toFixed(1)}`).join(" ")}" fill="rgba(64,144,224,.12)" stroke="var(--blue)" stroke-width="1"/>`
+      +`<rect x="${(X(f[0].x)-4).toFixed(1)}" y="${(Y(f[0].y)-4).toFixed(1)}" width="8" height="8" fill="var(--blue)"/>`
+      +`<text x="${(X(f[0].x)+8).toFixed(1)}" y="${(Y(f[0].y)-6).toFixed(1)}" fill="var(--blue)" font-size="10">${esc(c.source_id||"")}</text>`;}).join("");
+  const dots=tracks.map(t=>{const r=Math.min(12,4+Math.log2(t.count+1)*2);
+    return `<circle cx="${X(t.x).toFixed(1)}" cy="${Y(t.y).toFixed(1)}" r="${r.toFixed(1)}" fill="rgba(0,212,126,.25)" stroke="var(--accent)"/>`
+      +`<text x="${(X(t.x)+r+3).toFixed(1)}" y="${(Y(t.y)+3).toFixed(1)}" fill="var(--fg)" font-size="11">${esc(t.label)} ×${t.count}</text>`;}).join("");
+
+  box.innerHTML=`
+    <div class="map-legend">
+      <span class="lg"><span class="sw" style="background:rgba(0,212,126,.25);border:1px solid var(--accent)"></span>tracked object <span style="color:var(--fg-2)">(size = detection count)</span></span>
+      <span class="lg"><span class="sw cam" style="background:rgba(64,144,224,.5);border:1px solid var(--blue)"></span>camera + field of view</span>
+    </div>
+    <svg class="map-svg" viewBox="0 0 ${W} ${H}">${grid}${ax}${frusta}${dots}</svg>
+    <div class="map-foot">${tracks.length} tracked object${tracks.length!==1?"s":""} · ${cams.length} camera${cams.length!==1?"s":""} · environment frame, metres (+x right, +y up)</div>`;
+}
+
+load(); loadBackends(); loadSpatial();
+</script>
+</body>
+</html>

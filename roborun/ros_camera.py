@@ -6,7 +6,7 @@ the same cache `robot.see()` reads. With this, see() means "what is in
 front of the *robot*" on every backend: arena → arena ground truth,
 connected robot → this pipeline, neither → local webcam.
 
-Frames also land at /tmp/roborun_frame.jpg, so the deck's camera panel and
+Frames also land at /tmp/roborun_robot_frame.jpg, so the deck's camera panel and
 robot.ask(image=True) show the robot's view, not your desk.
 """
 from __future__ import annotations
@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-FRAME_PATH = Path("/tmp/roborun_frame.jpg")
+FRAME_PATH = Path("/tmp/roborun_robot_frame.jpg")
 _FRESH = 2.0
 _DETECT_HZ = 5.0
 
@@ -136,9 +136,33 @@ class RosCameraPipeline:
         with self._lock:
             return self._frame
 
+    def detections_normalized(self) -> dict[str, Any]:
+        """Detections as fractions of the frame, for a camera overlay that
+        scales with however the HUD sizes the feed."""
+        with self._lock:
+            frame = self._frame
+            dets = list(self._detections)
+        if frame is None:
+            return {"w": 0, "h": 0, "detections": []}
+        h, w = frame.shape[:2]
+        out = []
+        for d in dets:
+            x1, y1, x2, y2 = d.get("bbox", (0, 0, 0, 0))
+            out.append({
+                "label": d.get("label", "?"),
+                "conf": d.get("confidence", 0.0),
+                "track_id": d.get("track_id"),
+                "x": x1 / w, "y": y1 / h,
+                "w": (x2 - x1) / w, "h": (y2 - y1) / h,
+            })
+        return {"w": w, "h": h, "detections": out}
+
     def state(self) -> dict[str, Any]:
         with self._lock:
-            return {"topic": self._topic, "active": self.is_active(),
+            # inline the freshness check: is_active() takes this same
+            # non-reentrant lock, so calling it here would self-deadlock
+            return {"topic": self._topic,
+                    "active": time.monotonic() - self._frame_ts < _FRESH,
                     "frames": self._frames, "detections": len(self._detections)}
 
 

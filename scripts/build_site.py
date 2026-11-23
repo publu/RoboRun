@@ -37,7 +37,14 @@ def main() -> None:
     dst.mkdir(parents=True, exist_ok=True)
     for name in PY_MODULES:
         shutil.copy(ROOT / "roborun" / name, dst / name)
-    shutil.copy(SITE / "arena.html", SITE / "index.html")
+    # dashboard everywhere: the Home dashboard is the landing; the playable
+    # in-browser cockpit stays reachable at /sim (arena.html, Pyodide).
+    shutil.copy(SITE / "home.html", SITE / "index.html")
+    # /sim as a real file, not a vercel.json rewrite: Vercel drops rewrites under
+    # a Root Directory, so `/sim?level=…` 404'd on the hosted site. A physical
+    # sim.html (copy of arena.html) resolves directly; the ?level query rides
+    # through client-side. The local server still maps /sim → arena.html itself.
+    shutil.copy(SITE / "arena.html", SITE / "sim.html")
     n = sum(1 for _ in SITE.rglob("*") if _.is_file())
     print(f"site/ assembled — {n} files")
 

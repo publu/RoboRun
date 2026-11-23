@@ -678,8 +678,20 @@ def _tool_get_robot_info(args: dict) -> dict:
             "dds": _check_dds(),
             "rosbridge": rb is not None and rb.is_connected if rb else False,
         },
+        "ros_version": (_ros_version_from_topics(disc["topics"])),
         "discovered_topics": len(disc["topics"]),
     }
+
+
+def _ros_version_from_topics(topics: list) -> str:
+    """ROS1/ROS2 from the discovered topic set (works for DDS or rosbridge)."""
+    names = {t.get("name") for t in topics}
+    types = {str(t.get("type", "")) for t in topics}
+    if "/parameter_events" in names or any(tp.startswith("rcl_interfaces/") for tp in types):
+        return "ros2"
+    if "/rosout_agg" in names or "rosgraph_msgs/Log" in types:
+        return "ros1"
+    return "unknown"
 
 
 _active_tap = None
@@ -939,6 +951,23 @@ def _tool_seen(args: dict) -> dict:
     what was actually observed, not from guesses."""
     from roborun.sightings import summary
     return {"ok": True, "sightings": summary(args.get("label"))}
+
+
+def _tool_recall_place(args: dict) -> dict:
+    """Semantic spatial recall over the all-time index: where/when was <query>
+    seen, across every run and mode. dimOS-style 'where did I last see X'."""
+    from roborun.routes._singletons import get_memory
+    from roborun.session import search
+    by = str(args.get("by", "label"))
+    hits = search(get_memory(), args.get("query", ""), by=by,
+                  k=int(args.get("k", 10)),
+                  since=args.get("since"), until=args.get("until"))
+    places = [{"x": h.get("x"), "y": h.get("y"), "ts": h.get("ts"),
+               "labels": sorted({d.get("label") for d in (h.get("detections") or [])}),
+               "robot_id": h.get("robot_id"), "source": h.get("source")}
+              for h in hits]
+    return {"ok": True, "query": args.get("query"), "count": len(places),
+            "places": places}
 
 
 def _tool_arena_status(args: dict) -> dict:
@@ -1324,6 +1353,15 @@ MCP_TOOLS = [
             "label": {"type": "string", "description": "Filter to one label"}}},
     },
     {
+        "name": "recall_place",
+        "description": "Semantic spatial recall over the ALL-TIME index (every run, every robot, every mode): where and when was something seen, with its position. 'where did I last see the forklift', 'who was in the lobby yesterday'. by='label' (YOLO) or 'clip' (semantic text); optional since/until unix seconds.",
+        "inputSchema": {"type": "object", "properties": {
+            "query": {"type": "string", "description": "what/who to find"},
+            "by": {"type": "string", "enum": ["label", "clip", "near", "time"]},
+            "k": {"type": "integer"},
+            "since": {"type": "number"}, "until": {"type": "number"}}},
+    },
+    {
         "name": "arena_status",
         "description": "Arena chamber state: pose, rooms visited, won, live detections. The game loop: write_behavior, enable it, poll this until won.",
         "inputSchema": {"type": "object", "properties": {}},
@@ -1365,6 +1403,7 @@ _TOOL_HANDLERS = {
     "move": _tool_move,
     "see": _tool_see,
     "seen": _tool_seen,
+    "recall_place": _tool_recall_place,
     "arena_status": _tool_arena_status,
     "write_behavior": _tool_write_behavior,
     "behaviors": _tool_behaviors,

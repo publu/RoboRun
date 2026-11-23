@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script src="./runtime-base.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoboRun · Analytics</title>
+<link rel="stylesheet" href="./ui.css">
+<script src="./shell.js"></script>
+<style>
+  /* Page-local styles only — tokens + .kpi/.kpis/.card/.seclabel come from ui.css */
+  .lede{ color:var(--fg-2); font-size:13px; line-height:1.6; margin:0 0 18px; max-width:760px; }
+  .kpis{ margin-bottom:20px; }
+  .kpi{ position:relative; }
+  .kpi .n{ color:var(--accent); }
+  .kpi[title]{ cursor:help; }
+
+  .cols{ display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:start; }
+  @media(max-width:760px){ .cols{ grid-template-columns:1fr; } }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:16px; }
+  .panel h2{ font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:var(--fg-dim); margin:0 0 14px; }
+
+  /* horizontal bar list */
+  .row{ display:grid; grid-template-columns:120px 1fr 52px; align-items:center; gap:10px;
+        margin:7px 0; font-size:12px; }
+  .row .lab{ color:var(--fg-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row .track{ height:12px; background:var(--line-soft); border-radius:4px; overflow:hidden; }
+  .row .fill{ height:100%; background:linear-gradient(90deg,var(--accent-dim),var(--accent));
+              border-radius:4px; min-width:2px; transition:width .4s ease; }
+  .row .v{ text-align:right; color:var(--fg); font-variant-numeric:tabular-nums; }
+
+  /* sparkline */
+  .spark svg{ width:100%; height:96px; display:block; overflow:visible; }
+  .spark path.line{ fill:none; stroke:var(--accent); stroke-width:2; stroke-linejoin:round; vector-effect:non-scaling-stroke; }
+  .spark path.area{ fill:url(#sparkfill); stroke:none; }
+  .spark .dot{ fill:var(--accent); }
+  .spark .base{ stroke:var(--line); stroke-width:1; vector-effect:non-scaling-stroke; }
+  .sparkfoot{ display:flex; justify-content:space-between; align-items:baseline; margin-top:8px;
+              font-size:11px; color:var(--fg-dim); }
+  .sparkfoot b{ color:var(--fg); font-variant-numeric:tabular-nums; }
+
+  /* fleet grid */
+  .fleet-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
+  .fcard{ border:1px solid var(--line); border-radius:var(--r-sm); padding:11px 12px; background:var(--panel-2); }
+  .fcard .fhead{ display:flex; align-items:center; gap:7px; }
+  .fcard .fdot{ width:8px; height:8px; border-radius:50%; flex:none; }
+  .fcard .fid{ color:var(--accent); font-weight:600; }
+  .fcard .fstate{ margin-left:auto; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--fg-dim); }
+  .fcard .fmeta{ color:var(--fg-dim); font-size:11.5px; margin-top:6px; line-height:1.5; }
+  .fcard .fmeta b{ color:var(--fg-2); font-weight:600; }
+
+  .empty{ color:var(--fg-dim); font-size:12px; line-height:1.6; }
+  .empty code{ color:var(--fg-2); }
+  .empty b{ color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <p class="lede">A live overview of everything your robots have seen and done — what they detected, how often, which robots are active, and how your behaviors score. Updates every few seconds.</p>
+  <div class="kpis" id="kpis"></div>
+  <div class="cols">
+    <div class="panel"><h2>Detections by label (all time)</h2><div id="labels"></div></div>
+    <div class="panel"><h2>Observations · last 24h</h2><div id="sparkwrap"></div></div>
+    <div class="panel"><h2>Suite pass-rate</h2><div id="suites"></div></div>
+    <div class="panel"><h2>Data by source (sim / robot / production)</h2><div id="sources"></div></div>
+    <div class="panel" style="grid-column:1/-1"><h2>Fleet activity</h2><div id="fleet"></div></div>
+  </div>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const fmt=n=>{ n=+n||0; return n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'k':String(n); };
+const hhmm=t=>new Date(t*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+
+const bars=(el,items,labelKey,valKey,pct,empty)=>{
+  const max=Math.max(1,...items.map(i=>i[valKey]));
+  paint(el, items.length? items.map(i=>`<div class="row">
+    <span class="lab" title="${i[labelKey]}">${i[labelKey]}</span>
+    <span class="track"><span class="fill" style="width:${pct?i[valKey]:(i[valKey]/max*100).toFixed(1)}%"></span></span>
+    <span class="v">${pct?(i[valKey]+'%'):fmt(i[valKey])}</span></div>`).join("")
+    : `<div class="empty">${empty||'Nothing here yet — record a run (cockpit → <b>M</b>) or run <code>roborun demo</code> to load sample data.'}</div>`);
+};
+
+function spark(el,pts){
+  const total=pts.reduce((a,p)=>a+(p.count||0),0);
+  if(!pts.length || total===0){
+    paint(el,'<div class="empty">No observations recorded in the last 24h — start a sim or run <code>roborun demo</code> to see live activity.</div>');
+    return;
+  }
+  const max=Math.max(1,...pts.map(p=>p.count)), W=380, H=96, pad=4, n=pts.length;
+  const X=i=> n<2?0 : (i/(n-1)*W);
+  const Y=v=> H-pad - (v/max)*(H-2*pad);
+  let peak=pts[0], peakI=0;
+  pts.forEach((p,i)=>{ if(p.count>peak.count){ peak=p; peakI=i; } });
+  const line=pts.map((p,i)=>`${i?'L':'M'}${X(i).toFixed(1)},${Y(p.count).toFixed(1)}`).join(" ");
+  const area=`M0,${H-pad} `+pts.map((p,i)=>`L${X(i).toFixed(1)},${Y(p.count).toFixed(1)}`).join(" ")+` L${W},${H-pad} Z`;
+  const t0=pts[0].t, t1=pts[n-1].t;
+  paint(el,
+    `<div class="spark"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <defs><linearGradient id="sparkfill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="var(--accent)" stop-opacity=".22"/>
+        <stop offset="1" stop-color="var(--accent)" stop-opacity="0"/>
+      </linearGradient></defs>
+      <line class="base" x1="0" y1="${H-pad}" x2="${W}" y2="${H-pad}"/>
+      <path class="area" d="${area}"/>
+      <path class="line" d="${line}"/>
+      <circle class="dot" cx="${X(peakI).toFixed(1)}" cy="${Y(peak.count).toFixed(1)}" r="2.5"/>
+    </svg></div>
+    <div class="sparkfoot">
+      <span>${t0?hhmm(t0):''}</span>
+      <span>peak <b>${fmt(peak.count)}</b>${peak.t?' · '+hhmm(peak.t):''}</span>
+      <span><b>${fmt(total)}</b> total · ${t1?hhmm(t1):'now'}</span>
+    </div>`);
+}
+async function load(){
+  let d; try{ d=await (await fetch("/api/analytics")).json(); }catch(e){ return; }
+  const obs=d.observations||{}, runs=d.runs||{}, fleet=d.fleet||{}, st=d.storage||{};
+  const kpi=(n,l,t)=>`<div class="kpi" ${t?`title="${t}"`:""}><div class="n">${n}</div><div class="l">${l}</div></div>`;
+  const stored = st.used_gb!=null
+    ? kpi(`${st.used_gb}G`, `of ${st.cap_gb}G · ${st.pct||0}% used`,
+          `Local storage. ${st.evictable_gb||0}G is sealed + backed up and can be auto-freed (${st.runs||0} runs, ${st.sealed||0} sealed). Robots make 30–100 GB/shift — RoboRun stays local-first and keeps the tiny proofs even after freeing space.`)
+    : kpi((((runs.total_bytes||0)/1e9).toFixed(2))+"G","data recorded");
+  paint($("#kpis"),[
+    kpi(fmt(obs.total??0),"things seen","Total observations recorded across all robots and runs."),
+    kpi(fmt(obs.with_embeddings??0),"AI-searchable","Observations with embeddings — searchable by natural language."),
+    kpi(fmt(runs.count??0),"saved runs","Recorded runs in the local store."),
+    stored,
+    kpi(fmt(fleet.total??0),"robots online","Robots currently connected to this dashboard."),
+    kpi(fmt((d.suites||[]).length),"test suites","Behavior test suites with recorded results."),
+  ].join(""));
+  bars($("#labels"), d.labels||[], "label","count",false,
+       "No detections yet — start a sim or run <code>roborun demo</code> to populate spatial memory.");
+  spark($("#sparkwrap"), d.over_time||[]);
+  bars($("#suites"), (d.suites||[]).map(s=>({suite:s.suite,pct:Math.round(s.pass_rate*100)})), "suite","pct",true,
+       "No test suites have run yet — define scenarios and run <code>roborun eval</code>.");
+  bars($("#sources"), d.sources||[], "source","count",false,
+       "No data sources yet — record a run or import a log to get started.");
+  const robots=d.robots||[]; const now=Date.now()/1000;
+  paint($("#fleet"), robots.length? `<div class="fleet-grid">`+
+    robots.map(r=>{
+      const age = r.last_seen? now-r.last_seen : Infinity;
+      const active = age < 120;            // seen in the last 2 min → active
+      const dot = active? "var(--ok)" : (age<3600? "var(--warn)" : "var(--fg-dim)");
+      const state = active? "active" : (age<3600? "idle" : "offline");
+      return `<div class="fcard">
+      <div class="fhead"><span class="fdot" style="background:${dot}"></span><span class="fid">${r.robot_id}</span><span class="fstate">${state}</span></div>
+      <div class="fmeta"><b>${fmt(r.observations)}</b> seen · mostly ${r.top_label||"—"}</div>
+      <div class="fmeta">last active ${r.last_seen?new Date(r.last_seen*1000).toLocaleString():"—"}</div>
+    </div>`;}).join("")+`</div>`
+    : '<div class="empty">No robots have recorded data yet — connect one with <code>roborun connect</code>, start a sim, or run <code>roborun demo</code>.</div>');
+}
+load(); setInterval(load, 5000);
+</script>
+</body>
+</html>
