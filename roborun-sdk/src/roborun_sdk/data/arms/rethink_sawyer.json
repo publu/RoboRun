@@ -1,0 +1,61 @@
+{
+ "id": "rethink_sawyer",
+ "label": "Rethink Sawyer",
+ "driver": "roborun_sdk.arms.vendor_rosbridge:SawyerArm",
+ "motors": "Rethink joints",
+ "transport": "rosbridge",
+ "install": "rosbridge",
+ "status": "beta",
+ "profile": "rethink_sawyer",
+ "dof": 7,
+ "home": [
+  0,
+  -1.18,
+  0,
+  2.18,
+  0,
+  0.57,
+  3.14
+ ],
+ "limits": [
+  [
+   -3.0503,
+   3.0503
+  ],
+  [
+   -3.8095,
+   2.2736
+  ],
+  [
+   -3.0426,
+   3.0426
+  ],
+  [
+   -3.0439,
+   3.0439
+  ],
+  [
+   -2.9761,
+   2.9761
+  ],
+  [
+   -2.9761,
+   2.9761
+  ],
+  [
+   -3.14,
+   3.14
+  ]
+ ],
+ "options": {},
+ "interface": "ROS topics via rosbridge (intera_core_msgs/JointCommand, POSITION_MODE)",
+ "license": "Apache-2.0 (intera_sdk)",
+ "platforms": "any (roslibpy over WebSocket); rosbridge_server runs on the robot network",
+ "realtime": "none on this host: the robot's controller runs the loop",
+ "fits_profile_shape": true,
+ "sources": [
+  "https://github.com/RethinkRobotics/intera_sdk",
+  "https://github.com/RethinkRobotics/sawyer_robot"
+ ],
+ "note": "Needs rosbridge_server on the robot's ROS network and an SDK-enabled robot. Rethink no longer supports these robots. Home is the maker's neutral pose with joint 7 clamped to its URDF limit. No gripper is driven."
+}

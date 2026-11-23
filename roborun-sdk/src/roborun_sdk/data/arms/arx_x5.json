@@ -1,0 +1,31 @@
+{
+ "id": "arx_x5",
+ "label": "ARX X5",
+ "driver": "roborun_sdk.arms.vendor_arx:ArxX5Arm",
+ "motors": "CAN joint modules",
+ "transport": "can",
+ "install": "arx",
+ "status": "beta",
+ "profile": "arx_x5",
+ "dof": 6,
+ "home": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "limits": null,
+ "options": {},
+ "interface": "arx_x5_sdk ArxInterface (status 5, set_joint_positions)",
+ "license": "BSD-3-Clause (ARX source and the arx-x5-sdk package)",
+ "platforms": "Linux x86-64, CPython 3.10 only (glibc 2.39+ for 0.1.7)",
+ "realtime": "none",
+ "fits_profile_shape": true,
+ "sources": [
+  "https://github.com/ARXroboticsX/ARX_X5",
+  "https://pypi.org/project/arx-x5-sdk/"
+ ],
+ "note": "ARX publishes no joint limits (its URDFs say +-10 rad), so this arm will not open until you pass limits for yours. No read-only check: opening the SDK starts ARX's control thread, whose effect on the motors is undocumented. arx-x5-sdk is a third-party packaging of ARX's library."
+}

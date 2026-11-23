@@ -1,0 +1,102 @@
+{
+ "id": "yam",
+ "label": "YAM (I2RT)",
+ "reach_m": 0.779,
+ "object_r_m": 0.407,
+ "shared_base": false,
+ "attached_gripper": null,
+ "yaw_deg": -0.09,
+ "base_z_m": 0.0,
+ "sides": {
+  "left": {
+   "object_r": 0.407,
+   "object_z": 0.039,
+   "shoulder": [
+    0.0,
+    0.0,
+    0.068
+   ],
+   "work_m": 0.779,
+   "model": "yam.xml",
+   "joints": 6,
+   "home": [
+    1.5708,
+    0.3,
+    0.3,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rest": [
+    1.5708,
+    0.3,
+    0.3,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.095,
+   "limits": [
+    [
+     -2.61799,
+     3.05433
+    ],
+    [
+     0.0,
+     3.65
+    ],
+    [
+     0.0,
+     3.14159
+    ],
+    [
+     -1.5708,
+     1.5708
+    ],
+    [
+     -1.5708,
+     1.5708
+    ],
+    [
+     -2.0944,
+     2.0944
+    ]
+   ],
+   "source_joints": [
+    "joint1",
+    "joint2",
+    "joint3",
+    "joint4",
+    "joint5",
+    "joint6"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "7/9",
+   "reach_m": 0.848,
+   "yaw_deg": -0.09
+  }
+ },
+ "sim_object_mm": [
+  81,
+  81,
+  101
+ ],
+ "gripper": "slide",
+ "source": {
+  "repo": "https://github.com/i2rt-robotics/i2rt",
+  "commit": "234d895 (vendored at roborun_sdk/third_party/i2rt)",
+  "file": "yam+linear_4310",
+  "license": "MIT",
+  "license_file": "LICENSE",
+  "sha256": "1d040c0af0e3b1d42287c6b35be9e9564fe5741c09388f491cb1066cb1de3318"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": [
+  "left joint 1: model range [-2.618, 3.142], driver [-2.618, 3.054]",
+  "left joint 4: model range [-1.693, 1.571], driver [-1.571, 1.571]"
+ ]
+}

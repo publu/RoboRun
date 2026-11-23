@@ -1,0 +1,99 @@
+{
+ "id": "viperx_300s",
+ "label": "Trossen ViperX 300 6DOF (ALOHA follower)",
+ "reach_m": 0.823,
+ "object_r_m": 0.455,
+ "shared_base": false,
+ "attached_gripper": null,
+ "yaw_deg": 90.0,
+ "base_z_m": 0.0,
+ "sides": {
+  "left": {
+   "object_r": 0.455,
+   "object_z": 0.159,
+   "shoulder": [
+    0.0,
+    0.0,
+    0.079
+   ],
+   "work_m": 0.823,
+   "model": "viperx_300s.xml",
+   "joints": 6,
+   "home": [
+    0.0,
+    -1.65,
+    1.55,
+    0.0,
+    0.8,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    -1.65,
+    1.55,
+    0.0,
+    0.8,
+    0.0
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.072,
+   "limits": [
+    [
+     -3.14158,
+     3.14006
+    ],
+    [
+     -1.85005,
+     1.25633
+    ],
+    [
+     -1.76278,
+     1.60454
+    ],
+    [
+     -3.14158,
+     3.14006
+    ],
+    [
+     -1.8675,
+     2.23348
+    ],
+    [
+     -3.14158,
+     3.14006
+    ]
+   ],
+   "source_joints": [
+    "waist",
+    "shoulder",
+    "elbow",
+    "forearm_roll",
+    "wrist_angle",
+    "wrist_rotate"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "9/9",
+   "reach_m": 0.902,
+   "yaw_deg": 90.0
+  }
+ },
+ "sim_object_mm": [
+  61,
+  61,
+  76
+ ],
+ "gripper": "slide",
+ "source": {
+  "repo": "https://github.com/google-deepmind/mujoco_menagerie",
+  "commit": "370c43965323c0944b433b202aac5058b5f907a9",
+  "file": "trossen_vx300s/vx300s.xml",
+  "license": "BSD-3-Clause",
+  "license_file": "trossen_vx300s/LICENSE",
+  "sha256": "675a04490b6d540ec8335aacf245edaecdba9ae793e9a734f1c96461d5bb770e"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": []
+}

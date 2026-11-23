@@ -1,0 +1,106 @@
+{
+ "id": "metal_arm",
+ "label": "MakerMods Metal Arm",
+ "reach_m": 0.8,
+ "object_r_m": 0.32,
+ "shared_base": false,
+ "attached_gripper": null,
+ "yaw_deg": 11.73,
+ "base_z_m": 0.0,
+ "sides": {
+  "left": {
+   "object_r": 0.32,
+   "object_z": 0.163,
+   "shoulder": [
+    0.0,
+    0.0,
+    0.0638
+   ],
+   "work_m": 0.8,
+   "model": "metal_arm.xml",
+   "joints": 6,
+   "home": [
+    1.36687,
+    -0.9,
+    1.1,
+    0.1,
+    0.0,
+    0.0
+   ],
+   "rest": [
+    1.36687,
+    -0.9,
+    1.1,
+    0.1,
+    0.0,
+    0.0
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.1,
+   "limits": [
+    [
+     -2.79,
+     2.79
+    ],
+    [
+     -3.14,
+     0.0
+    ],
+    [
+     0.0,
+     3.14
+    ],
+    [
+     -2.145,
+     1.413
+    ],
+    [
+     -1.482,
+     1.482
+    ],
+    [
+     -2.529,
+     2.529
+    ]
+   ],
+   "source_joints": [
+    "joint1",
+    "joint2",
+    "joint3",
+    "joint4",
+    "joint5",
+    "joint6"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "7/9",
+   "reach_m": 0.861,
+   "yaw_deg": 11.73
+  }
+ },
+ "sim_object_mm": [
+  85,
+  85,
+  106
+ ],
+ "gripper": "slide",
+ "source": {
+  "repo": "https://github.com/makermods-robotics/makermodslab",
+  "commit": "e377149419eebef7fa0f694b0d616c9c2cd46231",
+  "file": "frontend/dist/metal-urdf/metal_with_gripper.urdf",
+  "license": "MIT",
+  "license_file": "frontend/dist/metal-urdf/LICENSE",
+  "sha256": "a4792f244025ba4676de75a64acd6ce658fe65db84355fe70696640d209995b7"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": [
+  "left joint 1: model range [-2.790, 2.790], driver [-2.880, 2.880]",
+  "left joint 2: model range [-3.140, 0.000], driver [-3.229, 0.087]",
+  "left joint 3: model range [0.000, 3.140], driver [-0.087, 3.229]",
+  "left joint 4: model range [-2.145, 1.413], driver [-2.234, 1.501]",
+  "left joint 5: model range [-1.482, 1.482], driver [-1.571, 1.571]",
+  "left joint 6: model range [-2.529, 2.529], driver [-2.618, 2.618]"
+ ]
+}

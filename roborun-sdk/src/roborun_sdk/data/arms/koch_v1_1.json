@@ -1,0 +1,221 @@
+{
+ "status": "beta",
+ "profile": "koch_v1_1",
+ "id": "koch_v1_1",
+ "label": "Koch v1.1",
+ "driver": "roborun_sdk.arms.dynamixel:DynamixelArm",
+ "install": "dynamixel",
+ "transport": "serial",
+ "motors": "2 XL430-W250 + 4 XL330-M288 (ids 1-6)",
+ "home": [
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0
+ ],
+ "limits": [
+  [
+   -3.14159,
+   3.14159
+  ],
+  [
+   -3.14159,
+   3.14159
+  ],
+  [
+   -3.14159,
+   3.14159
+  ],
+  [
+   -3.14159,
+   3.14159
+  ],
+  [
+   -3.14159,
+   3.14159
+  ]
+ ],
+ "release": "Torque stays on at 34 % PWM holding the measured pose: a loaded joint sags until the servo can hold it, it does not fall.",
+ "unverified": [
+  "No published joint limits used: each joint is limited to the range swept in arm-calibrate",
+  "Sign +1 (servo direction) and the zero pose are ours: there is no Roborun profile for this arm yet",
+  "Jaw current limit 300 mA and release level 34 % are our choices",
+  "The servos must already be set to 1 Mbit/s (LeRobot's setup does this; XL330 ships at 57600)"
+ ],
+ "sources": [
+  "LeRobot robots/koch_follower",
+  "rustypot XL330/XL430 tables"
+ ],
+ "options": {
+  "arm_id": "koch_v1_1",
+  "calibration": "required",
+  "zero_pose": "every joint at the middle of its range",
+  "rate_hz": 50,
+  "joint_speed_rad_s": 0.8,
+  "joint_accel_rad_s2": 3.0,
+  "joint_jerk_rad_s3": 30.0,
+  "jaw_speed": 0.8,
+  "joints": [
+   {
+    "name": "shoulder_pan",
+    "id": 1,
+    "model": "xl430-w250",
+    "mode": 4,
+    "registers": [
+     [
+      9,
+      1,
+      0
+     ],
+     [
+      108,
+      4,
+      0
+     ],
+     [
+      112,
+      4,
+      0
+     ]
+    ]
+   },
+   {
+    "name": "shoulder_lift",
+    "id": 2,
+    "model": "xl430-w250",
+    "mode": 4,
+    "registers": [
+     [
+      9,
+      1,
+      0
+     ],
+     [
+      108,
+      4,
+      0
+     ],
+     [
+      112,
+      4,
+      0
+     ]
+    ]
+   },
+   {
+    "name": "elbow_flex",
+    "id": 3,
+    "model": "xl330-m288",
+    "mode": 4,
+    "registers": [
+     [
+      9,
+      1,
+      0
+     ],
+     [
+      108,
+      4,
+      0
+     ],
+     [
+      112,
+      4,
+      0
+     ],
+     [
+      84,
+      2,
+      1500
+     ],
+     [
+      82,
+      2,
+      0
+     ],
+     [
+      80,
+      2,
+      600
+     ]
+    ]
+   },
+   {
+    "name": "wrist_flex",
+    "id": 4,
+    "model": "xl330-m288",
+    "mode": 4,
+    "registers": [
+     [
+      9,
+      1,
+      0
+     ],
+     [
+      108,
+      4,
+      0
+     ],
+     [
+      112,
+      4,
+      0
+     ]
+    ]
+   },
+   {
+    "name": "wrist_roll",
+    "id": 5,
+    "model": "xl330-m288",
+    "mode": 4,
+    "registers": [
+     [
+      9,
+      1,
+      0
+     ],
+     [
+      108,
+      4,
+      0
+     ],
+     [
+      112,
+      4,
+      0
+     ]
+    ]
+   }
+  ],
+  "gripper": {
+   "name": "gripper",
+   "id": 6,
+   "model": "xl330-m288",
+   "mode": 5,
+   "effort_full": 300,
+   "registers": [
+    [
+     9,
+     1,
+     0
+    ],
+    [
+     108,
+     4,
+     0
+    ],
+    [
+     112,
+     4,
+     0
+    ],
+    [
+     102,
+     2,
+     300
+    ]
+   ]
+  }
+ }
+}

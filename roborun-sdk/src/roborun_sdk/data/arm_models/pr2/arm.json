@@ -1,0 +1,183 @@
+{
+ "id": "pr2",
+ "label": "Willow Garage PR2 arm",
+ "reach_m": 0.983,
+ "object_r_m": 0.702,
+ "shared_base": true,
+ "attached_gripper": null,
+ "yaw_deg": 90.0,
+ "base_z_m": 0.42,
+ "sides": {
+  "left": {
+   "object_r": 0.702,
+   "object_z": -0.42,
+   "shoulder": [
+    0.0,
+    0.188,
+    0.0
+   ],
+   "work_m": 0.983,
+   "model": "pr2.xml",
+   "joints": 7,
+   "home": [
+    0.9536,
+    0.5532,
+    1.9637,
+    -2.0988,
+    -1.8315,
+    -0.6488,
+    -0.8843
+   ],
+   "rest": [
+    0.9536,
+    0.5532,
+    1.9637,
+    -2.0988,
+    -1.8315,
+    -0.6488,
+    -0.8843
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.086,
+   "limits": [
+    [
+     -0.7146,
+     2.2854
+    ],
+    [
+     -0.5236,
+     1.3963
+    ],
+    [
+     -0.8,
+     3.9
+    ],
+    [
+     -2.3213,
+     0.0
+    ],
+    [
+     -6.28319,
+     6.28319
+    ],
+    [
+     -2.18,
+     0.0
+    ],
+    [
+     -6.28319,
+     6.28319
+    ]
+   ],
+   "source_joints": [
+    "l_shoulder_pan_joint",
+    "l_shoulder_lift_joint",
+    "l_upper_arm_roll_joint",
+    "l_elbow_flex_joint",
+    "l_forearm_roll_joint",
+    "l_wrist_flex_joint",
+    "l_wrist_roll_joint"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "9/9",
+   "reach_m": 1.17,
+   "yaw_deg": 73.35
+  },
+  "right": {
+   "object_r": 0.7,
+   "object_z": -0.458,
+   "shoulder": [
+    0.0,
+    -0.188,
+    0.0
+   ],
+   "work_m": 0.982,
+   "model": "pr2_right.xml",
+   "joints": 7,
+   "home": [
+    -0.7323,
+    0.1646,
+    -1.9443,
+    -2.0614,
+    2.1938,
+    -0.7412,
+    -1.1401
+   ],
+   "rest": [
+    -0.7323,
+    0.1646,
+    -1.9443,
+    -2.0614,
+    2.1938,
+    -0.7412,
+    -1.1401
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.086,
+   "limits": [
+    [
+     -2.2854,
+     0.7146
+    ],
+    [
+     -0.5236,
+     1.3963
+    ],
+    [
+     -3.9,
+     0.8
+    ],
+    [
+     -2.3213,
+     0.0
+    ],
+    [
+     -6.28319,
+     6.28319
+    ],
+    [
+     -2.18,
+     0.0
+    ],
+    [
+     -6.28319,
+     6.28319
+    ]
+   ],
+   "source_joints": [
+    "r_shoulder_pan_joint",
+    "r_shoulder_lift_joint",
+    "r_upper_arm_roll_joint",
+    "r_elbow_flex_joint",
+    "r_forearm_roll_joint",
+    "r_wrist_flex_joint",
+    "r_wrist_roll_joint"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "9/9",
+   "reach_m": 1.167,
+   "yaw_deg": 100.23
+  }
+ },
+ "sim_object_mm": [
+  73,
+  73,
+  91
+ ],
+ "gripper": "linkage",
+ "source": {
+  "repo": "https://github.com/PR2/pr2_common",
+  "commit": "9a8e4fbcf66523ca14faf651c23513ee1ac29ccb",
+  "file": "pr2_description/robots/pr2.urdf.xacro",
+  "license": "BSD-3-Clause",
+  "license_file": "pr2_description/package.xml",
+  "license_text": "tools/arm_models/licenses/pr2_description.BSD.txt",
+  "sha256": "c818d29824de9ffccdc31fac0b89d346eea36a6c1e11a3892da19ead66d8b8c0"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": []
+}

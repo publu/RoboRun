@@ -1,0 +1,61 @@
+{
+ "id": "franka_fr3",
+ "label": "Franka Research 3",
+ "driver": "roborun_sdk.arms.vendor_franka:FrankaArm",
+ "motors": "Franka joints",
+ "transport": "ethernet",
+ "install": "franka",
+ "status": "beta",
+ "profile": "franka_fr3",
+ "dof": 7,
+ "home": [
+  0,
+  -0.7854,
+  0,
+  -2.3562,
+  0,
+  1.5708,
+  0.7854
+ ],
+ "limits": [
+  [
+   -2.9007,
+   2.9007
+  ],
+  [
+   -1.8361,
+   1.8361
+  ],
+  [
+   -2.9007,
+   2.9007
+  ],
+  [
+   -3.077,
+   -0.1169
+  ],
+  [
+   -2.8763,
+   2.8763
+  ],
+  [
+   0.4398,
+   4.6216
+  ],
+  [
+   -3.0508,
+   3.0508
+  ]
+ ],
+ "options": {},
+ "interface": "franky-control (asynchronous JointMotion over libfranka)",
+ "license": "MIT (franky), Apache-2.0 (libfranka)",
+ "platforms": "Linux x86-64 only",
+ "realtime": "needs a PREEMPT_RT kernel and a direct Ethernet link to the control box; franky enforces it",
+ "fits_profile_shape": true,
+ "sources": [
+  "https://frankarobotics.github.io/docs/robot_specifications.html",
+  "https://github.com/TimSchneider42/franky"
+ ],
+ "note": "Activate FCI and unlock the joints in Desk first."
+}

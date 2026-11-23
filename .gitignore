@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.DS_Store
+*.swp
+.idea/
+.vscode/
+# secrets and local Roborun state: never commit them
+.env
+.env.*
+*.pem
+*.key
+token
+*.token
+.roborun/

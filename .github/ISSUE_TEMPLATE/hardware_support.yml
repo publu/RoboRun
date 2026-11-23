@@ -1,0 +1,40 @@
+name: New arm, camera or robot support
+description: Ask for a robot arm, camera or humanoid that Roborun does not support yet
+labels: [hardware-support]
+body:
+  - type: input
+    id: model
+    attributes:
+      label: Maker and model
+      placeholder: e.g. AgileX Piper, Intel RealSense D405, Unitree G1
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options: [Arm, Gripper, Camera, Humanoid or mobile robot, Other]
+    validations:
+      required: true
+  - type: input
+    id: connection
+    attributes:
+      label: How it connects
+      placeholder: USB serial / CAN (socketcan, slcan, gs_usb) / Ethernet / maker's SDK / ROS
+    validations:
+      required: true
+  - type: textarea
+    id: links
+    attributes:
+      label: SDK, protocol docs and URDF / MJCF
+      description: Links to the maker's SDK, motor protocol and robot model files, with their licenses if you know them.
+  - type: dropdown
+    id: test
+    attributes:
+      label: Can you test on one?
+      options: ["Yes", "No"]
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you tried
+      description: For example a driver of your own on the documented interface (docs/BUILDING.md, "Your own arm driver").

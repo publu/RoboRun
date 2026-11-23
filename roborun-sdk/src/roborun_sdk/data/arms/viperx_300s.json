@@ -1,0 +1,214 @@
+{
+ "status": "beta",
+ "profile": "viperx_300s",
+ "id": "viperx_300s",
+ "label": "Trossen ViperX 300 6DOF (ALOHA follower)",
+ "driver": "roborun_sdk.arms.dynamixel:DynamixelArm",
+ "install": "dynamixel",
+ "transport": "serial",
+ "motors": "XM540-W270 x7 (shoulder and elbow doubled), XM430-W350 wrist, XM430-W350 gripper; ids 1-9",
+ "home": [
+  0,
+  -1.65,
+  1.55,
+  0,
+  0.8,
+  0
+ ],
+ "limits": [
+  [
+   -3.14159,
+   3.14006
+  ],
+  [
+   -1.85151,
+   1.25633
+  ],
+  [
+   -1.76408,
+   1.60454
+  ],
+  [
+   -3.14159,
+   3.14006
+  ],
+  [
+   -1.86839,
+   2.23348
+  ],
+  [
+   -3.14159,
+   3.14006
+  ]
+ ],
+ "release": "Torque stays on at 34 % PWM holding the measured pose: a loaded joint sags until the servo can hold it, it does not fall. Rest it on its cradle first.",
+ "unverified": [
+  "Gripper ends are per unit: arm-calibrate records them (joint zeros are the maker's 2048 counts)",
+  "Jaw PWM cap and release level are our choices",
+  "ALOHA grippers differ from the stock one; recalibrate, and an XC430 gripper needs its model added",
+  "Trossen's page lists ids 6/7 inconsistently; ids follow the Interbotix config (6 forearm_roll, 7 wrist_angle)",
+  "Home shoulder is -1.65 rad: Interbotix's sleep value -1.85 is outside its own -1.76 limit"
+ ],
+ "sources": [
+  "Interbotix interbotix_xsarm_control config/vx300s.yaml",
+  "docs.trossenrobotics.com specifications"
+ ],
+ "options": {
+  "arm_id": "viperx_300s",
+  "calibration": "gripper",
+  "rate_hz": 50,
+  "joint_speed_rad_s": 0.5,
+  "joint_accel_rad_s2": 2.0,
+  "joint_jerk_rad_s3": 20.0,
+  "joints": [
+   {
+    "name": "waist",
+    "id": 1,
+    "model": "xm540-w270",
+    "zero": 3.141592653589793,
+    "mode": 3,
+    "registers": [
+     [
+      108,
+      4,
+      0
+     ],
+     [
+      112,
+      4,
+      0
+     ]
+    ]
+   },
+   {
+    "name": "shoulder",
+    "id": 2,
+    "model": "xm540-w270",
+    "zero": 3.141592653589793,
+    "mode": 3,
+    "registers": [
+     [
+      108,
+      4,
+      0
+     ],
+     [
+      112,
+      4,
+      0
+     ]
+    ]
+   },
+   {
+    "name": "elbow",
+    "id": 4,
+    "model": "xm540-w270",
+    "zero": 3.141592653589793,
+    "mode": 3,
+    "registers": [
+     [
+      108,
+      4,
+      0
+     ],
+     [
+      112,
+      4,
+      0
+     ]
+    ]
+   },
+   {
+    "name": "forearm_roll",
+    "id": 6,
+    "model": "xm540-w270",
+    "zero": 3.141592653589793,
+    "mode": 3,
+    "registers": [
+     [
+      108,
+      4,
+      0
+     ],
+     [
+      112,
+      4,
+      0
+     ]
+    ]
+   },
+   {
+    "name": "wrist_angle",
+    "id": 7,
+    "model": "xm540-w270",
+    "zero": 3.141592653589793,
+    "mode": 3,
+    "registers": [
+     [
+      108,
+      4,
+      0
+     ],
+     [
+      112,
+      4,
+      0
+     ]
+    ]
+   },
+   {
+    "name": "wrist_rotate",
+    "id": 8,
+    "model": "xm430-w350",
+    "zero": 3.141592653589793,
+    "mode": 3,
+    "registers": [
+     [
+      108,
+      4,
+      0
+     ],
+     [
+      112,
+      4,
+      0
+     ]
+    ]
+   }
+  ],
+  "shadows": [
+   {
+    "name": "shoulder_shadow",
+    "id": 3,
+    "model": "xm540-w270",
+    "master": 2
+   },
+   {
+    "name": "elbow_shadow",
+    "id": 5,
+    "model": "xm540-w270",
+    "master": 4
+   }
+  ],
+  "gripper": {
+   "name": "gripper",
+   "id": 9,
+   "model": "xm430-w350",
+   "mode": 3,
+   "goal_pwm": 350,
+   "effort_full": 1000.0,
+   "registers": [
+    [
+     108,
+     4,
+     0
+    ],
+    [
+     112,
+     4,
+     0
+    ]
+   ]
+  }
+ }
+}

@@ -1,0 +1,59 @@
+{
+ "id": "xarm7",
+ "label": "UFACTORY xArm 7",
+ "driver": "roborun_sdk.arms.vendor_xarm:XArm7",
+ "motors": "xArm joint modules",
+ "transport": "ethernet",
+ "install": "xarm",
+ "status": "beta",
+ "profile": "xarm7",
+ "dof": 7,
+ "home": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "limits": [
+  [
+   -6.283185307179586,
+   6.283185307179586
+  ],
+  [
+   -2.059488,
+   2.094395
+  ],
+  [
+   -6.283185307179586,
+   6.283185307179586
+  ],
+  [
+   -0.191986,
+   3.92699
+  ],
+  [
+   -6.283185307179586,
+   6.283185307179586
+  ],
+  [
+   -1.692969,
+   3.141592653589793
+  ],
+  [
+   -6.283185307179586,
+   6.283185307179586
+  ]
+ ],
+ "options": {},
+ "interface": "xarm-python-sdk XArmAPI (mode 1, set_servo_angle_j)",
+ "license": "BSD-3-Clause",
+ "platforms": "Linux, macOS, Windows (pure Python)",
+ "realtime": "none on the host; keep the stream steady (servo mode runs the last target)",
+ "fits_profile_shape": true,
+ "sources": [
+  "https://github.com/xArm-Developer/xArm-Python-SDK"
+ ]
+}

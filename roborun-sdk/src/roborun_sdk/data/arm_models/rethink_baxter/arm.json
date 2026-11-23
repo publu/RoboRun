@@ -1,0 +1,182 @@
+{
+ "id": "rethink_baxter",
+ "label": "Rethink Baxter arm",
+ "reach_m": 1.371,
+ "object_r_m": 0.951,
+ "shared_base": true,
+ "attached_gripper": "Robotiq 2F-85 (menagerie, BSD-2-Clause)",
+ "yaw_deg": 90.0,
+ "base_z_m": -0.05,
+ "sides": {
+  "left": {
+   "object_r": 0.951,
+   "object_z": 0.225,
+   "shoulder": [
+    0.064,
+    0.259,
+    0.1296
+   ],
+   "work_m": 1.371,
+   "model": "rethink_baxter.xml",
+   "joints": 7,
+   "home": [
+    0.0,
+    -0.55,
+    0.0,
+    0.75,
+    0.0,
+    1.26,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    -0.55,
+    0.0,
+    0.75,
+    0.0,
+    1.26,
+    0.0
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.085,
+   "limits": [
+    [
+     -1.70168,
+     1.70168
+    ],
+    [
+     -2.147,
+     1.047
+    ],
+    [
+     -3.05418,
+     3.05418
+    ],
+    [
+     -0.05,
+     2.618
+    ],
+    [
+     -3.059,
+     3.059
+    ],
+    [
+     -1.5708,
+     2.094
+    ],
+    [
+     -3.059,
+     3.059
+    ]
+   ],
+   "source_joints": [
+    "left_s0",
+    "left_s1",
+    "left_e0",
+    "left_e1",
+    "left_w0",
+    "left_w1",
+    "left_w2"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "8/9",
+   "reach_m": 1.617,
+   "yaw_deg": 37.5
+  },
+  "right": {
+   "object_r": 0.97,
+   "object_z": 0.172,
+   "shoulder": [
+    0.064,
+    -0.259,
+    0.1296
+   ],
+   "work_m": 1.371,
+   "model": "rethink_baxter_right.xml",
+   "joints": 7,
+   "home": [
+    0.0,
+    -0.55,
+    0.0,
+    0.75,
+    0.0,
+    1.26,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    -0.55,
+    0.0,
+    0.75,
+    0.0,
+    1.26,
+    0.0
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.085,
+   "limits": [
+    [
+     -1.70168,
+     1.70168
+    ],
+    [
+     -2.147,
+     1.047
+    ],
+    [
+     -3.05418,
+     3.05418
+    ],
+    [
+     -0.05,
+     2.618
+    ],
+    [
+     -3.059,
+     3.059
+    ],
+    [
+     -1.5708,
+     2.094
+    ],
+    [
+     -3.059,
+     3.059
+    ]
+   ],
+   "source_joints": [
+    "right_s0",
+    "right_s1",
+    "right_e0",
+    "right_e1",
+    "right_w0",
+    "right_w1",
+    "right_w2"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "6/9",
+   "reach_m": 1.616,
+   "yaw_deg": 142.5
+  }
+ },
+ "sim_object_mm": [
+  72,
+  72,
+  90
+ ],
+ "gripper": "linkage",
+ "source": {
+  "repo": "https://github.com/RethinkRobotics/baxter_common",
+  "commit": "6c4b0f375fe4e356a3b12df26ef7c0d5e58df86e",
+  "file": "baxter_description/urdf/baxter.urdf",
+  "license": "BSD-3-Clause",
+  "license_file": "LICENSE",
+  "sha256": "ab936bfb412f9d94e54563107078d6862349975ee8235e5590f235b3664e6d51"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": []
+}

@@ -1,0 +1,69 @@
+{
+ "type": "segment",
+ "wire": 1,
+ "seq": 1,
+ "id": "seg_sim_reach",
+ "task": "tsk_sim_example",
+ "generation": 1,
+ "index": 1,
+ "arm": "left",
+ "semantics": "yam-linear-4310.rad6.jaw-open-fraction.v1",
+ "context": {
+  "pack": "sha256:ad3f20d52d964de0a176bf0387efb73a338e518eb5d6235a50a95c35eb180d41",
+  "calibration": "cal_sim",
+  "plan_basis_obs": "obs_30c7"
+ },
+ "valid_if": {
+  "start_q": [
+   1.5836957351033796,
+   1.523422598611429,
+   0.01697566186007471,
+   1.5260929274433508,
+   0.0001907377737087046,
+   0.011253528648813571
+  ],
+  "tol_rad": 0.01,
+  "rest": {
+   "window_s": 0.3,
+   "range_rad": 0.0015
+  },
+  "jaw": 0.9989846243109951,
+  "jaw_tol": 0.005,
+  "expires_after_s": 10
+ },
+ "kind": "move",
+ "label": "reach",
+ "trajectory": {
+  "format": "path-rows.v1",
+  "shape": [
+   19,
+   7
+  ],
+  "rows": {
+   "$b64": "i7bKP4P/wj+LEIs8A1fDP8gASDm4YDg8tLh/P4q2yj+NO8A/8MGpPLELwD920hY6iWA4PLS4fz+Jtso/3zi5P2bq9jym0rc/Tf0kOhJgODy0uH8/iLbKPxbLsj+W0R49BEqwP7X6JDqlXzg8tLh/P4i2yj9NXaw/+S1CPWHBqD8d+CQ6OF84PLS4fz+Htso/hO+lP12KZT2/OKE/hfUkOsteODy0uH8/hrbKP7yBnz9gc4Q9HLCZP+3yJDpeXjg8tLh/P4W2yj/zE5k/kiGWPXonkj9W8CQ68V04PLS4fz8qNcc/kAChPwSpnz0MC5k/elLcvBY4Nzy0uH8/JZTEP3iNqD8NY6I94xegP/m2Qr3NWzY8tLh/PyHzwT9gGrA/Fh2lPbkkpz9boou9hH81PLS4fz8dUr8/SKe3Px/Xpz2PMa4/Oem1vTqjNDy0uH8/GbG8PzA0vz8okao9ZT61Pxcw4L3xxjM8tLh/P1gjuj/GicY/NjetPZMXvD+XoAS+9vAyPLS4fz9KxLg/AHrKP1Cjrj0Axb8/Q6cPvg9+Mjy0uH8/EG+3PwFOzj86BbA9EljDP+leGr5fDjI8tLh/P4+Ntz8uS84/vTS8Pe0Fwz8lchu+9+4wPLS4fz9k77c/H0LOP3hM4z1m/sE/IOUevvBULTy0uH8/s0q3P8t50D/AtvE9qLfDP6FWJr7i0is8tLh/Pw=="
+  }
+ },
+ "limits": {
+  "ee_speed_m_s": 0.2
+ },
+ "end_gate": {
+  "kind": "hold"
+ },
+ "on_link_loss": "hold",
+ "player": {
+  "profile": "stream7d.v1",
+  "mode": "move",
+  "step": 0.034,
+  "jaw_step": 0.04,
+  "track_limit": 0.085,
+  "loaded": false,
+  "window_s": 12.0,
+  "empty_margin": 0.03,
+  "cup": false
+ },
+ "sig": {
+  "kid": "dev-seg-NOT-FOR-ROBOTS",
+  "alg": "Ed25519",
+  "value": "VsE/Xh+/6frkjKCPkhBPc/NrBu9JdY/lgjidoumsqU1oltd7izwF+yhQGFL1ZaYsUuUF/30HLDSZViyFcWCQCg=="
+ }
+}

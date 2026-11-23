@@ -1,0 +1,172 @@
+{
+  "frame": "right_base",
+  "description": "Maker Arm pair on the maker's published model (catalog maker_arm, its URDF's joint signs). Table frame: +x is where the arms face, +y left, +z up; bases assumed same-facing and same height.",
+  "nominal": true,
+  "source": "Nominal base center distance 80 cm. Orientation, table and camera extrinsics need measuring on your rig. The maker's own axis and zero poses are not yet checked on an arm.",
+  "arms": {
+    "right": {
+      "variant": "makers",
+      "gripper": "makers_80mm",
+      "model": "custom/maker_arm/maker_arm.xml",
+      "T_table_base": [
+        [
+          -1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "home": [
+        0.0,
+        -0.9,
+        1.1,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "joints": 6,
+      "rest_rad": [
+        0.0,
+        -0.9,
+        1.1,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "jaw_gap_m": 0.1048
+    },
+    "left": {
+      "variant": "makers",
+      "gripper": "makers_80mm",
+      "model": "custom/maker_arm/maker_arm.xml",
+      "T_table_base": [
+        [
+          -1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -1.0,
+          0.0,
+          0.8
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "home": [
+        0.0,
+        -0.9,
+        1.1,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "joints": 6,
+      "rest_rad": [
+        0.0,
+        -0.9,
+        1.1,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "jaw_gap_m": 0.1048
+    }
+  },
+  "cameras": {
+    "top": {
+      "role": "overhead",
+      "device": "D435i",
+      "T_table_camera": [
+        [
+          0,
+          -1,
+          0,
+          0.658
+        ],
+        [
+          -1,
+          0,
+          0,
+          0.5
+        ],
+        [
+          0,
+          0,
+          -1,
+          1.04
+        ],
+        [
+          0,
+          0,
+          0,
+          1
+        ]
+      ],
+      "fovy_deg": 64.9,
+      "nominal": true,
+      "note": "optical frame (+z forward, +y down) in the table frame; NOMINAL: 1.04 m over the table looking straight down, the arms at the image bottom facing up (+x), placed like the YAM rig's camera: 0.3 m ahead of and 0.3 m right of the left arm's demo cup; the overhead check calibrates the real camera"
+    },
+    "left": {
+      "role": "wrist_l",
+      "device": "D405"
+    },
+    "right": {
+      "role": "wrist_r",
+      "device": "D405"
+    }
+  },
+  "table": {
+    "felt_z_m": null
+  },
+  "sim_object": {
+    "id": "orange_cup",
+    "shape": "cup",
+    "position_mm": [
+      358,
+      800,
+      56
+    ],
+    "size_mm": [
+      89,
+      89,
+      111
+    ],
+    "color": [
+      1.0,
+      0.42,
+      0.05
+    ],
+    "fill": 0.75
+  }
+}

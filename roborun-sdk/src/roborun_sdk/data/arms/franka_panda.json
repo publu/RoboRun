@@ -1,0 +1,61 @@
+{
+ "id": "franka_panda",
+ "label": "Franka Emika Panda",
+ "driver": "roborun_sdk.arms.vendor_franka:FrankaArm",
+ "motors": "Franka joints",
+ "transport": "ethernet",
+ "install": "franka",
+ "status": "beta",
+ "profile": "franka_panda",
+ "dof": 7,
+ "home": [
+  0,
+  -0.7854,
+  0,
+  -2.3562,
+  0,
+  1.5708,
+  0.7854
+ ],
+ "limits": [
+  [
+   -2.8973,
+   2.8973
+  ],
+  [
+   -1.7628,
+   1.7628
+  ],
+  [
+   -2.8973,
+   2.8973
+  ],
+  [
+   -3.0718,
+   -0.0698
+  ],
+  [
+   -2.8973,
+   2.8973
+  ],
+  [
+   -0.0175,
+   3.7525
+  ],
+  [
+   -2.8973,
+   2.8973
+  ]
+ ],
+ "options": {},
+ "interface": "franky-control (asynchronous JointMotion over libfranka)",
+ "license": "MIT (franky), Apache-2.0 (libfranka)",
+ "platforms": "Linux x86-64 only",
+ "realtime": "needs a PREEMPT_RT kernel and a direct Ethernet link to the control box; franky enforces it",
+ "fits_profile_shape": true,
+ "sources": [
+  "https://frankarobotics.github.io/docs/robot_specifications.html",
+  "https://github.com/TimSchneider42/franky"
+ ],
+ "note": "Activate FCI and unlock the joints in Desk first. franky-control wheels target one libfranka version: it must match your robot's system image."
+}

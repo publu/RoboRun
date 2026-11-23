@@ -1,0 +1,182 @@
+{
+ "id": "abb_yumi",
+ "label": "ABB YuMi arm (IRB 14000)",
+ "reach_m": 0.791,
+ "object_r_m": 0.689,
+ "shared_base": true,
+ "attached_gripper": null,
+ "yaw_deg": 90.0,
+ "base_z_m": 0.0,
+ "sides": {
+  "left": {
+   "object_r": 0.689,
+   "object_z": 0.347,
+   "shoulder": [
+    0.0536,
+    0.0725,
+    0.4149
+   ],
+   "work_m": 0.791,
+   "model": "abb_yumi.xml",
+   "joints": 7,
+   "home": [
+    0.0,
+    -0.8,
+    0.0,
+    0.5,
+    0.0,
+    0.8,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    -0.8,
+    0.0,
+    0.5,
+    0.0,
+    0.8,
+    0.0
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.05,
+   "limits": [
+    [
+     -2.94088,
+     2.94088
+    ],
+    [
+     -2.5045,
+     0.7592
+    ],
+    [
+     -2.94088,
+     2.94088
+    ],
+    [
+     -2.15548,
+     1.39626
+    ],
+    [
+     -5.06145,
+     5.06145
+    ],
+    [
+     -1.53589,
+     2.40855
+    ],
+    [
+     -3.9968,
+     3.9968
+    ]
+   ],
+   "source_joints": [
+    "yumi_joint_1_l",
+    "yumi_joint_2_l",
+    "yumi_joint_7_l",
+    "yumi_joint_3_l",
+    "yumi_joint_4_l",
+    "yumi_joint_5_l",
+    "yumi_joint_6_l"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "6/9",
+   "reach_m": 1.18,
+   "yaw_deg": 84.13
+  },
+  "right": {
+   "object_r": 0.708,
+   "object_z": 0.349,
+   "shoulder": [
+    0.0536,
+    -0.0725,
+    0.4149
+   ],
+   "work_m": 0.791,
+   "model": "abb_yumi_right.xml",
+   "joints": 7,
+   "home": [
+    0.0,
+    -0.8,
+    0.0,
+    0.5,
+    0.0,
+    0.8,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    -0.8,
+    0.0,
+    0.5,
+    0.0,
+    0.8,
+    0.0
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.05,
+   "limits": [
+    [
+     -2.94088,
+     2.94088
+    ],
+    [
+     -2.5045,
+     0.7592
+    ],
+    [
+     -2.94088,
+     2.94088
+    ],
+    [
+     -2.15548,
+     1.39626
+    ],
+    [
+     -5.06145,
+     5.06145
+    ],
+    [
+     -1.53589,
+     2.40855
+    ],
+    [
+     -3.9968,
+     3.9968
+    ]
+   ],
+   "source_joints": [
+    "yumi_joint_1_r",
+    "yumi_joint_2_r",
+    "yumi_joint_7_r",
+    "yumi_joint_3_r",
+    "yumi_joint_4_r",
+    "yumi_joint_5_r",
+    "yumi_joint_6_r"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "5/9",
+   "reach_m": 1.193,
+   "yaw_deg": 95.8
+  }
+ },
+ "sim_object_mm": [
+  42,
+  42,
+  52
+ ],
+ "gripper": "slide",
+ "source": {
+  "repo": "https://github.com/OrebroUniversity/yumi",
+  "commit": "fb7f57df05444e6a28df6eda26034de730b8f8fe",
+  "file": "yumi_description/urdf/yumi.urdf",
+  "license": "BSD-2-Clause",
+  "license_file": "license.dat",
+  "sha256": "abf491c74cf869e4ac17622ae4bc0a8dd1c69fb1cc40b31049b2e08fb33c9390"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": []
+}

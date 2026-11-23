@@ -1,0 +1,193 @@
+{
+  "frame": "right_base",
+  "description": "Single YAM: one YAM on the left base; a parked MakerMods Metal on the right base is a static obstacle (never commanded), with its model, base placement and 70 mm wrist/gripper envelope from the YAM + Metal profile.",
+  "nominal": true,
+  "source": "Derived from the yam and yam_metal profiles: the left arm, top/left cameras and static obstacles from yam; the right arm, its attachment envelope and the table plane from yam_metal; the Metal Home from its hardware settings; a nominal parked pose.",
+  "arms": {
+    "right": {
+      "variant": "metal",
+      "gripper": "metal_uncalibrated",
+      "model": "metal/metal.xml",
+      "T_table_base": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "calibration": {
+        "motor_zero": "nominal",
+        "gripper_endpoints": "not_calibrated",
+        "tool_frame": "mount_reference_only",
+        "base_frame": "nominal"
+      },
+      "home": [
+        1.366871,
+        -0.000479,
+        -0.025586,
+        0.150735,
+        -0.056346,
+        0.102247
+      ],
+      "parked": {
+        "positions_rad": [
+          1.366871,
+          -0.000479,
+          -0.025586,
+          0.150735,
+          -0.056346,
+          0.102247
+        ],
+        "gripper": 1.0,
+        "gripper_note": "Geometry only: the Metal model encloses its complete finger stroke in its 70 mm wrist/gripper envelope, so the jaw value changes no clearance.",
+        "source": "Nominal: the Metal parked at its Home.",
+        "never_commanded": true
+      }
+    },
+    "left": {
+      "variant": "yam",
+      "gripper": "linear_4310",
+      "model": "yam_linear_4310.xml",
+      "T_table_base": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          -0.3
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "home": [
+        1.5967,
+        -0.0013,
+        0.004,
+        -0.0196,
+        0.0269,
+        0.2462
+      ]
+    }
+  },
+  "cameras": {
+    "top": {
+      "role": "overhead",
+      "device": "D435i",
+      "T_table_camera": [
+        [
+          1,
+          0,
+          0,
+          -0.125
+        ],
+        [
+          0,
+          -1,
+          0,
+          0.75
+        ],
+        [
+          0,
+          0,
+          -1,
+          1.04
+        ],
+        [
+          0,
+          0,
+          0,
+          1
+        ]
+      ],
+      "fovy_deg": 64.9,
+      "nominal": true,
+      "note": "optical frame (+z forward, +y down) in the table frame; NOMINAL guess (1.04 m over the felt, looking straight down, arms at the image bottom) until the overhead check calibrates the camera; fovy_deg is a nominal vertical field of view for the 640x480 stream"
+    },
+    "left": {
+      "role": "wrist_l",
+      "device": "D405"
+    }
+  },
+  "table": {
+    "felt_z_m": 0.0,
+    "source": "Bases directly on the tabletop without risers; the Metal replaces the right base at the same mounting position. The 70 mm attachment is under the wrist/gripper, not under the base."
+  },
+  "base_spacing_m": 0.3,
+  "base_spacing_source": "nominal",
+  "obstacles": {
+    "camera_pole": {
+      "type": "capsule",
+      "from": [
+        -0.157,
+        -0.145,
+        0.0
+      ],
+      "to": [
+        -0.157,
+        -0.145,
+        0.8
+      ],
+      "radius": 0.035,
+      "note": "overhead camera pole (about 60 cm, at the bases' midpoint, toward the back); nominal"
+    },
+    "camera_head": {
+      "type": "box",
+      "pos": [
+        -0.157,
+        -0.145,
+        0.8
+      ],
+      "size": [
+        0.07,
+        0.05,
+        0.05
+      ],
+      "note": "the RealSense on top of the pole, with margin"
+    }
+  },
+  "attachments": [
+    {
+      "arm": "right",
+      "region": "wrist_and_gripper",
+      "protrusion_m": 0.07,
+      "source": "nominal",
+      "geometry": "conservative_envelope",
+      "envelopes_model": "metal/metal.xml",
+      "note": "Wrist and gripper bounds expanded by 70 mm in all directions; includes the entire jaw stroke."
+    }
+  ]
+}

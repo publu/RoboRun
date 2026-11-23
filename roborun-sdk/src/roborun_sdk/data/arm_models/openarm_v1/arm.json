@@ -1,0 +1,199 @@
+{
+ "id": "openarm_v1",
+ "label": "OpenArm 1.0 (Enactic / Anvil, 7-DOF)",
+ "reach_m": 0.664,
+ "object_r_m": 0.27,
+ "shared_base": true,
+ "attached_gripper": null,
+ "yaw_deg": 90.0,
+ "base_z_m": -0.33699999999999997,
+ "sides": {
+  "left": {
+   "object_r": 0.27,
+   "object_z": 0.413,
+   "shoulder": [
+    0.0,
+    0.0925,
+    0.697
+   ],
+   "work_m": 0.664,
+   "model": "openarm_v1.xml",
+   "joints": 7,
+   "home": [
+    -0.4666,
+    -0.5981,
+    -0.0594,
+    1.4772,
+    -0.6887,
+    0.391,
+    0.1732
+   ],
+   "rest": [
+    -0.4666,
+    -0.5981,
+    -0.0594,
+    1.4772,
+    -0.6887,
+    0.391,
+    0.1732
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.088,
+   "limits": [
+    [
+     -1.309,
+     1.309
+    ],
+    [
+     -1.5708,
+     0.15708
+    ],
+    [
+     -1.48353,
+     1.48353
+    ],
+    [
+     0.0,
+     2.35619
+    ],
+    [
+     -1.48353,
+     1.48353
+    ],
+    [
+     -0.69813,
+     0.69813
+    ],
+    [
+     -1.39626,
+     1.39626
+    ]
+   ],
+   "source_joints": [
+    "openarm_left_joint1",
+    "openarm_left_joint2",
+    "openarm_left_joint3",
+    "openarm_left_joint4",
+    "openarm_left_joint5",
+    "openarm_left_joint6",
+    "openarm_left_joint7"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "0/9",
+   "reach_m": 1.155,
+   "yaw_deg": 48.79
+  },
+  "right": {
+   "object_r": 0.27,
+   "object_z": 0.432,
+   "shoulder": [
+    0.0,
+    -0.0925,
+    0.697
+   ],
+   "work_m": 0.665,
+   "model": "openarm_v1_right.xml",
+   "joints": 7,
+   "home": [
+    0.5097,
+    0.6501,
+    0.0358,
+    1.3986,
+    0.455,
+    -0.0298,
+    -0.5407
+   ],
+   "rest": [
+    0.5097,
+    0.6501,
+    0.0358,
+    1.3986,
+    0.455,
+    -0.0298,
+    -0.5407
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.088,
+   "limits": [
+    [
+     -1.309,
+     1.309
+    ],
+    [
+     -0.15708,
+     1.5708
+    ],
+    [
+     -1.48353,
+     1.48353
+    ],
+    [
+     0.0,
+     2.35619
+    ],
+    [
+     -1.48353,
+     1.48353
+    ],
+    [
+     -0.69813,
+     0.69813
+    ],
+    [
+     -1.39626,
+     1.39626
+    ]
+   ],
+   "source_joints": [
+    "openarm_right_joint1",
+    "openarm_right_joint2",
+    "openarm_right_joint3",
+    "openarm_right_joint4",
+    "openarm_right_joint5",
+    "openarm_right_joint6",
+    "openarm_right_joint7"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "0/9",
+   "reach_m": 1.153,
+   "yaw_deg": 128.3
+  }
+ },
+ "sim_object_mm": [
+  75,
+  75,
+  94
+ ],
+ "gripper": "slide",
+ "source": {
+  "repo": "https://github.com/enactic/openarm_description",
+  "commit": "73dda1b097de26634909e06c2935aa21895af080",
+  "file": "assets/robot/openarm_v1.0/urdf/example/v1.urdf",
+  "license": "Apache-2.0",
+  "license_file": "LICENSE.txt",
+  "copyright": "Copyright 2026 Enactic, Inc.",
+  "sha256": "745e1d85b5b7ada3d99b215b5d60fc40bc08abafa4c92de4cdf5966fcf17ed9b"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": [
+  "left joint 1: model range [-3.491, 1.396], driver [-1.309, 1.309]",
+  "left joint 2: model range [-3.316, 0.175], driver [-1.571, 0.157]",
+  "left joint 3: model range [-1.571, 1.571], driver [-1.484, 1.484]",
+  "left joint 4: model range [0.000, 2.443], driver [0.000, 2.356]",
+  "left joint 5: model range [-1.571, 1.571], driver [-1.484, 1.484]",
+  "left joint 6: model range [-0.785, 0.785], driver [-0.698, 0.698]",
+  "left joint 7: model range [-1.571, 1.571], driver [-1.396, 1.396]",
+  "right joint 1: model range [-1.396, 3.491], driver [-1.309, 1.309]",
+  "right joint 2: model range [-0.175, 3.316], driver [-0.157, 1.571]",
+  "right joint 3: model range [-1.571, 1.571], driver [-1.484, 1.484]",
+  "right joint 4: model range [0.000, 2.443], driver [0.000, 2.356]",
+  "right joint 5: model range [-1.571, 1.571], driver [-1.484, 1.484]",
+  "right joint 6: model range [-0.785, 0.785], driver [-0.698, 0.698]",
+  "right joint 7: model range [-1.571, 1.571], driver [-1.396, 1.396]",
+  "OpenArm 1.0 (Enactic; also sold built by Anvil Robotics): joints 1-5 match the v2.0 description, the wrist (6, 7) and the parallel jaw are its own"
+ ]
+}

@@ -1,0 +1,153 @@
+{
+ "status": "beta",
+ "profile": "metal_arm",
+ "id": "metal_arm",
+ "label": "MakerMods Metal Arm",
+ "driver": "roborun_sdk.arms.damiao:DamiaoArm",
+ "install": "damiao",
+ "transport": "can",
+ "motors": "7 Damiao motors (ids 1-7, replies 0x11-0x17), maker ranges P 6.28 rad",
+ "home": [
+  1.366871,
+  -0.000479,
+  -0.025586,
+  0.150735,
+  -0.056346,
+  0.102247
+ ],
+ "limits": [
+  [
+   -2.87979,
+   2.87979
+  ],
+  [
+   -3.22886,
+   0.08727
+  ],
+  [
+   -0.08727,
+   3.22886
+  ],
+  [
+   -2.23402,
+   1.50098
+  ],
+  [
+   -1.5708,
+   1.5708
+  ],
+  [
+   -2.61799,
+   2.61799
+  ]
+ ],
+ "release": "Damping only (zero stiffness, torque stays on): the arm sinks slowly, it does not fall. It has no brakes.",
+ "unverified": [
+  "Follower gains and limits are the maker's, on this path never run on the real arm",
+  "Jaw ends (0.1009 / 1.9413 motor rad) come from one unit: run arm-calibrate for yours",
+  "Jaw force cap 0.30 N m was measured on a reference arm",
+  "Speed 0.3 rad/s is a cautious choice, not a maker value"
+ ],
+ "sources": [
+  "makermods-robotics/metal-python-ros metal_sdk/native/config/motor_config.cpp @bccf3c8",
+  "roborun_station core.metal_spec"
+ ],
+ "options": {
+  "arm_id": "metal_arm",
+  "calibration": "optional",
+  "joint_speed_rad_s": 0.3,
+  "joint_accel_rad_s2": 1.0,
+  "joint_jerk_rad_s3": 10.0,
+  "jaw_speed": 0.4,
+  "joints": [
+   {
+    "name": "J1",
+    "id": 1,
+    "model": "metal",
+    "pmax": 6.28,
+    "vmax": 10,
+    "tmax": 30,
+    "kp": 200,
+    "kd": 3,
+    "damping": 5,
+    "recv": 17
+   },
+   {
+    "name": "J2",
+    "id": 2,
+    "model": "metal",
+    "pmax": 6.28,
+    "vmax": 10,
+    "tmax": 120,
+    "kp": 500,
+    "kd": 5,
+    "damping": 5,
+    "recv": 18
+   },
+   {
+    "name": "J3",
+    "id": 3,
+    "model": "metal",
+    "pmax": 6.28,
+    "vmax": 10,
+    "tmax": 30,
+    "kp": 400,
+    "kd": 5,
+    "damping": 5,
+    "recv": 19
+   },
+   {
+    "name": "J4",
+    "id": 4,
+    "model": "metal",
+    "pmax": 6.28,
+    "vmax": 10,
+    "tmax": 30,
+    "kp": 200,
+    "kd": 2,
+    "damping": 4,
+    "recv": 20
+   },
+   {
+    "name": "J5",
+    "id": 5,
+    "model": "metal",
+    "pmax": 6.28,
+    "vmax": 30,
+    "tmax": 20,
+    "kp": 20,
+    "kd": 0.1,
+    "damping": 0.2,
+    "recv": 21
+   },
+   {
+    "name": "J6",
+    "id": 6,
+    "model": "metal",
+    "pmax": 6.28,
+    "vmax": 30,
+    "tmax": 20,
+    "kp": 20,
+    "kd": 0.1,
+    "damping": 0.2,
+    "recv": 22
+   }
+  ],
+  "gripper": {
+   "name": "gripper",
+   "id": 7,
+   "model": "metal",
+   "pmax": 6.28,
+   "vmax": 30,
+   "tmax": 20,
+   "kp": 20,
+   "kd": 0.1,
+   "closed": 0.1009054704,
+   "open": 1.9413522545,
+   "max_torque_nm": 0.3,
+   "effort_full": 0.3,
+   "damping": 0.1,
+   "recv": 23
+  }
+ }
+}

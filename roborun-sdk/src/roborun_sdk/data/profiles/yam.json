@@ -1,0 +1,134 @@
+{
+  "frame": "right_base",
+  "description": "Table frame = the RIGHT arm's base frame. +y forward into the table, +x toward the right arm, z up.",
+  "nominal": true,
+  "source": "Nominal layout: bases 73.35 cm apart center to center, side by side; equal height and yaw 0 are assumed and camera extrinsics are nominal. Measure your own rig.",
+  "arms": {
+    "right": {
+      "variant": "yam",
+      "gripper": "linear_4310",
+      "model": "yam_linear_4310.xml",
+      "T_table_base": [
+        [
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          1
+        ]
+      ],
+      "home": [
+        1.6016,
+        -0.0002,
+        -0.001,
+        -0.0887,
+        0.0284,
+        -0.0273
+      ]
+    },
+    "left": {
+      "variant": "yam",
+      "gripper": "linear_4310",
+      "model": "yam_linear_4310.xml",
+      "T_table_base": [
+        [
+          1,
+          0,
+          0,
+          -0.7335
+        ],
+        [
+          0,
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          1
+        ]
+      ],
+      "home": [
+        1.5967,
+        -0.0013,
+        0.004,
+        -0.0196,
+        0.0269,
+        0.2462
+      ]
+    }
+  },
+  "cameras": {
+    "top": {
+      "role": "overhead",
+      "device": "D435i",
+      "T_table_camera": [
+        [
+          1,
+          0,
+          0,
+          -0.125
+        ],
+        [
+          0,
+          -1,
+          0,
+          0.75
+        ],
+        [
+          0,
+          0,
+          -1,
+          1.04
+        ],
+        [
+          0,
+          0,
+          0,
+          1
+        ]
+      ],
+      "fovy_deg": 64.9,
+      "nominal": true,
+      "note": "optical frame (+z forward, +y down) in the table frame; NOMINAL guess (1.04 m over the felt, looking straight down, arms at the image bottom) until the overhead check calibrates the camera; fovy_deg is a nominal vertical field of view for the 640x480 stream"
+    },
+    "left": {
+      "role": "wrist_l",
+      "device": "D405"
+    },
+    "right": {
+      "role": "wrist_r",
+      "device": "D405"
+    }
+  },
+  "table": {
+    "felt_z_m": null,
+    "note": "felt plane height in the table frame; null until measured (ChArUco or the touch probe), so the below-felt check is off"
+  },
+  "base_spacing_m": 0.7335
+}

@@ -1,0 +1,134 @@
+{
+ "status": "beta",
+ "profile": "maker_arm",
+ "id": "maker_arm",
+ "label": "MakerMods Maker Arm",
+ "driver": "roborun_sdk.arms.robstride:RobStrideArm",
+ "install": "robstride",
+ "transport": "can",
+ "motors": "2 RobStride RS02 (joints 2-3) + 5 RS00, MIT protocol, ids 1-7",
+ "home": [
+  0.0,
+  -0.1,
+  0.1,
+  0.0,
+  0.0,
+  0.0
+ ],
+ "limits": [
+  [
+   -2.76111,
+   2.72446
+  ],
+  [
+   -3.05956,
+   -0.05585
+  ],
+  [
+   0.04887,
+   4.12072
+  ],
+  [
+   -1.13795,
+   1.81514
+  ],
+  [
+   -1.70344,
+   1.36136
+  ],
+  [
+   -2.67384,
+   2.6529
+  ]
+ ],
+ "release": "Damping only (zero stiffness, torque stays on): the arm sinks slowly, it does not fall. It has no brakes.",
+ "unverified": [
+  "Home is near the folded zero pose, our choice inside the maker's limits",
+  "RS02 firmware up to 0.2.2.11 maps position to 12.5 rad, not 12.57: about 0.6 % scale error on those units",
+  "RS00 and RS02 cannot be told apart over this protocol, so a swapped model is not detected",
+  "The maker's contact-regulated grip hold and gripper watchdog are not used: closing is capped at 1 N m instead"
+ ],
+ "sources": [
+  "makermods-robotics/maker-arm-sdk maker_arm/profiles/maker_arm_v1.yaml, docs/mit-protocol.md @0245316"
+ ],
+ "options": {
+  "arm_id": "maker_arm",
+  "calibration": "optional",
+  "joints": [
+   {
+    "name": "shoulder_pan",
+    "id": 1,
+    "model": "rs00",
+    "pmax": 12.57,
+    "vmax": 33,
+    "tmax": 14,
+    "kp": 60,
+    "kd": 4
+   },
+   {
+    "name": "shoulder_lift",
+    "id": 2,
+    "model": "rs02",
+    "pmax": 12.57,
+    "vmax": 44,
+    "tmax": 17,
+    "kp": 150,
+    "kd": 4.5
+   },
+   {
+    "name": "elbow_flex",
+    "id": 3,
+    "model": "rs02",
+    "pmax": 12.57,
+    "vmax": 44,
+    "tmax": 17,
+    "kp": 90,
+    "kd": 3
+   },
+   {
+    "name": "wrist_flex",
+    "id": 4,
+    "model": "rs00",
+    "pmax": 12.57,
+    "vmax": 33,
+    "tmax": 14,
+    "kp": 30,
+    "kd": 2
+   },
+   {
+    "name": "wrist_yaw",
+    "id": 5,
+    "model": "rs00",
+    "pmax": 12.57,
+    "vmax": 33,
+    "tmax": 14,
+    "kp": 30,
+    "kd": 2
+   },
+   {
+    "name": "wrist_roll",
+    "id": 6,
+    "model": "rs00",
+    "pmax": 12.57,
+    "vmax": 33,
+    "tmax": 14,
+    "kp": 30,
+    "kd": 2
+   }
+  ],
+  "gripper": {
+   "name": "gripper",
+   "id": 7,
+   "model": "rs00",
+   "pmax": 12.57,
+   "vmax": 33,
+   "tmax": 14,
+   "kp": 20,
+   "kd": 0.5,
+   "closed": -0.04363,
+   "open": -1.67552,
+   "max_torque_nm": 1.0,
+   "effort_full": 1.0
+  }
+ }
+}

@@ -1,0 +1,106 @@
+{
+ "id": "xarm7",
+ "label": "UFACTORY xArm 7",
+ "reach_m": 0.896,
+ "object_r_m": 0.694,
+ "shared_base": false,
+ "attached_gripper": null,
+ "yaw_deg": 90.03,
+ "base_z_m": 0.0,
+ "sides": {
+  "left": {
+   "object_r": 0.694,
+   "object_z": 0.152,
+   "shoulder": [
+    0.0,
+    0.0,
+    0.267
+   ],
+   "work_m": 0.896,
+   "model": "xarm7.xml",
+   "joints": 7,
+   "home": [
+    0.0,
+    -0.3,
+    0.0,
+    0.8,
+    0.0,
+    1.1,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    -0.3,
+    0.0,
+    0.8,
+    0.0,
+    1.1,
+    0.0
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.085,
+   "limits": [
+    [
+     -6.28319,
+     6.28319
+    ],
+    [
+     -2.059,
+     2.0944
+    ],
+    [
+     -6.28319,
+     6.28319
+    ],
+    [
+     -0.19198,
+     3.92699
+    ],
+    [
+     -6.28319,
+     6.28319
+    ],
+    [
+     -1.69297,
+     3.14159
+    ],
+    [
+     -6.28319,
+     6.28319
+    ]
+   ],
+   "source_joints": [
+    "joint1",
+    "joint2",
+    "joint3",
+    "joint4",
+    "joint5",
+    "joint6",
+    "joint7"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "9/9",
+   "reach_m": 1.157,
+   "yaw_deg": 90.03
+  }
+ },
+ "sim_object_mm": [
+  72,
+  72,
+  90
+ ],
+ "gripper": "linkage",
+ "source": {
+  "repo": "https://github.com/google-deepmind/mujoco_menagerie",
+  "commit": "370c43965323c0944b433b202aac5058b5f907a9",
+  "file": "ufactory_xarm7/xarm7.xml",
+  "license": "BSD-3-Clause",
+  "license_file": "ufactory_xarm7/LICENSE",
+  "sha256": "ac6b369e0b9c5abdaca55d2c6c048102f2e1133bf550b059a8622afa4b9da433"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": []
+}

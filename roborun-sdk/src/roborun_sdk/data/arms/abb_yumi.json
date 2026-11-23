@@ -1,0 +1,61 @@
+{
+ "id": "abb_yumi",
+ "label": "ABB YuMi arm (IRB 14000)",
+ "driver": "roborun_sdk.arms.vendor_abb:YuMiArm",
+ "motors": "ABB axes",
+ "transport": "ethernet",
+ "install": "abb",
+ "status": "beta",
+ "profile": "abb_yumi",
+ "dof": 7,
+ "home": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "limits": [
+  [
+   -2.9409,
+   2.9409
+  ],
+  [
+   -2.5045,
+   0.7592
+  ],
+  [
+   -2.9409,
+   2.9409
+  ],
+  [
+   -2.1555,
+   1.3963
+  ],
+  [
+   -5.0615,
+   5.0615
+  ],
+  [
+   -1.5359,
+   2.4086
+  ],
+  [
+   -3.9968,
+   3.9968
+  ]
+ ],
+ "options": {},
+ "interface": "abb_robot_client EGM (joint corrections)",
+ "license": "Apache-2.0 (abb_robot_client); EGM is a paid ABB option",
+ "platforms": "Linux, macOS, Windows (pure Python)",
+ "realtime": "UDP to the controller at up to 250 Hz; a dedicated link is advised",
+ "fits_profile_shape": true,
+ "sources": [
+  "https://github.com/rpiRobotics/abb_robot_client",
+  "https://library.e.abb.com/public/ac2e1166cbf04ed192493bad15b6bca3/IRB%2014000_YuMi_DualArm-datasheet_digital_20210331.pdf"
+ ],
+ "note": "IRC5 with RobotWare 6 only (the client does not support RobotWare 7), the EGM option and a RAPID program in EGMRunJoint. Joint order is axes 1, 2, 7, 3, 4, 5, 6; the mapping onto EGM is unverified on a real YuMi. Home is the calibration pose. Grippers are not driven."
+}

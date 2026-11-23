@@ -1,0 +1,55 @@
+{
+ "id": "piper",
+ "label": "AgileX Piper",
+ "driver": "roborun_sdk.arms.vendor_piper:PiperArm",
+ "motors": "CAN joint modules",
+ "transport": "can",
+ "install": "piper",
+ "status": "beta",
+ "profile": "piper",
+ "dof": 6,
+ "home": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "limits": [
+  [
+   -2.6179,
+   2.6179
+  ],
+  [
+   0,
+   3.14
+  ],
+  [
+   -2.967,
+   0
+  ],
+  [
+   -1.745,
+   1.745
+  ],
+  [
+   -1.22,
+   1.22
+  ],
+  [
+   -2.0944,
+   2.0944
+  ]
+ ],
+ "options": {},
+ "interface": "piper_sdk C_PiperInterface_V2 (MotionCtrl_2 + JointCtrl)",
+ "license": "MIT",
+ "platforms": "Linux (socketcan); macOS not supported by its CAN setup",
+ "realtime": "none",
+ "fits_profile_shape": true,
+ "sources": [
+  "https://github.com/agilexrobotics/piper_sdk"
+ ],
+ "note": "release() turns torque off and the arm drops: support it first."
+}

@@ -1,0 +1,185 @@
+{
+ "id": "robotis_ai_worker",
+ "label": "ROBOTIS AI Worker arm",
+ "reach_m": 0.936,
+ "object_r_m": 0.624,
+ "shared_base": true,
+ "attached_gripper": null,
+ "yaw_deg": 90.0,
+ "base_z_m": 0.4,
+ "sides": {
+  "left": {
+   "object_r": 0.624,
+   "object_z": -0.233,
+   "shoulder": [
+    0.0,
+    0.1045,
+    0.0
+   ],
+   "work_m": 0.936,
+   "model": "robotis_ai_worker.xml",
+   "joints": 7,
+   "home": [
+    0.6414,
+    1.2785,
+    0.4809,
+    -1.9974,
+    1.5085,
+    -0.1271,
+    -0.0941
+   ],
+   "rest": [
+    0.6414,
+    1.2785,
+    0.4809,
+    -1.9974,
+    1.5085,
+    -0.1271,
+    -0.0941
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.1,
+   "limits": [
+    [
+     -3.14,
+     3.14
+    ],
+    [
+     0.0,
+     3.14
+    ],
+    [
+     -3.14,
+     3.14
+    ],
+    [
+     -2.9361,
+     1.0786
+    ],
+    [
+     -3.14,
+     3.14
+    ],
+    [
+     -1.57,
+     1.57
+    ],
+    [
+     -1.5804,
+     1.5804
+    ]
+   ],
+   "source_joints": [
+    "arm_l_joint1",
+    "arm_l_joint2",
+    "arm_l_joint3",
+    "arm_l_joint4",
+    "arm_l_joint5",
+    "arm_l_joint6",
+    "arm_l_joint7"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "8/9",
+   "reach_m": 1.039,
+   "yaw_deg": 50.05
+  },
+  "right": {
+   "object_r": 0.618,
+   "object_z": -0.286,
+   "shoulder": [
+    0.0,
+    -0.1045,
+    0.0
+   ],
+   "work_m": 0.936,
+   "model": "robotis_ai_worker_right.xml",
+   "joints": 7,
+   "home": [
+    -0.0455,
+    -0.8514,
+    0.2293,
+    -2.1631,
+    0.4366,
+    0.4301,
+    -0.1543
+   ],
+   "rest": [
+    -0.0455,
+    -0.8514,
+    0.2293,
+    -2.1631,
+    0.4366,
+    0.4301,
+    -0.1543
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.1,
+   "limits": [
+    [
+     -3.14,
+     3.14
+    ],
+    [
+     -3.14,
+     0.0
+    ],
+    [
+     -3.14,
+     3.14
+    ],
+    [
+     -2.9361,
+     1.0786
+    ],
+    [
+     -3.14,
+     3.14
+    ],
+    [
+     -1.57,
+     1.57
+    ],
+    [
+     -1.5804,
+     1.5804
+    ]
+   ],
+   "source_joints": [
+    "arm_r_joint1",
+    "arm_r_joint2",
+    "arm_r_joint3",
+    "arm_r_joint4",
+    "arm_r_joint5",
+    "arm_r_joint6",
+    "arm_r_joint7"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "8/9",
+   "reach_m": 1.039,
+   "yaw_deg": 119.35
+  }
+ },
+ "sim_object_mm": [
+  85,
+  85,
+  106
+ ],
+ "gripper": "linkage",
+ "source": {
+  "repo": "https://github.com/ROBOTIS-GIT/robotis_mujoco_menagerie",
+  "commit": "d8344c0dbe7a00208d0301111523dde65efc174a",
+  "file": "robotis_ffw/ffw_bg2.xml",
+  "license": "Apache-2.0",
+  "license_file": "LICENSE",
+  "sha256": "856008c5f5b591f3d063a3405c676f17d629ef71b1226ea3f89683350d75de61"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": [
+  "left joint 7: model range [-1.820, 1.580], driver [-1.580, 1.820]",
+  "right joint 7: model range [-1.580, 1.820], driver [-1.820, 1.580]"
+ ]
+}

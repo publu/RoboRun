@@ -1,0 +1,40 @@
+<!-- A simple stand-in for the Galaxea R1 (wheeled humanoid), made for the Roborun simulation from plain shapes.
+     Only the facts the simulation needs: the three steerable wheels at (0.169, +-0.28) and (-0.327, 0) m from the base,
+     a torso, two arms resting forward, and the head camera (about 1.55 m above the floor, pitched 0.35 rad down, 110 deg
+     wide, 16:9) that moves with the torso. No maker's geometry or meshes are in this file (see source.json). -->
+<mujoco model="galaxea_r1_standin">
+  <compiler angle="radian" autolimits="true"/>
+  <option timestep="0.002"/>
+  <asset>
+    <material name="body" rgba=".82 .83 .85 1"/>
+    <material name="dark" rgba=".18 .19 .21 1"/>
+    <material name="accent" rgba=".25 .45 .80 1"/>
+  </asset>
+  <worldbody>
+    <body name="base_link" pos="0 0 0">
+      <freejoint name="world_joint"/>
+      <geom name="chassis" type="box" pos="-.08 0 .2" size=".3 .3 .1" material="dark"/>
+      <geom name="chassis_top" type="box" pos="-.08 0 .32" size=".26 .26 .02" material="body"/>
+      <geom name="wheel_front_left" type="cylinder" pos=".169 .28 .08" euler="1.5708 0 0" size=".08 .03" material="dark"/>
+      <geom name="wheel_front_right" type="cylinder" pos=".169 -.28 .08" euler="1.5708 0 0" size=".08 .03" material="dark"/>
+      <geom name="wheel_rear" type="cylinder" pos="-.327 0 .08" euler="1.5708 0 0" size=".08 .03" material="dark"/>
+      <body name="torso_link1" pos="-.05 0 .34">
+        <geom name="torso_lower" type="capsule" fromto="0 0 0 0 0 .55" size=".09" material="body"/>
+        <body name="torso_link4" pos="0 0 .6">
+          <geom name="chest" type="box" pos="0 0 .25" size=".11 .17 .2" material="body"/>
+          <geom name="left_upper_arm" type="capsule" fromto="0 .22 .38 .14 .25 .12" size=".045" material="body"/>
+          <geom name="left_forearm" type="capsule" fromto=".14 .25 .12 .36 .22 .02" size=".04" material="body"/>
+          <geom name="left_gripper" type="box" pos=".41 .22 .02" size=".04 .03 .05" material="accent"/>
+          <geom name="right_upper_arm" type="capsule" fromto="0 -.22 .38 .14 -.25 .12" size=".045" material="body"/>
+          <geom name="right_forearm" type="capsule" fromto=".14 -.25 .12 .36 -.22 .02" size=".04" material="body"/>
+          <geom name="right_gripper" type="box" pos=".41 -.22 .02" size=".04 .03 .05" material="accent"/>
+          <body name="head_link" pos=".02 0 .54">
+            <geom name="head" type="box" pos="0 0 .07" size=".06 .1 .05" material="dark"/>
+            <!-- the head camera: x right, looking forward and 0.35 rad down (xyaxes: right = -y, up = (sin .35, 0, cos .35)) -->
+            <camera name="head" pos=".07 .03 .07" xyaxes="0 -1 0 .342898 0 .939373" fovy="77.9"/>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+</mujoco>

@@ -1,0 +1,99 @@
+{
+ "id": "ur5e",
+ "label": "Universal Robots UR5e",
+ "reach_m": 1.072,
+ "object_r_m": 0.592,
+ "shared_base": false,
+ "attached_gripper": "Robotiq 2F-85 (menagerie, BSD-2-Clause)",
+ "yaw_deg": 254.8,
+ "base_z_m": 0.0,
+ "sides": {
+  "left": {
+   "object_r": 0.592,
+   "object_z": -0.23,
+   "shoulder": [
+    0.0,
+    0.0,
+    0.163
+   ],
+   "work_m": 1.072,
+   "model": "ur5e.xml",
+   "joints": 6,
+   "home": [
+    0.0,
+    -1.5708,
+    1.5708,
+    -1.5708,
+    -1.5708,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    -1.5708,
+    1.5708,
+    -1.5708,
+    -1.5708,
+    0.0
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.085,
+   "limits": [
+    [
+     -6.28319,
+     6.28319
+    ],
+    [
+     -6.28319,
+     6.28319
+    ],
+    [
+     -3.1415,
+     3.1415
+    ],
+    [
+     -6.28319,
+     6.28319
+    ],
+    [
+     -6.28319,
+     6.28319
+    ],
+    [
+     -6.28319,
+     6.28319
+    ]
+   ],
+   "source_joints": [
+    "shoulder_pan_joint",
+    "shoulder_lift_joint",
+    "elbow_joint",
+    "wrist_1_joint",
+    "wrist_2_joint",
+    "wrist_3_joint"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "9/9",
+   "reach_m": 1.234,
+   "yaw_deg": 254.8
+  }
+ },
+ "sim_object_mm": [
+  72,
+  72,
+  90
+ ],
+ "gripper": "linkage",
+ "source": {
+  "repo": "https://github.com/google-deepmind/mujoco_menagerie",
+  "commit": "370c43965323c0944b433b202aac5058b5f907a9",
+  "file": "universal_robots_ur5e/ur5e.xml",
+  "license": "BSD-3-Clause",
+  "license_file": "universal_robots_ur5e/LICENSE",
+  "sha256": "2311486b7d013caa5db76d0abe46b5b235642c7baf3b91fbb7dbd93048774fa5"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": []
+}

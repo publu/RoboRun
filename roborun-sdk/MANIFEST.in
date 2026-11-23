@@ -1,0 +1,4 @@
+# sdists carry what setup.py copies into the wheel as roborun_sdk/_docs
+include README.md
+recursive-include docs *.md
+recursive-include examples *.py *.md

@@ -1,0 +1,103 @@
+{
+ "id": "piper",
+ "label": "AgileX Piper",
+ "reach_m": 0.741,
+ "object_r_m": 0.516,
+ "shared_base": false,
+ "attached_gripper": null,
+ "yaw_deg": 89.73,
+ "base_z_m": 0.0,
+ "sides": {
+  "left": {
+   "object_r": 0.516,
+   "object_z": 0.206,
+   "shoulder": [
+    0.0,
+    0.0,
+    0.123
+   ],
+   "work_m": 0.741,
+   "model": "piper.xml",
+   "joints": 6,
+   "home": [
+    0.0,
+    0.9,
+    -0.9,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.9,
+    -0.9,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.07,
+   "limits": [
+    [
+     -2.6179,
+     2.6179
+    ],
+    [
+     0.0,
+     3.14
+    ],
+    [
+     -2.697,
+     0.0
+    ],
+    [
+     -1.745,
+     1.745
+    ],
+    [
+     -1.22,
+     1.22
+    ],
+    [
+     -2.0944,
+     2.0944
+    ]
+   ],
+   "source_joints": [
+    "joint1",
+    "joint2",
+    "joint3",
+    "joint4",
+    "joint5",
+    "joint6"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "9/9",
+   "reach_m": 0.861,
+   "yaw_deg": 89.73
+  }
+ },
+ "sim_object_mm": [
+  60,
+  60,
+  75
+ ],
+ "gripper": "slide",
+ "source": {
+  "repo": "https://github.com/google-deepmind/mujoco_menagerie",
+  "commit": "370c43965323c0944b433b202aac5058b5f907a9",
+  "file": "agilex_piper/piper.xml",
+  "license": "MIT",
+  "license_file": "agilex_piper/LICENSE",
+  "sha256": "acda99733d0fc09ec8f750cf14dd8e1548414d4e51ec670c8ed88def3b410a97"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": [
+  "left joint 3: model range [-2.697, 0.000], driver [-2.967, 0.000]",
+  "left joint 4: model range [-1.832, 1.832], driver [-1.745, 1.745]",
+  "left joint 6: model range [-3.140, 3.140], driver [-2.094, 2.094]"
+ ]
+}

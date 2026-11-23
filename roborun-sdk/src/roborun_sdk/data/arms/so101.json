@@ -1,0 +1,211 @@
+{
+ "status": "beta",
+ "profile": "so101",
+ "id": "so101",
+ "label": "SO-101",
+ "driver": "roborun_sdk.arms.feetech:FeetechArm",
+ "install": "feetech",
+ "transport": "serial",
+ "motors": "6 Feetech STS3215 (ids 1-6)",
+ "home": [
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0
+ ],
+ "limits": [
+  [
+   -1.91986,
+   1.91986
+  ],
+  [
+   -1.74533,
+   1.74533
+  ],
+  [
+   -1.69,
+   1.69
+  ],
+  [
+   -1.65806,
+   1.65806
+  ],
+  [
+   -2.74385,
+   2.84121
+  ]
+ ],
+ "release": "Torque stays on at 35 % limit holding the measured pose: a loaded joint sags until the servo can hold it, it does not fall.",
+ "unverified": [
+  "Sign +1 (servo direction) is inferred from LeRobot using these angles directly with the URDF",
+  "Release level 35 % is our choice: whether it holds a stretched arm needs the real arm",
+  "Gains and gripper limits are written with the EEPROM lock on; that they last only until power-off is unconfirmed"
+ ],
+ "sources": [
+  "LeRobot robots/so_follower",
+  "TheRobotStudio/SO-ARM100 URDFs",
+  "rustypot STS3215 table"
+ ],
+ "options": {
+  "arm_id": "so101",
+  "calibration": "required",
+  "zero_pose": "every joint at the middle of its range",
+  "rate_hz": 50,
+  "joint_speed_rad_s": 0.8,
+  "joint_accel_rad_s2": 3.0,
+  "joint_jerk_rad_s3": 30.0,
+  "jaw_speed": 0.8,
+  "joints": [
+   {
+    "name": "shoulder_pan",
+    "id": 1,
+    "model": "sts3215",
+    "registers": [
+     [
+      21,
+      1,
+      16
+     ],
+     [
+      22,
+      1,
+      32
+     ],
+     [
+      23,
+      1,
+      0
+     ]
+    ]
+   },
+   {
+    "name": "shoulder_lift",
+    "id": 2,
+    "model": "sts3215",
+    "registers": [
+     [
+      21,
+      1,
+      16
+     ],
+     [
+      22,
+      1,
+      32
+     ],
+     [
+      23,
+      1,
+      0
+     ]
+    ]
+   },
+   {
+    "name": "elbow_flex",
+    "id": 3,
+    "model": "sts3215",
+    "registers": [
+     [
+      21,
+      1,
+      16
+     ],
+     [
+      22,
+      1,
+      32
+     ],
+     [
+      23,
+      1,
+      0
+     ]
+    ]
+   },
+   {
+    "name": "wrist_flex",
+    "id": 4,
+    "model": "sts3215",
+    "registers": [
+     [
+      21,
+      1,
+      16
+     ],
+     [
+      22,
+      1,
+      32
+     ],
+     [
+      23,
+      1,
+      0
+     ]
+    ]
+   },
+   {
+    "name": "wrist_roll",
+    "id": 5,
+    "model": "sts3215",
+    "registers": [
+     [
+      21,
+      1,
+      16
+     ],
+     [
+      22,
+      1,
+      32
+     ],
+     [
+      23,
+      1,
+      0
+     ]
+    ]
+   }
+  ],
+  "gripper": {
+   "name": "gripper",
+   "id": 6,
+   "model": "sts3215",
+   "torque_limit": 500,
+   "effort_full": 0.5,
+   "registers": [
+    [
+     21,
+     1,
+     16
+    ],
+    [
+     22,
+     1,
+     32
+    ],
+    [
+     23,
+     1,
+     0
+    ],
+    [
+     16,
+     2,
+     500
+    ],
+    [
+     28,
+     2,
+     250
+    ],
+    [
+     36,
+     1,
+     25
+    ]
+   ]
+  }
+ }
+}

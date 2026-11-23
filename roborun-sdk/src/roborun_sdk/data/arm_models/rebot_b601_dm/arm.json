@@ -1,0 +1,105 @@
+{
+ "id": "rebot_b601_dm",
+ "label": "Seeed reBot B601-DM",
+ "reach_m": 0.806,
+ "object_r_m": 0.421,
+ "shared_base": false,
+ "attached_gripper": null,
+ "yaw_deg": 89.88,
+ "base_z_m": 0.0,
+ "sides": {
+  "left": {
+   "object_r": 0.421,
+   "object_z": 0.105,
+   "shoulder": [
+    0.0,
+    0.0,
+    0.075
+   ],
+   "work_m": 0.806,
+   "model": "rebot_b601_dm.xml",
+   "joints": 6,
+   "home": [
+    0.0,
+    -1.4,
+    -1.4,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    -1.4,
+    -1.4,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.1,
+   "limits": [
+    [
+     -2.61799,
+     2.61799
+    ],
+    [
+     -3.14,
+     0.0
+    ],
+    [
+     -3.14,
+     0.0
+    ],
+    [
+     -1.39626,
+     1.5708
+    ],
+    [
+     -1.57,
+     1.57
+    ],
+    [
+     -1.5708,
+     1.5708
+    ]
+   ],
+   "source_joints": [
+    "joint1",
+    "joint2",
+    "joint3",
+    "joint4",
+    "joint5",
+    "joint6"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "6/9",
+   "reach_m": 0.877,
+   "yaw_deg": 89.88
+  }
+ },
+ "sim_object_mm": [
+  85,
+  85,
+  106
+ ],
+ "gripper": "slide",
+ "source": {
+  "repo": "https://github.com/google-deepmind/mujoco_menagerie",
+  "commit": "370c43965323c0944b433b202aac5058b5f907a9",
+  "file": "seeed_rebot_devarm/seeed_rebot_devarm.xml",
+  "license": "MIT",
+  "license_file": "seeed_rebot_devarm/LICENSE",
+  "sha256": "5c132b0390d8eb81e6956bee4ccd97785af6fd067922e04dac259fd10ae18f17"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": [
+  "left joint 1: model range [-2.800, 2.800], driver [-2.618, 2.618]",
+  "left joint 2: model range [-3.140, 0.000], driver [-3.491, 0.017]",
+  "left joint 3: model range [-3.140, 0.000], driver [-3.491, 0.017]",
+  "left joint 4: model range [-1.790, 1.690], driver [-1.396, 1.571]",
+  "left joint 6: model range [-3.140, 3.140], driver [-1.571, 1.571]"
+ ]
+}

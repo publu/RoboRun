@@ -1,0 +1,46 @@
+name: Bug report
+description: Something in the SDK, the station or the local API does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security problems go to SECURITY.md, not here. Do not paste keys or tokens (~/.config/roborun/token).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what you expected and what you got (paste the output).
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The smallest steps, ideally in simulation (roborun up --sim ...).
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: roborun --version
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and Python
+      placeholder: Ubuntu 24.04, Python 3.12 / macOS 15 (Apple Silicon)
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Robot, arms and cameras
+      placeholder: simulation / SO-101 over USB serial / RealSense D435
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: roborun status --json, and the relevant lines from the logs.
+      render: text

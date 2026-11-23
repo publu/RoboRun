@@ -1,0 +1,94 @@
+{
+ "id": "pr2",
+ "label": "Willow Garage PR2 arm",
+ "driver": "roborun_sdk.arms.vendor_rosbridge:PR2Arm",
+ "motors": "PR2 joints",
+ "transport": "rosbridge",
+ "install": "rosbridge",
+ "status": "beta",
+ "profile": "pr2",
+ "dof": 7,
+ "home": [
+  0,
+  0,
+  0,
+  -0.15,
+  0,
+  -0.1,
+  0
+ ],
+ "limits": [
+  [
+   -0.7146,
+   2.2854
+  ],
+  [
+   -0.5236,
+   1.3963
+  ],
+  [
+   -0.8,
+   3.9
+  ],
+  [
+   -2.3213,
+   0
+  ],
+  [
+   -6.283185307179586,
+   6.283185307179586
+  ],
+  [
+   -2.18,
+   0
+  ],
+  [
+   -6.283185307179586,
+   6.283185307179586
+  ]
+ ],
+ "options": {
+  "side_limits": {
+   "right": [
+    [
+     -2.2854,
+     0.7146
+    ],
+    [
+     -0.5236,
+     1.3963
+    ],
+    [
+     -3.9,
+     0.8
+    ],
+    [
+     -2.3213,
+     0
+    ],
+    [
+     -6.283185307179586,
+     6.283185307179586
+    ],
+    [
+     -2.18,
+     0
+    ],
+    [
+     -6.283185307179586,
+     6.283185307179586
+    ]
+   ]
+  }
+ },
+ "interface": "ROS topics via rosbridge (arm controller JointTrajectory, Pr2GripperCommand)",
+ "license": "BSD (pr2_controllers, pr2_common)",
+ "platforms": "any (roslibpy over WebSocket); rosbridge_server runs on the robot network",
+ "realtime": "none on this host: the robot's controller runs the loop",
+ "fits_profile_shape": true,
+ "sources": [
+  "https://github.com/PR2/pr2_controllers",
+  "https://github.com/PR2/pr2_common"
+ ],
+ "note": "Needs the PR2 controllers running and rosbridge_server on its ROS network. The PR2 packages are unmaintained (last release line melodic). Home is a safe pose inside the URDF limits, not a maker-defined one."
+}

@@ -1,0 +1,61 @@
+{
+ "id": "rethink_baxter",
+ "label": "Rethink Baxter arm",
+ "driver": "roborun_sdk.arms.vendor_rosbridge:BaxterArm",
+ "motors": "Rethink joints",
+ "transport": "rosbridge",
+ "install": "rosbridge",
+ "status": "beta",
+ "profile": "rethink_baxter",
+ "dof": 7,
+ "home": [
+  0,
+  -0.55,
+  0,
+  0.75,
+  0,
+  1.26,
+  0
+ ],
+ "limits": [
+  [
+   -1.7017,
+   1.7017
+  ],
+  [
+   -2.147,
+   1.047
+  ],
+  [
+   -3.0542,
+   3.0542
+  ],
+  [
+   -0.05,
+   2.618
+  ],
+  [
+   -3.059,
+   3.059
+  ],
+  [
+   -1.5708,
+   2.094
+  ],
+  [
+   -3.059,
+   3.059
+  ]
+ ],
+ "options": {},
+ "interface": "ROS topics via rosbridge (baxter_core_msgs/JointCommand, POSITION_MODE)",
+ "license": "BSD-3-Clause (baxter_interface)",
+ "platforms": "any (roslibpy over WebSocket); rosbridge_server runs on the robot network",
+ "realtime": "none on this host: the robot's controller runs the loop",
+ "fits_profile_shape": true,
+ "sources": [
+  "https://github.com/RethinkRobotics/baxter_interface",
+  "https://github.com/RethinkRobotics/baxter_common"
+ ],
+ "note": "Needs rosbridge_server on the robot's ROS network. Rethink no longer supports these robots. Uses POSITION_MODE, not RAW, so the robot's collision avoidance stays on. No gripper is driven."
+}

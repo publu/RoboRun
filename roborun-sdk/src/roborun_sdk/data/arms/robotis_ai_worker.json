@@ -1,0 +1,93 @@
+{
+ "id": "robotis_ai_worker",
+ "label": "ROBOTIS AI Worker arm",
+ "driver": "roborun_sdk.arms.vendor_rosbridge:RobotisAIWorkerArm",
+ "motors": "Dynamixel Y/P",
+ "transport": "rosbridge",
+ "install": "rosbridge",
+ "status": "beta",
+ "profile": "robotis_ai_worker",
+ "dof": 7,
+ "home": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "limits": [
+  [
+   -3.14,
+   3.14
+  ],
+  [
+   0,
+   3.14
+  ],
+  [
+   -3.14,
+   3.14
+  ],
+  [
+   -2.9361,
+   1.0786
+  ],
+  [
+   -3.14,
+   3.14
+  ],
+  [
+   -1.57,
+   1.57
+  ],
+  [
+   -1.5804,
+   1.8201
+  ]
+ ],
+ "options": {
+  "side_limits": {
+   "right": [
+    [
+     -3.14,
+     3.14
+    ],
+    [
+     -3.14,
+     0
+    ],
+    [
+     -3.14,
+     3.14
+    ],
+    [
+     -2.9361,
+     1.0786
+    ],
+    [
+     -3.14,
+     3.14
+    ],
+    [
+     -1.57,
+     1.57
+    ],
+    [
+     -1.8201,
+     1.5804
+    ]
+   ]
+  }
+ },
+ "interface": "ROS 2 topics via rosbridge (JointTrajectoryController joint_trajectory)",
+ "license": "Apache-2.0",
+ "platforms": "any (roslibpy over WebSocket); rosbridge_server runs on the robot network",
+ "realtime": "none on this host: the robot's controller runs the loop",
+ "fits_profile_shape": true,
+ "sources": [
+  "https://github.com/ROBOTIS-GIT/ai_worker"
+ ],
+ "note": "Needs the ffw follower bringup (ROS 2 Jazzy) and rosbridge_server. Limits are from the BG2 rev4 follower URDF."
+}

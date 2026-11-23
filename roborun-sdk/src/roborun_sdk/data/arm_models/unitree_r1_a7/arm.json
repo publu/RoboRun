@@ -1,0 +1,184 @@
+{
+ "id": "unitree_r1_a7",
+ "label": "Unitree R1-A7 arm",
+ "reach_m": 0.638,
+ "object_r_m": 0.27,
+ "shared_base": true,
+ "attached_gripper": "Robotiq 2F-85 (menagerie, BSD-2-Clause)",
+ "yaw_deg": 90.0,
+ "base_z_m": 0.14251000000000003,
+ "sides": {
+  "left": {
+   "object_r": 0.27,
+   "object_z": 0.025,
+   "shoulder": [
+    0.0,
+    0.0857,
+    0.1975
+   ],
+   "work_m": 0.638,
+   "model": "unitree_r1_a7.xml",
+   "joints": 7,
+   "home": [
+    0.8121,
+    0.5776,
+    -1.7248,
+    -0.862,
+    -0.7324,
+    -1.2636,
+    0.0145
+   ],
+   "rest": [
+    -0.619,
+    1.4303,
+    -0.5412,
+    -0.5911,
+    -0.2529,
+    0.3181,
+    -0.0625
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.085,
+   "limits": [
+    [
+     -3.1416,
+     2.0944
+    ],
+    [
+     -0.22689,
+     2.4784
+    ],
+    [
+     -1.9199,
+     1.9199
+    ],
+    [
+     -0.9756,
+     2.1852
+    ],
+    [
+     -1.9199,
+     1.9199
+    ],
+    [
+     -1.6144,
+     1.6144
+    ],
+    [
+     -1.6144,
+     1.6144
+    ]
+   ],
+   "source_joints": [
+    "left_shoulder_pitch_joint",
+    "left_shoulder_roll_joint",
+    "left_shoulder_yaw_joint",
+    "left_elbow_joint",
+    "left_wrist_roll_joint",
+    "left_wrist_pitch_joint",
+    "left_wrist_yaw_joint"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "8/9",
+   "reach_m": 0.841,
+   "yaw_deg": 78.94
+  },
+  "right": {
+   "object_r": 0.27,
+   "object_z": 0.026,
+   "shoulder": [
+    0.0,
+    -0.0857,
+    0.1975
+   ],
+   "work_m": 0.635,
+   "model": "unitree_r1_a7_right.xml",
+   "joints": 7,
+   "home": [
+    -0.1988,
+    -0.7493,
+    -0.3253,
+    0.2568,
+    -0.3913,
+    -0.8698,
+    0.4758
+   ],
+   "rest": [
+    -0.1988,
+    -0.7493,
+    -0.3253,
+    0.2568,
+    -0.3913,
+    -0.8698,
+    0.4758
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.085,
+   "limits": [
+    [
+     -3.1416,
+     2.0944
+    ],
+    [
+     -2.47849,
+     0.2268
+    ],
+    [
+     -1.9199,
+     1.9199
+    ],
+    [
+     -0.9756,
+     2.1852
+    ],
+    [
+     -1.9199,
+     1.9199
+    ],
+    [
+     -1.6144,
+     1.6144
+    ],
+    [
+     -1.6144,
+     1.6144
+    ]
+   ],
+   "source_joints": [
+    "right_shoulder_pitch_joint",
+    "right_shoulder_roll_joint",
+    "right_shoulder_yaw_joint",
+    "right_elbow_joint",
+    "right_wrist_roll_joint",
+    "right_wrist_pitch_joint",
+    "right_wrist_yaw_joint"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "9/9",
+   "reach_m": 0.846,
+   "yaw_deg": 119.46
+  }
+ },
+ "sim_object_mm": [
+  72,
+  72,
+  90
+ ],
+ "gripper": "linkage",
+ "source": {
+  "repo": "https://github.com/unitreerobotics/unitree_ros",
+  "commit": "157ff950351e5f535e03c5d85a16b7d594b3dbcc",
+  "file": "robots/r1_a7_description/r1_a7.urdf",
+  "license": "BSD-3-Clause",
+  "license_file": "LICENSE",
+  "sha256": "c9b32656758987ea9ef5d6a7e9d4204940c07141a5639b2de34e4c5743138e43"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": [
+  "home (left): tucked with the fingers level and forward and the jaw closing sideways (searched on the model: tool ~0.12 m ahead of the shoulder, ~0.25 m up), so the overhead camera sees the arm clear of the demo cup; rest stays the previous home"
+ ]
+}

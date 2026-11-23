@@ -1,0 +1,62 @@
+{
+ "id": "kuka_iiwa14",
+ "label": "KUKA LBR iiwa 14 R820",
+ "driver": "roborun_sdk.arms.vendor_kuka:KukaIiwa",
+ "motors": "KUKA joints",
+ "transport": "ethernet",
+ "install": null,
+ "status": "beta",
+ "profile": "kuka_iiwa14",
+ "dof": 7,
+ "home": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "limits": [
+  [
+   -2.9671,
+   2.9671
+  ],
+  [
+   -2.0944,
+   2.0944
+  ],
+  [
+   -2.9671,
+   2.9671
+  ],
+  [
+   -2.0944,
+   2.0944
+  ],
+  [
+   -2.9671,
+   2.9671
+  ],
+  [
+   -2.0944,
+   2.0944
+  ],
+  [
+   -3.0543,
+   3.0543
+  ]
+ ],
+ "options": {},
+ "interface": "pyFRI LBRClient (joint position overlay)",
+ "license": "Apache-2.0 (pyFRI); the FRI client SDK and the robot-side option are KUKA's",
+ "platforms": "Linux (built from source)",
+ "realtime": "hard deadline each FRI cycle; a real-time kernel and a dedicated link are advised",
+ "fits_profile_shape": true,
+ "sources": [
+  "https://github.com/lbr-stack/pyFRI",
+  "https://lbr-stack.readthedocs.io/"
+ ],
+ "note": "The robot needs the paid Sunrise FRI option and a running joint-position overlay application. No gripper is driven.",
+ "install_note": "Build pyFRI from source with FRI_CLIENT_VERSION matching your Sunrise FRI."
+}

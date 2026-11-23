@@ -1,0 +1,48 @@
+{
+ "id": "yam_pro",
+ "label": "YAM Pro (I2RT)",
+ "driver": "roborun_sdk.arms.yam:YamArm",
+ "motors": "6 DM4340/DM4310 + DM gripper motor",
+ "transport": "can",
+ "install": "yam",
+ "status": "beta",
+ "profile": "yam_pro",
+ "home": [
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0
+ ],
+ "limits": [
+  [
+   -2.61799,
+   3.14159
+  ],
+  [
+   0.0,
+   3.66519
+  ],
+  [
+   0.0,
+   3.14159
+  ],
+  [
+   -1.69297,
+   1.5708
+  ],
+  [
+   -1.5708,
+   1.5708
+  ],
+  [
+   -2.0944,
+   2.0944
+  ]
+ ],
+ "options": {
+  "arm_type": "yam_pro",
+  "gripper_type": "linear_4310"
+ }
+}

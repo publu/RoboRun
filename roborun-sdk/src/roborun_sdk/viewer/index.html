@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Roborun viewer</title>
+<link rel="stylesheet" href="/view/viewer.css">
+<script type="module" src="/view/viewer.js"></script>
+</head>
+<body>
+<header class="bar">
+  <div class="who">
+    <strong>Roborun</strong> <span id="robot-name" class="muted"></span>
+    <span id="state" class="chip" data-tone="">Connecting…</span>
+  </div>
+  <button id="stop" class="stop" type="button" title="Stop all motion now">Stop</button>
+</header>
+<p id="stop-said" class="said" hidden></p>
+<main>
+  <section class="panel" aria-labelledby="live-h">
+    <h2 id="live-h">Live</h2>
+    <dl id="facts" class="facts"></dl>
+    <div id="cams" class="cams"></div>
+    <p class="muted small">This page runs on this computer only and shows only what your robot's own cameras see.
+      To give the robot a task, use <a href="https://app.roborun.app" rel="noreferrer">app.roborun.app</a>, the local API
+      (<code>http://127.0.0.1:8120/v1/docs</code>) or <code>roborun docs agents</code>.</p>
+  </section>
+  <section class="panel" aria-labelledby="tasks-h">
+    <h2 id="tasks-h">Recent tasks</h2>
+    <ol id="tasks" class="tasks"><li class="muted">Loading…</li></ol>
+  </section>
+  <section id="detail" class="panel" aria-labelledby="detail-h" hidden>
+    <h2 id="detail-h">Task</h2>
+    <div id="detail-body"></div>
+    <div id="player" class="player" hidden>
+      <div class="player-top">
+        <label>Camera <select id="rec-cam"></select></label>
+        <button id="rec-play" type="button">Play</button>
+        <span id="rec-pos" class="muted small"></span>
+      </div>
+      <img id="rec-img" alt="Recorded frame">
+      <input id="rec-seek" type="range" min="0" max="0" value="0" aria-label="Recording position">
+    </div>
+  </section>
+</main>
+</body>
+</html>

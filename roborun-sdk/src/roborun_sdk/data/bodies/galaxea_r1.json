@@ -1,0 +1,73 @@
+{
+ "id": "galaxea_r1",
+ "label": "Galaxea R1",
+ "maker": "Galaxea",
+ "description": "Wheeled humanoid with two arms and a head camera fixed to its torso. Its chassis controller drives the wheels; Roborun streams base commands.",
+ "robot": {
+  "schema": "manifest.robot-descriptor.v2",
+  "kind": "humanoid",
+  "family": "galaxea_r1",
+  "arms": 2,
+  "base": "wheeled",
+  "head_dof": 0,
+  "limits": {
+   "vx_m_s": [-0.3, 0.6],
+   "vy_m_s": [-0.3, 0.3],
+   "vyaw_rad_s": [-0.6, 0.6],
+   "head_rate_rad_s": 1.5,
+   "deadband_m_s": 0.0
+  }
+ },
+ "motion": {
+  "accel_m_s2": [0.5, 0.5],
+  "accel_yaw_rad_s2": 1.0,
+  "stop_decel_m_s2": 1.5,
+  "stop_decel_yaw_rad_s2": 3.0,
+  "deadman_s": 0.3,
+  "command_hz": 50
+ },
+ "camera": {
+  "name": "head",
+  "size_px": [960, 540],
+  "hfov_deg": 110,
+  "eye_height_m": 1.55,
+  "pitch_rad": 0.35,
+  "lens": "a wide-angle stereo camera lens with a 16:9 frame",
+  "note": "NOMINAL height and pitch: a real robot's camera is set where it is mounted"
+ },
+ "sim": {
+  "model": "body_models/galaxea_r1/r1_standin.xml",
+  "base_body": "base_link",
+  "head_camera": "head",
+  "footprint_m": 0.4
+ },
+ "agent": {
+  "protocol": "galaxea",
+  "port": 8302,
+  "routes": {"state": "GET /state", "frame": "GET /frame?camera=head&stride=1", "command": "POST /base {vx, vy, vyaw}", "stop": "POST /stop"}
+ },
+ "guard": {
+  "schema": "roborun-body-guard/1",
+  "cell_m": 0.05,
+  "extent_m": 3.0,
+  "memory_s": 20,
+  "floor_band_m": 0.04,
+  "obstacle_z_m": [0.06, 1.8],
+  "self_radius_m": 0.5,
+  "footprint_radius_m": 0.47,
+  "depth_range_m": [0.3, 6.0],
+  "depth_max_age_s": 0.2,
+  "min_points": 6,
+  "pixel_stride": 2,
+  "unknown_blind_fraction": 0.1,
+  "stall_command_m_s": 0.1,
+  "stall_measured_m_s": 0.02,
+  "stall_s": 1.0,
+  "speed_window_s": 0.2,
+  "self_mask_reach_m": 1.0,
+  "proximity_stop_m": 0.35,
+  "corridor_halfwidth_m": 0.4,
+  "blind_v_m_s": 0.15,
+  "blind_travel_max_m": 0.4
+ }
+}

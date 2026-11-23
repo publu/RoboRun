@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**/*.md', '.github/ISSUE_TEMPLATE/**']
+  pull_request:
+    paths-ignore: ['**/*.md', '.github/ISSUE_TEMPLATE/**']
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux / Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12"]
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      MUJOCO_GL: egl                     # headless OpenGL for the simulator's cameras
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: |
+            roborun-sdk/pyproject.toml
+            roborun-station/pyproject.toml
+      - name: OpenGL for the simulator
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libegl1 libosmesa6
+      - name: Install
+        run: pip install ./roborun-station "./roborun-sdk[test]" pytest-xdist pytest-timeout
+      - name: Tests (simulation and fakes only)
+        working-directory: roborun-sdk
+        # The guided-setup suite runs on its own below.
+        run: >
+          python -m pytest -q -p no:cacheprovider -n auto --timeout=180 -rfE
+          --ignore=tests/test_guided_setup.py
+      - name: Guided setup tests
+        working-directory: roborun-sdk
+        # They need root in a network namespace with the vcan module and install packages from PyPI: on a hosted runner
+        # they skip themselves. Not blocking.
+        continue-on-error: true
+        run: python -m pytest -q -p no:cacheprovider --timeout=300 -rfE tests/test_guided_setup.py
+      - name: Station tests
+        if: matrix.python == '3.12'
+        working-directory: roborun-station
+        run: python -m pytest -q -p no:cacheprovider
+
+  macos:
+    # The same selection on macOS. It has not passed on macOS yet, so for now a failure here is reported (the job shows
+    # red in the run) but does not fail the workflow; see "Known test issues" in CONTRIBUTING.md. Remove
+    # continue-on-error once it is green.
+    name: macOS / Python 3.12 (not yet required)
+    runs-on: macos-latest
+    timeout-minutes: 35
+    continue-on-error: true
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      # no MUJOCO_GL: mujoco refuses egl on macOS and picks its own backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            roborun-sdk/pyproject.toml
+            roborun-station/pyproject.toml
+      - name: Install
+        run: pip install ./roborun-station "./roborun-sdk[test]" pytest-xdist pytest-timeout
+      - name: Tests (simulation and fakes only)
+        working-directory: roborun-sdk
+        run: >
+          python -m pytest -q -p no:cacheprovider -n auto --timeout=180 -rfE
+          --ignore=tests/test_guided_setup.py
+      - name: Station tests
+        if: always()
+        working-directory: roborun-station
+        run: python -m pytest -q -p no:cacheprovider

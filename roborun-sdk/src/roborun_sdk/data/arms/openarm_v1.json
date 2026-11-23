@@ -1,0 +1,225 @@
+{
+ "status": "beta",
+ "profile": "openarm_v1",
+ "id": "openarm_v1",
+ "label": "OpenArm 1.0 (Enactic / Anvil, 7-DOF)",
+ "driver": "roborun_sdk.arms.damiao:DamiaoArm",
+ "install": "damiao",
+ "transport": "can",
+ "motors": "2 DM-J8009, 2 DM-J4340, 4 DM-J4310 (ids 1-8, replies 0x11-0x18)",
+ "home": [
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0
+ ],
+ "limits": [
+  [
+   -1.309,
+   1.309
+  ],
+  [
+   -1.5708,
+   0.15708
+  ],
+  [
+   -1.48353,
+   1.48353
+  ],
+  [
+   0.0,
+   2.35619
+  ],
+  [
+   -1.48353,
+   1.48353
+  ],
+  [
+   -0.69813,
+   0.69813
+  ],
+  [
+   -1.39626,
+   1.39626
+  ]
+ ],
+ "release": "Damping only (zero stiffness, torque stays on): the arm sinks slowly, it does not fall. It has no brakes.",
+ "unverified": [
+  "CAN mode follows the link: classic 1 Mbit/s, or CAN FD when the link is up with fd on (Enactic's -fd setup)",
+  "Jaw force cap 1.0 N m is our choice; LeRobot sets none",
+  "Joint signs +1 as in LeRobot and Enactic's v1.0 description"
+ ],
+ "sources": [
+  "LeRobot robots/openarm_follower/config_openarm_follower.py",
+  "enactic/openarm_can",
+  "enactic/openarm_description assets/robot/openarm_v1.0",
+  "enactic/openarm_can dm_motor_constants.hpp (DM4340 vmax 10, as the motors report)"
+ ],
+ "options": {
+  "arm_id": "openarm_v1",
+  "calibration": "gripper",
+  "zero_pose": "arm hanging straight down (set by the maker: Enactic/Anvil zero every joint motor at assembly)",
+  "joint_speed_rad_s": 0.3,
+  "joint_accel_rad_s2": 1.0,
+  "joint_jerk_rad_s3": 10.0,
+  "limits_by_side": {
+   "left": [
+    [
+     -1.309,
+     1.309
+    ],
+    [
+     -1.5708,
+     0.15708
+    ],
+    [
+     -1.48353,
+     1.48353
+    ],
+    [
+     0.0,
+     2.35619
+    ],
+    [
+     -1.48353,
+     1.48353
+    ],
+    [
+     -0.69813,
+     0.69813
+    ],
+    [
+     -1.39626,
+     1.39626
+    ]
+   ],
+   "right": [
+    [
+     -1.309,
+     1.309
+    ],
+    [
+     -0.15708,
+     1.5708
+    ],
+    [
+     -1.48353,
+     1.48353
+    ],
+    [
+     0.0,
+     2.35619
+    ],
+    [
+     -1.48353,
+     1.48353
+    ],
+    [
+     -0.69813,
+     0.69813
+    ],
+    [
+     -1.39626,
+     1.39626
+    ]
+   ]
+  },
+  "joints": [
+   {
+    "name": "joint_1",
+    "id": 1,
+    "model": "dm8009",
+    "pmax": 12.5,
+    "vmax": 45,
+    "tmax": 54,
+    "kp": 240,
+    "kd": 5,
+    "recv": 17
+   },
+   {
+    "name": "joint_2",
+    "id": 2,
+    "model": "dm8009",
+    "pmax": 12.5,
+    "vmax": 45,
+    "tmax": 54,
+    "kp": 240,
+    "kd": 5,
+    "recv": 18
+   },
+   {
+    "name": "joint_3",
+    "id": 3,
+    "model": "dm4340",
+    "pmax": 12.5,
+    "vmax": 10,
+    "tmax": 28,
+    "kp": 240,
+    "kd": 3,
+    "recv": 19
+   },
+   {
+    "name": "joint_4",
+    "id": 4,
+    "model": "dm4340",
+    "pmax": 12.5,
+    "vmax": 10,
+    "tmax": 28,
+    "kp": 240,
+    "kd": 5,
+    "recv": 20
+   },
+   {
+    "name": "joint_5",
+    "id": 5,
+    "model": "dm4310",
+    "pmax": 12.5,
+    "vmax": 30,
+    "tmax": 10,
+    "kp": 24,
+    "kd": 0.3,
+    "recv": 21
+   },
+   {
+    "name": "joint_6",
+    "id": 6,
+    "model": "dm4310",
+    "pmax": 12.5,
+    "vmax": 30,
+    "tmax": 10,
+    "kp": 31,
+    "kd": 0.3,
+    "recv": 22
+   },
+   {
+    "name": "joint_7",
+    "id": 7,
+    "model": "dm4310",
+    "pmax": 12.5,
+    "vmax": 30,
+    "tmax": 10,
+    "kp": 25,
+    "kd": 0.3,
+    "recv": 23
+   }
+  ],
+  "gripper": {
+   "name": "gripper",
+   "id": 8,
+   "model": "dm4310",
+   "pmax": 12.5,
+   "vmax": 30,
+   "tmax": 10,
+   "kp": 25,
+   "kd": 0.3,
+   "closed": 0.0,
+   "open": -1.13446,
+   "max_torque_nm": 1.0,
+   "effort_full": 1.0,
+   "recv": 24
+  }
+ }
+}

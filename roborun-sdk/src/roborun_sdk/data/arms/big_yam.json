@@ -1,0 +1,48 @@
+{
+ "id": "big_yam",
+ "label": "Big YAM (I2RT)",
+ "driver": "roborun_sdk.arms.yam:YamArm",
+ "motors": "6 DM6248/DM4340/DM4310 + DM gripper motor",
+ "transport": "can",
+ "install": "yam",
+ "status": "beta",
+ "profile": "big_yam",
+ "home": [
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0
+ ],
+ "limits": [
+  [
+   -2.87979,
+   2.87979
+  ],
+  [
+   0.0,
+   3.14159
+  ],
+  [
+   0.0,
+   3.01942
+  ],
+  [
+   -1.69297,
+   1.5708
+  ],
+  [
+   -1.5708,
+   1.5708
+  ],
+  [
+   -2.0944,
+   2.0944
+  ]
+ ],
+ "options": {
+  "arm_type": "big_yam",
+  "gripper_type": "linear_4310"
+ }
+}

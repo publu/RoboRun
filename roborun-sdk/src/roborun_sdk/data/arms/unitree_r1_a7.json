@@ -1,0 +1,95 @@
+{
+ "id": "unitree_r1_a7",
+ "label": "Unitree R1-A7 arm",
+ "driver": "roborun_sdk.arms.vendor_unitree:UnitreeR1A7",
+ "motors": "Unitree joint motors",
+ "transport": "dds",
+ "install": null,
+ "status": "beta",
+ "profile": "unitree_r1_a7",
+ "dof": 7,
+ "home": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "limits": [
+  [
+   -3.1416,
+   2.0944
+  ],
+  [
+   -0.2269,
+   2.4784
+  ],
+  [
+   -1.9199,
+   1.9199
+  ],
+  [
+   -0.9756,
+   2.1852
+  ],
+  [
+   -1.9199,
+   1.9199
+  ],
+  [
+   -1.6144,
+   1.6144
+  ],
+  [
+   -1.6144,
+   1.6144
+  ]
+ ],
+ "options": {
+  "side_limits": {
+   "right": [
+    [
+     -3.1416,
+     2.0944
+    ],
+    [
+     -2.4785,
+     0.2268
+    ],
+    [
+     -1.9199,
+     1.9199
+    ],
+    [
+     -0.9756,
+     2.1852
+    ],
+    [
+     -1.9199,
+     1.9199
+    ],
+    [
+     -1.6144,
+     1.6144
+    ],
+    [
+     -1.6144,
+     1.6144
+    ]
+   ]
+  }
+ },
+ "interface": "unitree_sdk2py (rt/lowcmd, rt/lowstate)",
+ "license": "BSD-3-Clause",
+ "platforms": "Linux; CPython 3.10 or older with its cyclonedds 0.10.2 pin",
+ "realtime": "low-level stream on a wired link; Unitree's example runs at 500 Hz, this driver at 250 Hz",
+ "fits_profile_shape": true,
+ "sources": [
+  "https://github.com/unitreerobotics/unitree_sdk2_python",
+  "https://github.com/unitreerobotics/unitree_ros"
+ ],
+ "note": "Release Unitree's motion service first; Roborun refuses to start while it runs. Driving one arm also holds the other arm and the head. No gripper is driven.",
+ "install_note": "Install unitree_sdk2_python from GitHub: the unitree-sdk2 package on PyPI lacks the motion switcher client."
+}

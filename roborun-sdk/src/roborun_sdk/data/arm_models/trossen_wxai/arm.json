@@ -1,0 +1,102 @@
+{
+ "id": "trossen_wxai",
+ "label": "Trossen WidowX AI",
+ "reach_m": 0.754,
+ "object_r_m": 0.39,
+ "shared_base": false,
+ "attached_gripper": null,
+ "yaw_deg": 89.94,
+ "base_z_m": 0.0,
+ "sides": {
+  "left": {
+   "object_r": 0.39,
+   "object_z": 0.027,
+   "shoulder": [
+    0.0,
+    0.0,
+    0.0573
+   ],
+   "work_m": 0.754,
+   "model": "trossen_wxai.xml",
+   "joints": 6,
+   "home": [
+    0.0,
+    0.08,
+    0.08,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    1.5708,
+    1.5708,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.09,
+   "limits": [
+    [
+     -3.05433,
+     3.05433
+    ],
+    [
+     0.0,
+     3.14159
+    ],
+    [
+     0.0,
+     2.35619
+    ],
+    [
+     -1.5708,
+     1.5708
+    ],
+    [
+     -1.5708,
+     1.5708
+    ],
+    [
+     -3.14159,
+     3.14159
+    ]
+   ],
+   "source_joints": [
+    "joint_0",
+    "joint_1",
+    "joint_2",
+    "joint_3",
+    "joint_4",
+    "joint_5"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "6/9",
+   "reach_m": 0.812,
+   "yaw_deg": 89.94
+  }
+ },
+ "sim_object_mm": [
+  76,
+  76,
+  95
+ ],
+ "gripper": "slide",
+ "source": {
+  "repo": "https://github.com/google-deepmind/mujoco_menagerie",
+  "commit": "370c43965323c0944b433b202aac5058b5f907a9",
+  "file": "trossen_wxai/wxai_follower.xml",
+  "license": "BSD-3-Clause",
+  "license_file": "trossen_wxai/LICENSE",
+  "sha256": "5e06eaadeb24e5740145db401475da4b4f9b56d3f0961cfdd550c8eab91ec01d"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": [
+  "left joint 1: model range [-3.054, 3.054], driver [-3.142, 3.142]",
+  "home: tucked with the fingers level and forward and the jaw closing sideways (searched on the model: tool ~0.23 m ahead, ~0.18 m up), so the overhead camera sees the arm clear of the demo cup; rest stays the previous home"
+ ]
+}

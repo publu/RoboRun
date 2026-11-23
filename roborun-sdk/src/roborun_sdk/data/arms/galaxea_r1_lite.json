@@ -1,0 +1,55 @@
+{
+ "id": "galaxea_r1_lite",
+ "label": "Galaxea R1 Lite arm (A1X)",
+ "driver": "roborun_sdk.arms.vendor_rosbridge:GalaxeaR1LiteArm",
+ "motors": "Galaxea A1X joints",
+ "transport": "rosbridge",
+ "install": "rosbridge",
+ "status": "beta",
+ "profile": null,
+ "dof": 6,
+ "home": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "limits": [
+  [
+   -2.8798,
+   2.8798
+  ],
+  [
+   0.0,
+   3.1416
+  ],
+  [
+   -3.3161,
+   0.0
+  ],
+  [
+   -1.5708,
+   1.5708
+  ],
+  [
+   -1.5708,
+   1.5708
+  ],
+  [
+   -2.8798,
+   2.8798
+  ]
+ ],
+ "options": {},
+ "interface": "ROS topics via rosbridge (/motion_target/target_joint_state_arm_*)",
+ "license": "no license stated in the public guide",
+ "platforms": "any (roslibpy over WebSocket); rosbridge_server runs on the robot network",
+ "realtime": "none on this host: the robot's controller runs the loop",
+ "fits_profile_shape": false,
+ "sources": [
+  "https://github.com/userguide-galaxea/Product_User_Guide"
+ ],
+ "note": "Needs Galaxea's HDAS driver and the mobiman joint tracker running, plus rosbridge_server. The public guide documents ROS 1 topics; pass ros2=true for a ROS 2 robot, which was not checked against Galaxea documentation. Joint limits are the published A1X ranges."
+}

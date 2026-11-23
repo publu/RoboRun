@@ -1,0 +1,103 @@
+{
+ "id": "so100",
+ "label": "SO-100",
+ "reach_m": 0.513,
+ "object_r_m": 0.318,
+ "shared_base": false,
+ "attached_gripper": null,
+ "yaw_deg": 179.95,
+ "base_z_m": 0.0,
+ "sides": {
+  "left": {
+   "object_r": 0.318,
+   "object_z": 0.083,
+   "shoulder": [
+    0.0,
+    0.0,
+    0.0165
+   ],
+   "work_m": 0.513,
+   "model": "so100.xml",
+   "joints": 5,
+   "home": [
+    0.0,
+    -1.65,
+    1.3292,
+    0.49,
+    1.5708
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "jaw": {
+    "type": "revolute",
+    "joint": "joint6",
+    "closed_rad": 0.0,
+    "open_rad": 2.2
+   },
+   "jaw_gap_m": 0.1181,
+   "limits": [
+    [
+     -2.0,
+     2.0
+    ],
+    [
+     -1.75,
+     1.75
+    ],
+    [
+     -1.57078,
+     1.5708
+    ],
+    [
+     -1.85,
+     1.85
+    ],
+    [
+     -3.14158,
+     3.14158
+    ]
+   ],
+   "source_joints": [
+    "shoulder_pan",
+    "shoulder_lift",
+    "elbow_flex",
+    "wrist_flex",
+    "wrist_roll"
+   ],
+   "flipped": [],
+   "zero_offsets": {
+    "shoulder_lift": 1.75,
+    "elbow_flex": -1.5708,
+    "wrist_flex": -0.65
+   },
+   "grasps_solved": "8/9",
+   "reach_m": 0.529,
+   "yaw_deg": 179.95
+  }
+ },
+ "sim_object_mm": [
+  87,
+  87,
+  109
+ ],
+ "gripper": "revolute",
+ "source": {
+  "repo": "https://github.com/TheRobotStudio/SO-ARM100",
+  "commit": "a758567c3978dfeefe282ede0500085a48fe8f78",
+  "file": "Simulation/SO100/so100.urdf",
+  "license": "Apache-2.0",
+  "license_file": "LICENSE",
+  "sha256": "f7050417ebbb79358f113ddd4bca2b457b2c6d5048193331db5a04a0066439ed"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": [
+  "home: tucked with the fingers level and forward and the jaw closing sideways (searched on the model: tool ~0.2 m ahead, ~0.17 m up), like the YAM home motions start from; rest stays the model zero"
+ ]
+}

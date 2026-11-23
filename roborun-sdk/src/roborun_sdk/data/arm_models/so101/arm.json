@@ -1,0 +1,99 @@
+{
+ "id": "so101",
+ "label": "SO-101",
+ "reach_m": 0.467,
+ "object_r_m": 0.317,
+ "shared_base": false,
+ "attached_gripper": null,
+ "yaw_deg": 90.34,
+ "base_z_m": 0.0,
+ "sides": {
+  "left": {
+   "object_r": 0.317,
+   "object_z": 0.092,
+   "shoulder": [
+    0.0,
+    0.0,
+    0.0643
+   ],
+   "work_m": 0.467,
+   "model": "so101.xml",
+   "joints": 5,
+   "home": [
+    0.0,
+    -1.6453,
+    1.45,
+    0.2019,
+    1.5708
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "jaw": {
+    "type": "revolute",
+    "joint": "joint6",
+    "closed_rad": 0.0,
+    "open_rad": 1.9198
+   },
+   "jaw_gap_m": 0.1073,
+   "limits": [
+    [
+     -1.91986,
+     1.91986
+    ],
+    [
+     -1.74533,
+     1.74533
+    ],
+    [
+     -1.69,
+     1.69
+    ],
+    [
+     -1.65806,
+     1.65806
+    ],
+    [
+     -2.74385,
+     2.84121
+    ]
+   ],
+   "source_joints": [
+    "shoulder_pan",
+    "shoulder_lift",
+    "elbow_flex",
+    "wrist_flex",
+    "wrist_roll"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "7/9",
+   "reach_m": 0.529,
+   "yaw_deg": 90.34
+  }
+ },
+ "sim_object_mm": [
+  79,
+  79,
+  99
+ ],
+ "gripper": "revolute",
+ "source": {
+  "repo": "https://github.com/google-deepmind/mujoco_menagerie",
+  "commit": "370c43965323c0944b433b202aac5058b5f907a9",
+  "file": "robotstudio_so101/so101.xml",
+  "license": "Apache-2.0",
+  "license_file": "robotstudio_so101/LICENSE",
+  "sha256": "982c02c027ec0c62d3459d0a6eb00dfb7dc13a451992e72ce99addc71f209805"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": [
+  "home: tucked with the fingers level and forward and the jaw closing sideways (searched on the model: tool ~0.2 m ahead, ~0.17 m up), like the YAM home motions start from; rest stays the model zero"
+ ]
+}

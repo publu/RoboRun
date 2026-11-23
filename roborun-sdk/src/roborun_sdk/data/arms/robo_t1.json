@@ -1,0 +1,23 @@
+{
+ "id": "robo_t1",
+ "label": "ROBO-T1",
+ "driver": null,
+ "motors": "unknown",
+ "transport": "sdk",
+ "install": null,
+ "status": "bring-your-own",
+ "profile": null,
+ "dof": 6,
+ "home": null,
+ "limits": null,
+ "options": {},
+ "interface": null,
+ "license": "no public software",
+ "platforms": "unknown",
+ "realtime": "unknown",
+ "fits_profile_shape": false,
+ "sources": [
+  "https://humanoid.guide/product/robo-t1/"
+ ],
+ "note": "No public SDK or protocol found for this robot. Supply an ArmAdapter from the maker's private interface, the joint limits, and a URDF profile."
+}

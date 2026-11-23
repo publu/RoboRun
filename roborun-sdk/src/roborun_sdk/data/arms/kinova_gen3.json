@@ -1,0 +1,64 @@
+{
+ "id": "kinova_gen3",
+ "label": "Kinova Gen3 (7 joints)",
+ "driver": "roborun_sdk.arms.vendor_kinova:KinovaGen3",
+ "motors": "Kinova actuators",
+ "transport": "ethernet",
+ "install": null,
+ "status": "beta",
+ "profile": "kinova_gen3",
+ "dof": 7,
+ "home": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "limits": [
+  [
+   -6.283185307179586,
+   6.283185307179586
+  ],
+  [
+   -2.24,
+   2.24
+  ],
+  [
+   -6.283185307179586,
+   6.283185307179586
+  ],
+  [
+   -2.57,
+   2.57
+  ],
+  [
+   -6.283185307179586,
+   6.283185307179586
+  ],
+  [
+   -2.09,
+   2.09
+  ],
+  [
+   -6.283185307179586,
+   6.283185307179586
+  ]
+ ],
+ "options": {
+  "username": "admin",
+  "password": "admin"
+ },
+ "interface": "kortex_api (low-level servoing, BaseCyclic.Refresh)",
+ "license": "BSD-3-Clause (Kortex)",
+ "platforms": "Linux, Windows; pure Python wheel",
+ "realtime": "wired Ethernet; low-level servoing is specified up to 1 kHz, this driver streams at 200 Hz",
+ "fits_profile_shape": true,
+ "sources": [
+  "https://github.com/Kinovarobotics/kortex",
+  "https://github.com/Kinovarobotics/ros2_kortex"
+ ],
+ "install_note": "Download kortex_api-2.6.0.post3 from Kinova's artifactory (see the Kortex README). It pins protobuf 3.5.1, which does not run on Python 3.10+; use protobuf 3.20 with PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python."
+}

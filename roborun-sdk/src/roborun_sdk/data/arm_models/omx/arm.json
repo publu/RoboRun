@@ -1,0 +1,107 @@
+{
+ "id": "omx",
+ "label": "ROBOTIS OMX",
+ "reach_m": 0.457,
+ "object_r_m": 0.294,
+ "shared_base": false,
+ "attached_gripper": null,
+ "yaw_deg": 45.39,
+ "base_z_m": 0.0,
+ "sides": {
+  "left": {
+   "object_r": 0.294,
+   "object_z": 0.033,
+   "shoulder": [
+    0.0,
+    0.0,
+    0.034
+   ],
+   "work_m": 0.457,
+   "model": "omx.xml",
+   "joints": 5,
+   "home": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "jaw": {
+    "type": "revolute",
+    "joint": "joint6",
+    "closed_rad": 0.0,
+    "open_rad": 1.74533
+   },
+   "jaw_gap_m": 0.1636,
+   "limits": [
+    [
+     -3.14159,
+     3.14159
+    ],
+    [
+     -1.8326,
+     1.8326
+    ],
+    [
+     -1.8326,
+     1.8326
+    ],
+    [
+     -1.74533,
+     1.74533
+    ],
+    [
+     -3.14159,
+     3.14159
+    ]
+   ],
+   "source_joints": [
+    "Joint1",
+    "Joint2",
+    "Joint3",
+    "Joint4",
+    "Joint5"
+   ],
+   "flipped": [],
+   "zero_offsets": {
+    "Joint1": 0.7854,
+    "Joint2": -0.2618,
+    "Joint3": -0.2618
+   },
+   "grasps_solved": "9/9",
+   "reach_m": 0.49,
+   "yaw_deg": 45.39
+  }
+ },
+ "sim_object_mm": [
+  78,
+  78,
+  98
+ ],
+ "gripper": "revolute",
+ "source": {
+  "repo": "https://github.com/ROBOTIS-GIT/robotis_mujoco_menagerie",
+  "commit": "d8344c0dbe7a00208d0301111523dde65efc174a",
+  "file": "robotis_omx/omx.xml",
+  "license": "Apache-2.0",
+  "license_file": "LICENSE",
+  "sha256": "2ce102b399de1f058f2ae06ca3fd87b8fabf497d77dde1a57924e9ba09026d36"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": [
+  "left joint 1: model range [-5.498, 5.498], driver [-3.142, 3.142]",
+  "left joint 2: model range [-1.833, 1.833], driver [-3.142, 3.142]",
+  "left joint 3: model range [-1.833, 1.833], driver [-3.142, 3.142]",
+  "left joint 4: model range [-1.745, 1.745], driver [-3.142, 3.142]",
+  "left joint 5: model range [-4.712, 4.712], driver [-3.142, 3.142]"
+ ]
+}

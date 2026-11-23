@@ -1,0 +1,99 @@
+{
+ "id": "widowx_250s",
+ "label": "Trossen WidowX 250 6DOF",
+ "reach_m": 0.698,
+ "object_r_m": 0.436,
+ "shared_base": false,
+ "attached_gripper": null,
+ "yaw_deg": 90.0,
+ "base_z_m": 0.0,
+ "sides": {
+  "left": {
+   "object_r": 0.436,
+   "object_z": 0.036,
+   "shoulder": [
+    0.0,
+    0.0,
+    0.072
+   ],
+   "work_m": 0.698,
+   "model": "widowx_250s.xml",
+   "joints": 6,
+   "home": [
+    0.0,
+    -1.8,
+    1.55,
+    0.0,
+    0.8,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    -1.8,
+    1.55,
+    0.0,
+    0.8,
+    0.0
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.044,
+   "limits": [
+    [
+     -3.14158,
+     3.14006
+    ],
+    [
+     -1.88496,
+     1.98957
+    ],
+    [
+     -2.14675,
+     1.60454
+    ],
+    [
+     -3.14158,
+     3.14006
+    ],
+    [
+     -1.74533,
+     2.14604
+    ],
+    [
+     -3.14158,
+     3.14006
+    ]
+   ],
+   "source_joints": [
+    "waist",
+    "shoulder",
+    "elbow",
+    "forearm_roll",
+    "wrist_angle",
+    "wrist_rotate"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "9/9",
+   "reach_m": 0.769,
+   "yaw_deg": 90.0
+  }
+ },
+ "sim_object_mm": [
+  37,
+  37,
+  46
+ ],
+ "gripper": "slide",
+ "source": {
+  "repo": "https://github.com/google-deepmind/mujoco_menagerie",
+  "commit": "370c43965323c0944b433b202aac5058b5f907a9",
+  "file": "trossen_wx250s/wx250s.xml",
+  "license": "BSD-3-Clause",
+  "license_file": "trossen_wx250s/LICENSE",
+  "sha256": "a367c9c8b44e9ad8040a03295ba1a5556ed2a02fe3a5759103d720aa2ed63690"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": []
+}

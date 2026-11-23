@@ -1,0 +1,54 @@
+{
+ "id": "trossen_wxai",
+ "label": "Trossen WidowX AI",
+ "driver": "roborun_sdk.arms.vendor_trossen:TrossenArm",
+ "motors": "Trossen actuators",
+ "transport": "ethernet",
+ "install": "trossen",
+ "status": "beta",
+ "profile": "trossen_wxai",
+ "dof": 6,
+ "home": [
+  0,
+  1.5708,
+  1.5708,
+  0,
+  0,
+  0
+ ],
+ "limits": [
+  [
+   -3.1416,
+   3.1416
+  ],
+  [
+   0,
+   3.1416
+  ],
+  [
+   0,
+   2.3562
+  ],
+  [
+   -1.5708,
+   1.5708
+  ],
+  [
+   -1.5708,
+   1.5708
+  ],
+  [
+   -3.1416,
+   3.1416
+  ]
+ ],
+ "options": {},
+ "interface": "trossen_arm (position mode, short non-blocking goals)",
+ "license": "BSD-3-Clause",
+ "platforms": "Linux x86-64/arm64, macOS 14-15 arm64",
+ "realtime": "none on the host: the arm controller runs the loop",
+ "fits_profile_shape": true,
+ "sources": [
+  "https://docs.trossenrobotics.com/trossen_arm/v1.9/specifications/wxai.html"
+ ]
+}

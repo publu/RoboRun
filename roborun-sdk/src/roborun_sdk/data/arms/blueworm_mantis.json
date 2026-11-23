@@ -1,0 +1,53 @@
+{
+ "id": "blueworm_mantis",
+ "label": "Blue Worm Mantis arm",
+ "driver": null,
+ "motors": "unknown",
+ "transport": "sdk",
+ "install": null,
+ "status": "bring-your-own",
+ "profile": "blueworm_mantis",
+ "dof": 7,
+ "home": null,
+ "limits": [
+  [
+   -1.13,
+   1.75
+  ],
+  [
+   -0.213,
+   2.029
+  ],
+  [
+   -0.8,
+   0.82
+  ],
+  [
+   -0.395,
+   1.012
+  ],
+  [
+   -1.7,
+   1.7
+  ],
+  [
+   -0.562,
+   0.562
+  ],
+  [
+   -1.7,
+   1.7
+  ]
+ ],
+ "options": {},
+ "interface": null,
+ "license": "MIT (bw-mantis-sdk)",
+ "platforms": "any (Zenoh client)",
+ "realtime": "unknown",
+ "fits_profile_shape": true,
+ "sources": [
+  "https://pypi.org/project/bw-mantis-sdk/",
+  "https://github.com/BlueWorm-EAI-Tech/mantis-sdk"
+ ],
+ "note": "bw-mantis-sdk publishes joint targets but never returns measured joint positions: Arm.positions is the last command, and no feedback topic is subscribed. Supply an ArmAdapter with a measured-state source (for example the robot's ROS 2 joint states). Blind streaming is not safe, so no driver ships."
+}

@@ -1,0 +1,182 @@
+{
+ "id": "blueworm_mantis",
+ "label": "Blue Worm Mantis arm",
+ "reach_m": 0.884,
+ "object_r_m": 0.654,
+ "shared_base": true,
+ "attached_gripper": null,
+ "yaw_deg": -90.0,
+ "base_z_m": 0.24153,
+ "sides": {
+  "left": {
+   "object_r": 0.654,
+   "object_z": -0.043,
+   "shoulder": [
+    -0.1194,
+    0.113,
+    0.1385
+   ],
+   "work_m": 0.884,
+   "model": "blueworm_mantis.xml",
+   "joints": 7,
+   "home": [
+    -0.3189,
+    0.6624,
+    -0.1973,
+    -0.075,
+    0.2917,
+    0.0605,
+    0.6171
+   ],
+   "rest": [
+    -0.3189,
+    0.6624,
+    -0.1973,
+    -0.075,
+    0.2917,
+    0.0605,
+    0.6171
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.08,
+   "limits": [
+    [
+     -1.13,
+     1.75
+    ],
+    [
+     -0.213,
+     2.029
+    ],
+    [
+     -0.8,
+     0.82
+    ],
+    [
+     -0.395,
+     1.012
+    ],
+    [
+     -1.7,
+     1.7
+    ],
+    [
+     -0.562,
+     0.562
+    ],
+    [
+     -1.7,
+     1.7
+    ]
+   ],
+   "source_joints": [
+    "L_Shoulder_Pitch_Joint",
+    "L_Shoulder_Yaw_Joint",
+    "L_Shoulder_Roll_Joint",
+    "L_Elbow_Pitch_Joint",
+    "L_Wrist_Roll_Joint",
+    "L_Wrist_Pitch_Joint",
+    "L_Wrist_Yaw_Joint"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "5/9",
+   "reach_m": 1.09,
+   "yaw_deg": -56.31
+  },
+  "right": {
+   "object_r": 0.489,
+   "object_z": null,
+   "shoulder": [
+    0.1194,
+    0.113,
+    0.1385
+   ],
+   "work_m": 0.883,
+   "model": "blueworm_mantis_right.xml",
+   "joints": 7,
+   "home": [
+    1.4383,
+    0.0211,
+    0.5743,
+    0.0661,
+    0.0057,
+    -0.0549,
+    -0.5168
+   ],
+   "rest": [
+    1.4383,
+    0.0211,
+    0.5743,
+    0.0661,
+    0.0057,
+    -0.0549,
+    -0.5168
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.08,
+   "limits": [
+    [
+     -1.13,
+     1.75
+    ],
+    [
+     -0.213,
+     2.029
+    ],
+    [
+     -0.8,
+     0.82
+    ],
+    [
+     -0.395,
+     1.012
+    ],
+    [
+     -1.7,
+     1.7
+    ],
+    [
+     -0.562,
+     0.562
+    ],
+    [
+     -1.7,
+     1.7
+    ]
+   ],
+   "source_joints": [
+    "R_Shoulder_Pitch_Joint",
+    "R_Shoulder_Yaw_Joint",
+    "R_Shoulder_Roll_Joint",
+    "R_Elbow_Pitch_Joint",
+    "R_Wrist_Roll_Joint",
+    "R_Wrist_Pitch_Joint",
+    "R_Wrist_Yaw_Joint"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "0/9",
+   "reach_m": 1.088,
+   "yaw_deg": -36.62
+  }
+ },
+ "sim_object_mm": [
+  68,
+  68,
+  85
+ ],
+ "gripper": "slide",
+ "source": {
+  "repo": "https://pypi.org/project/bw-mantis-sdk/1.3.9/",
+  "commit": "1.3.9 (PyPI wheel)",
+  "file": "mantis/model/urdf/mantis.urdf",
+  "license": "MIT",
+  "license_file": "bw_mantis_sdk-1.3.9.dist-info/licenses/LICENSE",
+  "sha256": "5a648c58b2ec6c57716063a604d00c47ed29fbcf9d2e5eeb84d1748da44e98ab"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": []
+}

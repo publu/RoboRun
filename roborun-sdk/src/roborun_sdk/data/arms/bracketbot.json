@@ -1,0 +1,23 @@
+{
+ "id": "bracketbot",
+ "label": "BracketBot",
+ "driver": null,
+ "motors": "hoverboard wheel motors",
+ "transport": "sdk",
+ "install": null,
+ "status": "bring-your-own",
+ "profile": null,
+ "dof": 0,
+ "home": null,
+ "limits": null,
+ "options": {},
+ "interface": null,
+ "license": "open source project; no arm interface",
+ "platforms": "Raspberry Pi on the robot",
+ "realtime": "unknown",
+ "fits_profile_shape": false,
+ "sources": [
+  "https://github.com/BracketBotCapstone/quickstart"
+ ],
+ "note": "BracketBot is a wheeled robot kit: its public code drives wheels, camera and speaker, with no arm. If you have added an arm, supply an ArmAdapter for it and a URDF profile."
+}

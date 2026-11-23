@@ -1,0 +1,99 @@
+{
+ "id": "yam_ultra",
+ "label": "YAM Ultra (I2RT)",
+ "reach_m": 0.779,
+ "object_r_m": 0.412,
+ "shared_base": false,
+ "attached_gripper": null,
+ "yaw_deg": -0.33,
+ "base_z_m": 0.0,
+ "sides": {
+  "left": {
+   "object_r": 0.412,
+   "object_z": 0.049,
+   "shoulder": [
+    0.0,
+    0.0,
+    0.0733
+   ],
+   "work_m": 0.779,
+   "model": "yam_ultra.xml",
+   "joints": 6,
+   "home": [
+    1.5708,
+    0.3,
+    0.3,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rest": [
+    1.5708,
+    0.3,
+    0.3,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.095,
+   "limits": [
+    [
+     -2.61799,
+     3.14159
+    ],
+    [
+     0.0,
+     3.66519
+    ],
+    [
+     0.0,
+     3.14159
+    ],
+    [
+     -1.69297,
+     1.5708
+    ],
+    [
+     -1.5708,
+     1.5708
+    ],
+    [
+     -2.0944,
+     2.0944
+    ]
+   ],
+   "source_joints": [
+    "joint1",
+    "joint2",
+    "joint3",
+    "joint4",
+    "joint5",
+    "joint6"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "7/9",
+   "reach_m": 0.858,
+   "yaw_deg": -0.33
+  }
+ },
+ "sim_object_mm": [
+  81,
+  81,
+  101
+ ],
+ "gripper": "slide",
+ "source": {
+  "repo": "https://github.com/i2rt-robotics/i2rt",
+  "commit": "234d895 (vendored at roborun_sdk/third_party/i2rt)",
+  "file": "yam_ultra+linear_4310",
+  "license": "MIT",
+  "license_file": "LICENSE",
+  "sha256": "521f766c502751973161e470ec90f2dd191fbc5585e722c530903ce5f54568bf"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": []
+}

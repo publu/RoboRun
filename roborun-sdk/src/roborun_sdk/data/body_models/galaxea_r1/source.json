@@ -1,0 +1,9 @@
+{
+ "model": "galaxea_r1",
+ "label": "Galaxea R1 stand-in (plain shapes)",
+ "file": "r1_standin.xml",
+ "made_for": "roborun-sdk",
+ "license": "same as roborun-sdk (see the package LICENSE)",
+ "based_on": "published dimensions only: wheel positions (0.169, +-0.28) and (-0.327, 0) m from the base; head camera about 1.55 m above the floor, 0.35 rad down, 110 deg wide, 16:9",
+ "not_included": "The GMR model of the R1 Pro (github.com/YanjieZe/GMR, assets/galaxea_r1pro, commit 25f56db79ac411258b377b6d4ccba0c8ff3372ac, MIT for the repository) is not packaged: its meshes (78 MB) come from the robot's maker, and no licence from the maker allowing their redistribution was found. The simulation needs only the base, the torso and the head camera, so it uses this stand-in."
+}

@@ -1,0 +1,56 @@
+{
+ "id": "ur5e",
+ "label": "Universal Robots UR5e",
+ "driver": "roborun_sdk.arms.vendor_ur:URArm",
+ "motors": "UR joints",
+ "transport": "ethernet",
+ "install": "ur",
+ "status": "beta",
+ "profile": "ur5e",
+ "dof": 6,
+ "home": [
+  0,
+  -1.5708,
+  0,
+  -1.5708,
+  0,
+  0
+ ],
+ "limits": [
+  [
+   -6.283185307179586,
+   6.283185307179586
+  ],
+  [
+   -6.283185307179586,
+   6.283185307179586
+  ],
+  [
+   -3.141592653589793,
+   3.141592653589793
+  ],
+  [
+   -6.283185307179586,
+   6.283185307179586
+  ],
+  [
+   -6.283185307179586,
+   6.283185307179586
+  ],
+  [
+   -6.283185307179586,
+   6.283185307179586
+  ]
+ ],
+ "options": {},
+ "interface": "ur_rtde (servoJ)",
+ "license": "MIT (ur_rtde)",
+ "platforms": "Linux wheels; macOS builds from source",
+ "realtime": "RTDE over wired Ethernet; a real-time kernel is advised, not required",
+ "fits_profile_shape": true,
+ "sources": [
+  "https://sdurobotics.gitlab.io/ur_rtde/",
+  "https://github.com/UniversalRobots/Universal_Robots_ROS2_Description"
+ ],
+ "note": "Power on, release brakes and select Remote Control on the pendant first. No gripper is driven."
+}

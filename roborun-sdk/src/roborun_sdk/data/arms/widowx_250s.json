@@ -1,0 +1,212 @@
+{
+ "status": "beta",
+ "profile": "widowx_250s",
+ "id": "widowx_250s",
+ "label": "Trossen WidowX 250 6DOF",
+ "driver": "roborun_sdk.arms.dynamixel:DynamixelArm",
+ "install": "dynamixel",
+ "transport": "serial",
+ "motors": "XM430-W350 x7 (shoulder and elbow doubled), XL430-W250 wrist, XL430-W250 gripper; ids 1-9",
+ "home": [
+  0,
+  -1.8,
+  1.55,
+  0,
+  0.8,
+  0
+ ],
+ "limits": [
+  [
+   -3.14159,
+   3.14006
+  ],
+  [
+   -1.88526,
+   1.98957
+  ],
+  [
+   -2.14757,
+   1.60454
+  ],
+  [
+   -3.14159,
+   3.14006
+  ],
+  [
+   -1.74567,
+   2.14604
+  ],
+  [
+   -3.14159,
+   3.14006
+  ]
+ ],
+ "release": "Torque stays on at 34 % PWM holding the measured pose: a loaded joint sags until the servo can hold it, it does not fall. Rest it on its cradle first.",
+ "unverified": [
+  "Gripper ends are per unit: arm-calibrate records them (joint zeros are the maker's 2048 counts)",
+  "Jaw PWM cap and release level are our choices",
+  "ALOHA grippers differ from the stock one; recalibrate, and an XC430 gripper needs its model added"
+ ],
+ "sources": [
+  "Interbotix interbotix_xsarm_control config/wx250s.yaml",
+  "docs.trossenrobotics.com specifications"
+ ],
+ "options": {
+  "arm_id": "widowx_250s",
+  "calibration": "gripper",
+  "rate_hz": 50,
+  "joint_speed_rad_s": 0.5,
+  "joint_accel_rad_s2": 2.0,
+  "joint_jerk_rad_s3": 20.0,
+  "joints": [
+   {
+    "name": "waist",
+    "id": 1,
+    "model": "xm430-w350",
+    "zero": 3.141592653589793,
+    "mode": 3,
+    "registers": [
+     [
+      108,
+      4,
+      0
+     ],
+     [
+      112,
+      4,
+      0
+     ]
+    ]
+   },
+   {
+    "name": "shoulder",
+    "id": 2,
+    "model": "xm430-w350",
+    "zero": 3.141592653589793,
+    "mode": 3,
+    "registers": [
+     [
+      108,
+      4,
+      0
+     ],
+     [
+      112,
+      4,
+      0
+     ]
+    ]
+   },
+   {
+    "name": "elbow",
+    "id": 4,
+    "model": "xm430-w350",
+    "zero": 3.141592653589793,
+    "mode": 3,
+    "registers": [
+     [
+      108,
+      4,
+      0
+     ],
+     [
+      112,
+      4,
+      0
+     ]
+    ]
+   },
+   {
+    "name": "forearm_roll",
+    "id": 6,
+    "model": "xm430-w350",
+    "zero": 3.141592653589793,
+    "mode": 3,
+    "registers": [
+     [
+      108,
+      4,
+      0
+     ],
+     [
+      112,
+      4,
+      0
+     ]
+    ]
+   },
+   {
+    "name": "wrist_angle",
+    "id": 7,
+    "model": "xm430-w350",
+    "zero": 3.141592653589793,
+    "mode": 3,
+    "registers": [
+     [
+      108,
+      4,
+      0
+     ],
+     [
+      112,
+      4,
+      0
+     ]
+    ]
+   },
+   {
+    "name": "wrist_rotate",
+    "id": 8,
+    "model": "xl430-w250",
+    "zero": 3.141592653589793,
+    "mode": 3,
+    "registers": [
+     [
+      108,
+      4,
+      0
+     ],
+     [
+      112,
+      4,
+      0
+     ]
+    ]
+   }
+  ],
+  "shadows": [
+   {
+    "name": "shoulder_shadow",
+    "id": 3,
+    "model": "xm430-w350",
+    "master": 2
+   },
+   {
+    "name": "elbow_shadow",
+    "id": 5,
+    "model": "xm430-w350",
+    "master": 4
+   }
+  ],
+  "gripper": {
+   "name": "gripper",
+   "id": 9,
+   "model": "xl430-w250",
+   "mode": 3,
+   "goal_pwm": 350,
+   "effort_full": 0.4,
+   "registers": [
+    [
+     108,
+     4,
+     0
+    ],
+    [
+     112,
+     4,
+     0
+    ]
+   ]
+  }
+ }
+}

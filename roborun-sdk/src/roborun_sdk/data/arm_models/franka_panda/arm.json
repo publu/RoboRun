@@ -1,0 +1,106 @@
+{
+ "id": "franka_panda",
+ "label": "Franka Emika Panda",
+ "reach_m": 0.95,
+ "object_r_m": 0.661,
+ "shared_base": false,
+ "attached_gripper": null,
+ "yaw_deg": 90.0,
+ "base_z_m": 0.0,
+ "sides": {
+  "left": {
+   "object_r": 0.661,
+   "object_z": 0.276,
+   "shoulder": [
+    0.0,
+    0.0,
+    0.333
+   ],
+   "work_m": 0.95,
+   "model": "franka_panda.xml",
+   "joints": 7,
+   "home": [
+    0.0,
+    -0.7854,
+    0.0,
+    -2.3562,
+    0.0,
+    1.5708,
+    0.7854
+   ],
+   "rest": [
+    0.0,
+    -0.7854,
+    0.0,
+    -2.3562,
+    0.0,
+    1.5708,
+    0.7854
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.08,
+   "limits": [
+    [
+     -2.8973,
+     2.8973
+    ],
+    [
+     -1.7628,
+     1.7628
+    ],
+    [
+     -2.8973,
+     2.8973
+    ],
+    [
+     -3.0718,
+     -0.0698
+    ],
+    [
+     -2.8973,
+     2.8973
+    ],
+    [
+     -0.0175,
+     3.7525
+    ],
+    [
+     -2.8973,
+     2.8973
+    ]
+   ],
+   "source_joints": [
+    "joint1",
+    "joint2",
+    "joint3",
+    "joint4",
+    "joint5",
+    "joint6",
+    "joint7"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "7/9",
+   "reach_m": 1.278,
+   "yaw_deg": 90.0
+  }
+ },
+ "sim_object_mm": [
+  68,
+  68,
+  85
+ ],
+ "gripper": "slide",
+ "source": {
+  "repo": "https://github.com/google-deepmind/mujoco_menagerie",
+  "commit": "370c43965323c0944b433b202aac5058b5f907a9",
+  "file": "franka_emika_panda/panda.xml",
+  "license": "Apache-2.0",
+  "license_file": "franka_emika_panda/LICENSE",
+  "sha256": "c047a49f3c770ff2393e2a74f7e0fbd9d99080a305407254f8ff53ac053cde3b"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": []
+}

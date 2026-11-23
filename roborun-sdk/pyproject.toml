@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "roborun-sdk"
+version = "0.1.0"
+description = "Roborun: put your robot arms on Roborun. roborun up, profiles (incl. your own from a URDF), arm adapters, the station."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Roborun" }]
+keywords = ["robotics", "robot-arm", "manipulation", "humanoid", "llm"]
+classifiers = ["Development Status :: 4 - Beta", "Intended Audience :: Developers", "Operating System :: MacOS",
+               "Operating System :: POSIX :: Linux", "Programming Language :: Python :: 3", "Topic :: Scientific/Engineering :: Artificial Intelligence"]
+license = "Apache-2.0 AND MIT AND BSD-2-Clause AND BSD-3-Clause"   # the SDK is Apache-2.0; THIRD_PARTY_NOTICES.md lists the rest
+license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"]
+dependencies = ["numpy==2.2.6", "msgpack>=1.0", "websockets>=12", "zstandard>=0.22", "pillow>=10", "cryptography>=42",
+                "packaging>=23", "pyyaml>=6", "pydantic>=2", "mujoco==3.17.0", "opencv-python-headless>=4.8",
+                "python-can>=4.4", "pyserial>=3.5", "pyusb>=1.2.1", "libusb-package>=1.0.26",   # USB-CAN and serial arms
+                "tyro>=0.8", "crcmod-plus>=2", "dm-env>=1.6", "mcap-ros2-support>=0.5",         # the YAM driver
+                "roborun-station>=0.1,<0.2"]            # the station logic around your ArmAdapter (pure Python)
+
+[project.optional-dependencies]
+# roborun-link only: session transport, depth compression, JPEG encoding.
+link = ["websockets>=12", "zstandard>=0.22", "pillow>=10"]
+# Ed25519 verification backend (57-85 us). Without it a pure-python RFC 8032 fallback runs (milliseconds).
+crypto = ["cryptography>=42"]
+# roborun profile create --urdf (and simulated arms): MuJoCo reads the URDF
+urdf = ["mujoco==3.17.0"]
+# roborun up --camera: RealSense (RGB + depth) and plain USB cameras. macOS RealSense wheels: Apple Silicon, macOS 15+
+cameras = ["opencv-python-headless>=4.8",
+           "pyrealsense2>=2.55; sys_platform == 'linux'",
+           "pyrealsense2-macosx>=2.54; sys_platform == 'darwin' and platform_machine == 'arm64'",
+           "pyobjc-framework-AVFoundation>=10; sys_platform == 'darwin'"]
+# YAM arms: the vendored i2rt driver (third_party/i2rt) and CAN over socketcan, slcan or gs_usb; libusb comes from a wheel
+yam = ["python-can>=4.4", "pyserial>=3.5", "pyusb>=1.2.1", "libusb-package>=1.0.26", "tyro>=0.8", "pydantic>=2",
+       "packaging>=23", "crcmod-plus>=2", "dm-env>=1.6", "mcap-ros2-support>=0.5", "mujoco==3.17.0", "pyyaml>=6"]
+# Arms driven through their maker's SDK. Kinova, KUKA and Unitree SDKs are not on PyPI in usable form: see `roborun arms --json`
+trossen = ["trossen-arm>=1.11"]
+piper = ["piper-sdk>=0.6", "python-can>=4.4"]
+arx = ["arx-x5-sdk>=0.1.6"]
+xarm = ["xarm-python-sdk>=1.18"]
+ur = ["ur-rtde>=1.6"]
+franka = ["franky-control>=2.0"]
+abb = ["abb-robot-client>=0.4", "setuptools"]
+rosbridge = ["roslibpy>=2.0"]                            # Sawyer, Baxter, PR2, Galaxea R1 Lite, ROBOTIS AI Worker
+# Arms on hobby and research motor buses. CAN arms: socketcan, slcan or gs_usb adapters; serial arms: any USB serial adapter
+damiao = ["python-can>=4.4", "pyserial>=3.5", "pyusb>=1.2.1", "libusb-package>=1.0.26"]
+robstride = ["python-can>=4.4", "pyserial>=3.5", "pyusb>=1.2.1", "libusb-package>=1.0.26"]
+feetech = ["pyserial>=3.5"]
+dynamixel = ["pyserial>=3.5"]
+# the robot's LeRobot v2.1 dataset (roborun_sdk.dataset): parquet + H.264 video. roborun up installs it once (about 290 MB)
+dataset = ["pyarrow>=17", "av>=14"]
+test = ["pytest>=8", "tomli>=2; python_version < '3.11'"]
+
+[project.urls]
+Homepage = "https://app.roborun.app"
+
+[project.scripts]
+roborun = "roborun_sdk.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.setuptools.package-data]
+roborun_sdk = ["py.typed", "rt/_ed25519.LICENSE", "viewer/*.html", "viewer/*.js", "viewer/*.css", "_docs/*.md", "_docs/docs/*.md", "_docs/examples/*.py", "_docs/examples/*.md",
+               "data/*.json", "data/profiles/*.json", "data/arms/*.json",
+               "data/arm_models/*.json", "data/arm_models/*/*.json", "data/arm_models/*/*.xml", "data/arm_models/*/meshes/*.stl", "data/arm_models/*/LICENSE*", "data/models/*",
+               "data/bodies/*.json", "data/body_models/*/*.xml", "data/body_models/*/*.json", "data/body_models/*/LICENSE",
+               "data/body_models/*/meshes/*.STL",
+               "third_party/i2rt/LICENSE", "third_party/i2rt/VENDORED.md", "third_party/i2rt/**/*.py",
+               "third_party/i2rt/**/*.yml", "third_party/i2rt/**/*.xml", "third_party/i2rt/**/*.stl"]

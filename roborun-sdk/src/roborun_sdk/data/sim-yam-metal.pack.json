@@ -1,0 +1,691 @@
+{
+ "schema": "manifest.safety-pack/1",
+ "pack": "pk_sim_yam_metal_v2",
+ "rig": "rig_sim_yam_metal",
+ "supersedes": "pk_sim_yam_metal_v1",
+ "frame": "table",
+ "scene": {
+  "table": {
+   "z_m": 0.0,
+   "min_gap_m": 0.02
+  },
+  "obstacles": [
+   {
+    "name": "camera_pole",
+    "capsule": {
+     "p0": [
+      -0.157,
+      -0.145,
+      0.0
+     ],
+     "p1": [
+      -0.157,
+      -0.145,
+      0.8
+     ],
+     "r": 0.035
+    },
+    "min_gap_m": 0.02
+   },
+   {
+    "name": "camera_head",
+    "box": {
+     "pos": [
+      -0.157,
+      -0.145,
+      0.8
+     ],
+     "half": [
+      0.07,
+      0.05,
+      0.05
+     ]
+    },
+    "min_gap_m": 0.02
+   }
+  ],
+  "keep_in": {
+   "min": [
+    -0.75,
+    -0.4,
+    -0.039
+   ],
+   "max": [
+    0.45,
+    0.8,
+    0.7
+   ]
+  }
+ },
+ "proximity": {
+  "c_m": 0.02,
+  "age_charge_m_s": 0.45,
+  "max_sample_age_s": 0.15,
+  "fresh_hold_budget_s": 0.5
+ },
+ "rest": {
+  "window_s": 0.3,
+  "range_rad": 0.0015,
+  "jaw_range": 0.003
+ },
+ "link": {
+  "heartbeat_hz": 10,
+  "lost_after_s": {
+   "quic": 0.5,
+   "wss": 1.0
+  },
+  "brake_above_m_s": 0.1,
+  "brake_max_s": 0.15
+ },
+ "arms": {
+  "left": {
+   "semantics": "yam-linear-4310.rad6.jaw-open-fraction.v1",
+   "base_T_table": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     -0.3
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "chain": [
+    {
+     "name": "j1",
+     "parent": "base",
+     "child": "link1",
+     "xyz": [
+      0.0,
+      0.0,
+      0.067
+     ],
+     "rpy": [
+      0.0,
+      0.0,
+      -1.5708005694
+     ],
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "lower": -2.61799,
+     "upper": 3.05433
+    },
+    {
+     "name": "j2",
+     "parent": "link1",
+     "child": "link2",
+     "xyz": [
+      -0.0329,
+      0.02,
+      0.0455
+     ],
+     "rpy": [
+      1.5708003268,
+      0.0,
+      -1.5708003268
+     ],
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "lower": 0.0,
+     "upper": 3.65
+    },
+    {
+     "name": "j3",
+     "parent": "link2",
+     "child": "link3",
+     "xyz": [
+      0.264,
+      4.084e-07,
+      -0.06375
+     ],
+     "rpy": [
+      -3.14159,
+      0.0,
+      1.5708005694
+     ],
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "lower": 0.0,
+     "upper": 3.66519
+    },
+    {
+     "name": "j4",
+     "parent": "link3",
+     "child": "link4",
+     "xyz": [
+      0.0600003,
+      -0.244999,
+      -0.00205
+     ],
+     "rpy": [
+      0.0,
+      0.0,
+      -3.14159
+     ],
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "lower": -1.5708,
+     "upper": 1.5708
+    },
+    {
+     "name": "j5",
+     "parent": "link4",
+     "child": "link5",
+     "xyz": [
+      -0.0403003,
+      0.0703851,
+      -0.0323887
+     ],
+     "rpy": [
+      2.3268e-06,
+      -1.5707920842,
+      -3.1415923268
+     ],
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "lower": -1.5708,
+     "upper": 1.5708
+    },
+    {
+     "name": "j6",
+     "parent": "link5",
+     "child": "link6",
+     "xyz": [
+      2.399e-07,
+      -0.0419481,
+      0.0404996
+     ],
+     "rpy": [
+      1.5707943268,
+      -1.5707923268,
+      3.1415906536
+     ],
+     "axis": [
+      0.0,
+      0.0,
+      -1.0
+     ],
+     "lower": -2.0944,
+     "upper": 2.0944
+    }
+   ],
+   "limits": {
+    "margin_rad": 0.01,
+    "step_rad_per_15hz": 0.04,
+    "vel_rad_s": 0.6
+   },
+   "point_step_m_per_15hz": 0.02,
+   "tcp_m_s": {
+    "base": 0.04,
+    "free_max": 0.2,
+    "loaded_max": 0.08
+   },
+   "jaw": {
+    "unit": "open_fraction",
+    "open": 1.0,
+    "closed": 0.0,
+    "step": 0.04,
+    "lead_max": 0.03,
+    "force_cap": 0.5
+   },
+   "tracking_pause_rad": [
+    0.085,
+    0.085,
+    0.085,
+    0.085,
+    0.14,
+    0.14
+   ],
+   "capsules": [
+    {
+     "link": "link1",
+     "p0": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "p1": [
+      -0.0329,
+      0.02,
+      0.0455
+     ],
+     "r": 0.045,
+     "name": "link1_link"
+    },
+    {
+     "link": "link2",
+     "p0": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "p1": [
+      0.264,
+      4.084e-07,
+      -0.06375
+     ],
+     "r": 0.045,
+     "name": "link2_link"
+    },
+    {
+     "link": "link3",
+     "p0": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "p1": [
+      0.0600003,
+      -0.244999,
+      -0.00205
+     ],
+     "r": 0.04,
+     "name": "link3_link"
+    },
+    {
+     "link": "link4",
+     "p0": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "p1": [
+      -0.0403003,
+      0.0703851,
+      -0.0323887
+     ],
+     "r": 0.035,
+     "name": "link4_link"
+    },
+    {
+     "link": "link5",
+     "p0": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "p1": [
+      2.399e-07,
+      -0.0419481,
+      0.0404996
+     ],
+     "r": 0.035,
+     "name": "link5_link"
+    },
+    {
+     "link": "link6",
+     "p0": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "p1": [
+      0.0,
+      0.0,
+      -0.1347
+     ],
+     "r": 0.045,
+     "name": "link6_link"
+    }
+   ],
+   "z_m": 0.005,
+   "home": {
+    "q": [
+     1.5967,
+     -0.0013,
+     0.004,
+     -0.0196,
+     0.0269,
+     0.2462
+    ],
+    "route": "rt_left_v3"
+   },
+   "thermal_c": {
+    "refuse_start": 70,
+    "stop_work": [
+     75,
+     80
+    ],
+    "retreat": 95,
+    "clear": 85
+   },
+   "connector": {
+    "on_command_gap": "disable",
+    "drops_when_limp": true,
+    "brakes": false
+   }
+  },
+  "right": {
+   "semantics": "makermods-metal.rad6.jaw-motor-rad.v1",
+   "base_T_table": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "limits": {
+    "vel_rad_s": 0.0873
+   },
+   "jaw": {
+    "unit": "motor_rad",
+    "closed": 0.1009,
+    "open": 1.9414,
+    "effort_nm": 0.3,
+    "trip_nm": 0.45
+   },
+   "capsules": [
+    {
+     "link": "link1",
+     "p0": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "p1": [
+      0.00075,
+      0.0,
+      0.055
+     ],
+     "r": 0.05,
+     "name": "link1_link"
+    },
+    {
+     "link": "link2",
+     "p0": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "p1": [
+      -0.28,
+      0.0,
+      0.0
+     ],
+     "r": 0.045,
+     "name": "link2_link"
+    },
+    {
+     "link": "link3",
+     "p0": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "p1": [
+      0.215,
+      0.063,
+      0.0
+     ],
+     "r": 0.04,
+     "name": "link3_link"
+    },
+    {
+     "link": "link4",
+     "p0": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "p1": [
+      0.08,
+      0.052,
+      0.0002499978
+     ],
+     "r": 0.035,
+     "name": "link4_link"
+    },
+    {
+     "link": "link5",
+     "p0": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "p1": [
+      0.0235,
+      0.0,
+      0.044
+     ],
+     "r": 0.105,
+     "name": "link5_link"
+    },
+    {
+     "link": "link6",
+     "p0": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "p1": [
+      0.1542215878,
+      0.0,
+      0.0
+     ],
+     "r": 0.115,
+     "name": "link6_link"
+    }
+   ],
+   "z_m": 0.005,
+   "home": {
+    "q": [
+     1.366870963,
+     -0.0004791333,
+     -0.0255857176,
+     0.1507353323,
+     -0.0563460746,
+     0.1022470436
+    ],
+    "arrival_rad": [
+     0.0087,
+     0.0087,
+     0.0087,
+     0.0087,
+     0.0262,
+     0.0087
+    ]
+   },
+   "thermal_c": {
+    "joints_hold": 65,
+    "jaw_hold": 55
+   },
+   "chain": [
+    {
+     "name": "j1",
+     "parent": "base",
+     "child": "link1",
+     "xyz": [
+      0.0,
+      0.0,
+      0.06675
+     ],
+     "rpy": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "lower": -2.79,
+     "upper": 2.79
+    },
+    {
+     "name": "j2",
+     "parent": "link1",
+     "child": "link2",
+     "xyz": [
+      0.00075,
+      0.0,
+      0.055
+     ],
+     "rpy": [
+      1.5707963268,
+      0.0,
+      0.0
+     ],
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "lower": -3.14,
+     "upper": 0.0
+    },
+    {
+     "name": "j3",
+     "parent": "link2",
+     "child": "link3",
+     "xyz": [
+      -0.28,
+      0.0,
+      0.0
+     ],
+     "rpy": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "lower": 0.0,
+     "upper": 3.14
+    },
+    {
+     "name": "j4",
+     "parent": "link3",
+     "child": "link4",
+     "xyz": [
+      0.215,
+      0.063,
+      0.0
+     ],
+     "rpy": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "lower": -2.145,
+     "upper": 1.413
+    },
+    {
+     "name": "j5",
+     "parent": "link4",
+     "child": "link5",
+     "xyz": [
+      0.08,
+      0.052,
+      0.0002499978
+     ],
+     "rpy": [
+      1.5707963268,
+      0.0,
+      0.0
+     ],
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "lower": -1.482,
+     "upper": 1.482
+    },
+    {
+     "name": "j6",
+     "parent": "link5",
+     "child": "link6",
+     "xyz": [
+      0.0235,
+      0.0,
+      0.044
+     ],
+     "rpy": [
+      -3.1415926533,
+      0.0,
+      0.0
+     ],
+     "axis": [
+      1.0,
+      0.0,
+      0.0
+     ],
+     "lower": -2.529,
+     "upper": 2.529
+    }
+   ]
+  }
+ },
+ "trusted_keys": [
+  {
+   "kid": "dev-seg-NOT-FOR-ROBOTS",
+   "alg": "Ed25519",
+   "pub": "QEcz/oFFnoqfZwPZohWr5Bn29elgoFZVxuTrI1+OuoE=",
+   "not_after": "2099-01-01"
+  }
+ ],
+ "sig": {
+  "kid": "dev-root-NOT-FOR-ROBOTS",
+  "alg": "Ed25519",
+  "value": "wuFzbTMIkhZ0xGbSfP1k4rcxci3tCVt+N8Jz4+8bYcpUTyZSjdOUomgCsqyb1T66oFcYD4jrBeBUOLvjNRp7Bg=="
+ }
+}

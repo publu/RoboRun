@@ -1,0 +1,209 @@
+{
+ "id": "openarm_v2",
+ "label": "Enactic OpenArm v2 (7-DOF)",
+ "reach_m": 0.654,
+ "object_r_m": 0.27,
+ "shared_base": true,
+ "attached_gripper": null,
+ "yaw_deg": 90.0,
+ "base_z_m": -0.33699999999999997,
+ "sides": {
+  "left": {
+   "object_r": 0.27,
+   "object_z": 0.463,
+   "shoulder": [
+    0.0,
+    0.0925,
+    0.697
+   ],
+   "work_m": 0.654,
+   "model": "openarm_v2.xml",
+   "joints": 7,
+   "home": [
+    -0.7892,
+    -0.5969,
+    0.4655,
+    0.9649,
+    0.2387,
+    0.1629,
+    0.0965
+   ],
+   "rest": [
+    -0.7892,
+    -0.5969,
+    0.4655,
+    0.9649,
+    0.2387,
+    0.1629,
+    0.0965
+   ],
+   "jaw": {
+    "type": "revolute",
+    "joint": "joint8",
+    "closed_rad": 0.0,
+    "open_rad": 0.7854
+   },
+   "jaw_gap_m": 0.141,
+   "limits": [
+    [
+     -1.309,
+     1.309
+    ],
+    [
+     -1.5708,
+     0.15708
+    ],
+    [
+     -1.48353,
+     1.48353
+    ],
+    [
+     0.0,
+     2.35619
+    ],
+    [
+     -1.48353,
+     1.48353
+    ],
+    [
+     -0.69813,
+     0.69813
+    ],
+    [
+     -1.39626,
+     1.39626
+    ]
+   ],
+   "source_joints": [
+    "openarm_left_joint1",
+    "openarm_left_joint2",
+    "openarm_left_joint3",
+    "openarm_left_joint4",
+    "openarm_left_joint5",
+    "openarm_left_joint6",
+    "openarm_left_joint7"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "0/9",
+   "reach_m": 1.147,
+   "yaw_deg": 62.08
+  },
+  "right": {
+   "object_r": 0.27,
+   "object_z": 0.452,
+   "shoulder": [
+    0.0,
+    -0.0925,
+    0.697
+   ],
+   "work_m": 0.654,
+   "model": "openarm_v2_right.xml",
+   "joints": 7,
+   "home": [
+    0.5742,
+    0.6497,
+    0.1544,
+    1.1285,
+    0.146,
+    -0.1585,
+    0.2194
+   ],
+   "rest": [
+    0.5742,
+    0.6497,
+    0.1544,
+    1.1285,
+    0.146,
+    -0.1585,
+    0.2194
+   ],
+   "jaw": {
+    "type": "revolute",
+    "joint": "joint8",
+    "closed_rad": 0.0,
+    "open_rad": -0.7854
+   },
+   "jaw_gap_m": 0.141,
+   "limits": [
+    [
+     -1.309,
+     1.309
+    ],
+    [
+     -0.15708,
+     1.5708
+    ],
+    [
+     -1.48353,
+     1.48353
+    ],
+    [
+     0.0,
+     2.35619
+    ],
+    [
+     -1.48353,
+     1.48353
+    ],
+    [
+     -0.69813,
+     0.69813
+    ],
+    [
+     -1.39626,
+     1.39626
+    ]
+   ],
+   "source_joints": [
+    "openarm_right_joint1",
+    "openarm_right_joint2",
+    "openarm_right_joint3",
+    "openarm_right_joint4",
+    "openarm_right_joint5",
+    "openarm_right_joint6",
+    "openarm_right_joint7"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "0/9",
+   "reach_m": 1.146,
+   "yaw_deg": 131.14
+  }
+ },
+ "sim_object_mm": [
+  90,
+  90,
+  112
+ ],
+ "gripper": "revolute",
+ "source": {
+  "repo": "https://github.com/enactic/openarm_description",
+  "commit": "73dda1b097de26634909e06c2935aa21895af080",
+  "file": "assets/robot/openarm_v2.0/urdf/example/v2.urdf",
+  "license": "Apache-2.0",
+  "license_file": "LICENSE.txt",
+  "copyright": "Copyright 2026 Enactic, Inc.",
+  "sha256": "76aa8f661fe46534cebc780d76ec30c0286220e3e91e20ee1fa85f277631982c"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": [
+  "left joint 1: model range [-3.491, 1.396], driver [-1.309, 1.309]",
+  "left joint 2: model range [-3.316, 0.175], driver [-1.571, 0.157]",
+  "left joint 3: model range [-1.571, 1.571], driver [-1.484, 1.484]",
+  "left joint 4: model range [0.000, 2.443], driver [0.000, 2.356]",
+  "left joint 5: model range [-1.571, 1.571], driver [-1.484, 1.484]",
+  "left joint 6: model range [-0.785, 0.785], driver [-0.698, 0.698]",
+  "left joint 7: model range [-1.571, 1.571], driver [-1.396, 1.396]",
+  "right joint 1: model range [-1.396, 3.491], driver [-1.309, 1.309]",
+  "right joint 2: model range [-0.175, 3.316], driver [-0.157, 1.571]",
+  "right joint 3: model range [-1.571, 1.571], driver [-1.484, 1.484]",
+  "right joint 4: model range [0.000, 2.443], driver [0.000, 2.356]",
+  "right joint 5: model range [-1.571, 1.571], driver [-1.484, 1.484]",
+  "right joint 6: model range [-0.785, 0.785], driver [-0.698, 0.698]",
+  "right joint 7: model range [-1.571, 1.571], driver [-1.396, 1.396]",
+  "all 7 joints are planned: the v2 URDF is the arm (the driver now drives joint 3 too)"
+ ]
+}

@@ -1,0 +1,145 @@
+{
+ "status": "beta",
+ "profile": "rebot_b601_dm",
+ "id": "rebot_b601_dm",
+ "label": "Seeed reBot B601-DM",
+ "driver": "roborun_sdk.arms.damiao:DamiaoArm",
+ "install": "damiao",
+ "transport": "can",
+ "motors": "3 DM-J4340P + 4 DM-J4310 (ids 1-7, replies 0x11-0x17)",
+ "home": [
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0
+ ],
+ "limits": [
+  [
+   -2.61799,
+   2.61799
+  ],
+  [
+   -3.49066,
+   0.01745
+  ],
+  [
+   -3.49066,
+   0.01745
+  ],
+  [
+   -1.39626,
+   1.5708
+  ],
+  [
+   -1.5708,
+   1.5708
+  ],
+  [
+   -1.5708,
+   1.5708
+  ]
+ ],
+ "release": "Damping only (zero stiffness, torque stays on): the arm sinks slowly, it does not fall. It has no brakes.",
+ "unverified": [
+  "LeRobot gives Kd 12 for joints 1-3 but the MIT frame tops out at 5: 5 is sent",
+  "DM-J4340P scale assumed equal to DM-J4340 (12.5 rad, 8 rad/s, 28 N m): a different setup is refused at connect",
+  "Joint signs +1 as in LeRobot's DM profile; jaw force cap 0.7 N m = LeRobot's 7 % of 10 N m",
+  "Needs a CAN adapter open_bus supports; the Damiao serial bridge (LeRobot default) is not one"
+ ],
+ "sources": [
+  "LeRobot robots/rebot_b601_follower/motor_family.py"
+ ],
+ "options": {
+  "arm_id": "rebot_b601_dm",
+  "calibration": "required",
+  "zero_pose": "the sit-down rest pose from the B601 manual",
+  "joint_speed_rad_s": 0.4,
+  "joint_accel_rad_s2": 1.5,
+  "joint_jerk_rad_s3": 15.0,
+  "joints": [
+   {
+    "name": "shoulder_pan",
+    "id": 1,
+    "model": "dm4340p",
+    "pmax": 12.5,
+    "vmax": 8,
+    "tmax": 28,
+    "kp": 45,
+    "kd": 5,
+    "recv": 17
+   },
+   {
+    "name": "shoulder_lift",
+    "id": 2,
+    "model": "dm4340p",
+    "pmax": 12.5,
+    "vmax": 8,
+    "tmax": 28,
+    "kp": 45,
+    "kd": 5,
+    "recv": 18
+   },
+   {
+    "name": "elbow_flex",
+    "id": 3,
+    "model": "dm4340p",
+    "pmax": 12.5,
+    "vmax": 8,
+    "tmax": 28,
+    "kp": 45,
+    "kd": 5,
+    "recv": 19
+   },
+   {
+    "name": "wrist_flex",
+    "id": 4,
+    "model": "dm4310",
+    "pmax": 12.5,
+    "vmax": 30,
+    "tmax": 10,
+    "kp": 8,
+    "kd": 1,
+    "recv": 20
+   },
+   {
+    "name": "wrist_yaw",
+    "id": 5,
+    "model": "dm4310",
+    "pmax": 12.5,
+    "vmax": 30,
+    "tmax": 10,
+    "kp": 9,
+    "kd": 1,
+    "recv": 21
+   },
+   {
+    "name": "wrist_roll",
+    "id": 6,
+    "model": "dm4310",
+    "pmax": 12.5,
+    "vmax": 30,
+    "tmax": 10,
+    "kp": 8,
+    "kd": 1,
+    "recv": 22
+   }
+  ],
+  "gripper": {
+   "name": "gripper",
+   "id": 7,
+   "model": "dm4310",
+   "pmax": 12.5,
+   "vmax": 30,
+   "tmax": 10,
+   "kp": 8,
+   "kd": 0.3,
+   "closed": 0.0,
+   "open": -4.71239,
+   "max_torque_nm": 0.7,
+   "effort_full": 0.7,
+   "recv": 23
+  }
+ }
+}

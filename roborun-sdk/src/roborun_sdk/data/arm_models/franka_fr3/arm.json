@@ -1,0 +1,106 @@
+{
+ "id": "franka_fr3",
+ "label": "Franka Research 3",
+ "reach_m": 0.951,
+ "object_r_m": 0.746,
+ "shared_base": false,
+ "attached_gripper": "Franka Hand (menagerie panda)",
+ "yaw_deg": 90.0,
+ "base_z_m": 0.0,
+ "sides": {
+  "left": {
+   "object_r": 0.746,
+   "object_z": 0.321,
+   "shoulder": [
+    0.0,
+    0.0,
+    0.333
+   ],
+   "work_m": 0.951,
+   "model": "franka_fr3.xml",
+   "joints": 7,
+   "home": [
+    0.0,
+    -0.7854,
+    0.0,
+    -2.3562,
+    0.0,
+    1.5708,
+    0.7854
+   ],
+   "rest": [
+    0.0,
+    -0.7854,
+    0.0,
+    -2.3562,
+    0.0,
+    1.5708,
+    0.7854
+   ],
+   "jaw": null,
+   "jaw_gap_m": 0.08,
+   "limits": [
+    [
+     -2.9007,
+     2.9007
+    ],
+    [
+     -1.8361,
+     1.8361
+    ],
+    [
+     -2.9007,
+     2.9007
+    ],
+    [
+     -3.077,
+     -0.1169
+    ],
+    [
+     -2.8763,
+     2.8763
+    ],
+    [
+     0.4398,
+     4.6216
+    ],
+    [
+     -3.0508,
+     3.0508
+    ]
+   ],
+   "source_joints": [
+    "fr3_joint1",
+    "fr3_joint2",
+    "fr3_joint3",
+    "fr3_joint4",
+    "fr3_joint5",
+    "fr3_joint6",
+    "fr3_joint7"
+   ],
+   "flipped": [],
+   "zero_offsets": {},
+   "grasps_solved": "9/9",
+   "reach_m": 1.277,
+   "yaw_deg": 90.0
+  }
+ },
+ "sim_object_mm": [
+  68,
+  68,
+  85
+ ],
+ "gripper": "slide",
+ "source": {
+  "repo": "https://github.com/google-deepmind/mujoco_menagerie",
+  "commit": "370c43965323c0944b433b202aac5058b5f907a9",
+  "file": "franka_fr3/fr3.xml",
+  "license": "Apache-2.0",
+  "license_file": "franka_fr3/LICENSE",
+  "sha256": "8a2d8fdc9dd73b1226ca34de5517e7c7eb08b850b68c3d36d9e93b1b183b9b86"
+ },
+ "simplified": {
+  "faces_per_link": 500
+ },
+ "notes": []
+}
