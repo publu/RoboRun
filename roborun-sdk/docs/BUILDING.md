@@ -138,7 +138,9 @@ next to the real one, or a sandbox). Every `roborun` command run with that varia
 - **Files.** Pid files and logs are in `<home>/run` and `<home>/logs`, the station's control files in `<home>/robot`.
   The camera socket is
   `$XDG_RUNTIME_DIR/manifest/camera.sock` for the default home and `$XDG_RUNTIME_DIR/manifest/roborun-<code>/camera.sock`
-  for any other. A home set with `ROBORUN_HOME` (to a folder other than `$HOME/.config/roborun`) also keeps its runtime,
+  for any other. If that folder is too deep for its sockets (a Unix socket path may be 107 bytes on Linux, 103 on macOS),
+  as under a deep `XDG_RUNTIME_DIR`, they are in `/tmp/rr-<uid>-<12 hex>/` instead, a folder only you can open. Every
+  part of the install works out the same path. A home set with `ROBORUN_HOME` (to a folder other than `$HOME/.config/roborun`) also keeps its runtime,
   recordings and datasets in `<home>/roborun/` instead of `~/roborun/`. A sandbox that changes only `$HOME` keeps them in
   its own `$HOME/roborun/`.
 - **Ports.** Ports are shared by the whole computer. When a port the second install needs is taken, `roborun up` stops,

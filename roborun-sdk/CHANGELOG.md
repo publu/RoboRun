@@ -100,6 +100,18 @@ Releases before 0.1.20261121012822 were put together from the source history and
   ([Two installs on one computer](docs/BUILDING.md#two-installs-on-one-computer)). Still open: a second install whose
   files are deliberately linked into the default install's files one level deeper, and `hw calibrate`, `cameras` and
   `profile create`, which do not have this check yet.
+- The camera socket now fits in a Unix socket path. A second install under a deep `XDG_RUNTIME_DIR` (a sandbox's, for
+  example) used to get a `camera.sock` path longer than the 107 bytes Linux allows (103 on macOS). The camera service or
+  simulation could not listen there, and a simulated task failed at 0 s. Now, when the install's socket folder has no
+  room for its sockets (`camera.sock`, `sim-camera.sock` and the RealSense capture helper's `camera-capture.sock`), they
+  go in `/tmp/rr-<uid>-<12 hex>/` instead, a folder only you can open (0700). The folder is per user, per install and
+  per runtime folder, and it is refused if someone else made it. The camera service, the simulation, `roborun up`
+  (which passes the path to the robot's runtime as `MANIFEST_CAMERA_SOCKET`) and every reader work out the path with
+  the same rule. Short paths are unchanged.
+- A simulation removes only the camera socket it made. Before, `roborun sim` recognised its socket by the inode number
+  alone. Filesystems such as ext4 give a deleted file's number to the next file made, so on exit a simulation could
+  delete a file, or another program's socket, made at the same path after its own was gone. It now also checks the
+  device, the file times (including a timestamp it sets on its own socket) and that the path is still a socket.
 
 ## 0.1.20261121012822 (build 20261121-012822-8f60cdaa99)
 

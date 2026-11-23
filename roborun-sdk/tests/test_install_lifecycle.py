@@ -19,6 +19,12 @@ def home(tmp_path, monkeypatch):
     cfg.mkdir()
     monkeypatch.setattr(robot, 'HOME', cfg)
     monkeypatch.setattr(robot, 'CONFIG', cfg / 'robot.json')
+    # never the real home: $HOME (the data folder, the installer's files) and the account's default install are the test's
+    # own, so the second-install guard has nothing real to protect, wherever the suite runs (a CI runner's $HOME is its
+    # account's own folder)
+    (tmp_path / 'user').mkdir()
+    monkeypatch.setenv('HOME', str(tmp_path / 'user'))
+    monkeypatch.setattr(robot, 'account_home', lambda: tmp_path / 'account' / '.config' / 'roborun')
     monkeypatch.setattr(robot.net, 'update_notice', lambda *a, **k: None)
     monkeypatch.delenv('ROBORUN_NO_LINGER', raising=False)
     return tmp_path

@@ -169,6 +169,39 @@ def test_release_removes_only_the_socket_this_simulation_made(box):
         other.close()
 
 
+def _reused_inode_numbers(monkeypatch, path):
+    """Every file made at path gets the same inode number and change time, as on ext4 under a kernel before 6.13: ext4 gives
+    a deleted file's number to the next file made in that folder (a GitHub runner's /tmp; a tmpfs with inode64 never reuses
+    one, so it hides the case), and a new file's change time is the clock tick's (a few ms)."""
+    real = os.lstat
+
+    def lstat(p, *a, **k):
+        st = real(p, *a, **k)
+        if os.path.abspath(os.fspath(p)) != str(path):
+            return st
+        t = list(st); t[1] = 4242; t[9] = 1_700_000_000
+        times = {k: getattr(st, k) for k in ('st_atime', 'st_mtime', 'st_atime_ns', 'st_mtime_ns')}
+        return os.stat_result(t, dict(times, st_ctime=1_700_000_000.0, st_ctime_ns=1_700_000_000 * 10**9))
+    monkeypatch.setattr(os, 'lstat', lstat)
+
+
+def test_a_reused_inode_number_is_not_the_socket_a_simulation_made(box, monkeypatch):
+    path = box.run / 'cam.sock'
+    _reused_inode_numbers(monkeypatch, path)
+    srv = serve_unix(path); release = sim_home.own_socket(path); srv.close()
+    path.unlink(); path.write_text('not a socket')                                       # the same inode number, a plain file
+    release()
+    assert path.read_text() == 'not a socket'
+    path.unlink(); other = serve_unix(path); other.close()                               # the same number, another program's
+    with pytest.raises(SystemExit, match='no Roborun simulation made it.*not removed'):
+        sim_home.claim_socket(path)                                                      # the stale .owner does not vouch for it
+    release()
+    assert path.exists() and Path(str(path) + sim_home.OWNER).exists()
+    path.unlink(); srv = serve_unix(path); release = sim_home.own_socket(path); srv.close()
+    release()                                                                            # its own socket: removed with its marker
+    assert not path.exists() and not Path(str(path) + sim_home.OWNER).exists()
+
+
 # ------------------------------------------------------------------------------------------------ roborun sim
 def _sim_stubs(monkeypatch, seen):
     """cmd_sim without MuJoCo: a world with one arm and no cameras, the station recorded instead of served."""
@@ -411,6 +444,23 @@ def test_up_sim_is_refused_while_a_live_camera_service_serves_the_robot_s_socket
     finally:
         srv.close()
     assert not units
+
+
+def test_up_sim_on_a_deep_runtime_dir_hands_its_short_camera_socket_to_the_backend(box, monkeypatch):
+    deep = box.run / ('a-sandbox-named-for-what-it-tests' + 'x' * 40) / 'run' / 'xdg'
+    deep.mkdir(parents=True); monkeypatch.setenv('XDG_RUNTIME_DIR', str(deep))       # a sandbox's, under a second install
+    units = []; _up_stubs(monkeypatch, units)
+    try:
+        assert robot.cmd_up(up_args(sim='cup')) == 0
+        cam = robot.camera_socket()
+        run = {name: (argv, env) for name, argv, env in units}
+        sim_argv = run['roborun-sim'][0]
+        assert len(os.fsencode(str(deep / 'manifest' / ('roborun' + robot.install_suffix()) / 'camera.sock'))) > robot.SOCKET_MAX
+        assert len(os.fsencode(cam)) <= robot.SOCKET_MAX and Path(cam).parent.parent == Path('/tmp')
+        assert sim_argv[sim_argv.index('--camera-socket') + 1] == cam                   # the simulation serves it
+        assert run['roborun-robot'][1]['MANIFEST_CAMERA_SOCKET'] == cam                 # and the runtime reads it there
+    finally:
+        shutil.rmtree(Path(robot.camera_socket()).parent, ignore_errors=True)
 
 
 def test_up_sim_forgets_only_its_own_unserved_camera_socket(box, monkeypatch):

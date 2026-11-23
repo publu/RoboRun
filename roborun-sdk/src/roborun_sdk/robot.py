@@ -575,21 +575,61 @@ def cmd_local(a) -> int:
         signal.pause()
 
 
+SOCKET_MAX = 103 if sys.platform == 'darwin' else 107     # bytes in an AF_UNIX path (sun_path, less its final NUL)
+SOCKET_NAMES = ('camera.sock', 'sim-camera.sock', 'camera-capture.sock')   # the sockets kept in an install's folder
+# (camera-capture.sock: the RealSense capture helper's, beside camera.sock: cameras.helper_socket)
+
+
+def socket_path(name, make=False):
+    """Where this install's Unix socket `name` (one of SOCKET_NAMES) lives, the one rule the camera service, the simulation,
+    roborun up and every reader use, so they all name the same file: <runtime dir>/manifest/<name> for the default home,
+    <runtime dir>/manifest/roborun-<8 hex>/<name> for another one (install_suffix), the runtime dir being $XDG_RUNTIME_DIR,
+    else /tmp/manifest-<uid>. When that folder has no room for the longest of those names within an AF_UNIX path
+    (SOCKET_MAX: a deep $XDG_RUNTIME_DIR, with a second install's folder on top), the sockets are in
+    /tmp/rr-<uid>-<12 hex of that folder>/ instead: short, per user, per install and per runtime dir, and still side by
+    side. make=True creates the folder (0700) and refuses a short folder this user does not own (a symlink, another
+    user's)."""
+    base = os.environ.get('XDG_RUNTIME_DIR') or f'/tmp/manifest-{os.getuid()}'
+    suffix = install_suffix()
+    folders = [os.path.join(base, 'manifest')] + ([os.path.join(base, 'manifest', 'roborun' + suffix)] if suffix else [])
+    longest = max(len(os.fsencode(n)) for n in (name, *SOCKET_NAMES))
+    short = len(os.fsencode(folders[-1])) + 1 + longest > SOCKET_MAX
+    if short:
+        folders = [short_socket_folder(folders[-1])]
+    if make:
+        for folder in folders:
+            os.makedirs(folder, mode=0o700, exist_ok=True)
+        if short:
+            _own_short_folder(folders[0])
+    return os.path.join(folders[-1], name)
+
+
+def short_socket_folder(folder):
+    """socket_path's folder when the usual one is too deep for a Unix socket: /tmp/rr-<uid>-<12 hex of the usual folder>."""
+    import hashlib
+    return f'/tmp/rr-{os.getuid()}-' + hashlib.sha256(os.fsencode(folder)).hexdigest()[:12]
+
+
+def _own_short_folder(folder):
+    """socket_path's /tmp folder must be this user's own: in a folder everyone can write to, another user could have made it
+    first and served a socket of their own there. Refused in words, never used."""
+    import stat as _st
+    st = os.lstat(folder)
+    if not _st.S_ISDIR(st.st_mode) or st.st_uid != os.getuid():
+        raise SystemExit(f'{folder} (the short folder for this install\'s camera socket) is not a folder of this user: it is not '
+                         'used. Next: remove it, or set XDG_RUNTIME_DIR to a short folder of your own (like /run/user/<uid>)')
+    if st.st_mode & 0o077:
+        os.chmod(folder, 0o700)
+
+
 def camera_socket():
-    """Where the robot's camera broker listens: $MANIFEST_CAMERA_SOCKET, else a short per-user path (Unix sockets allow
-    ~108 characters, so not under a deep home folder). The default home's is <runtime dir>/manifest/camera.sock, as always;
-    another home's is in its own folder, <runtime dir>/manifest/roborun-<8 hex>/camera.sock, beside its capture helper's."""
-    import os
+    """Where the robot's camera broker listens: $MANIFEST_CAMERA_SOCKET, else socket_path('camera.sock') (its folder made):
+    <runtime dir>/manifest/camera.sock for the default home, as always; another home's is in its own folder,
+    <runtime dir>/manifest/roborun-<8 hex>/camera.sock, beside its capture helper's; a short /tmp/rr-<uid>-<hex>/camera.sock
+    when that would be too long for a Unix socket. roborun up hands it to the runtime as $MANIFEST_CAMERA_SOCKET."""
     if os.environ.get('MANIFEST_CAMERA_SOCKET'):
         return os.environ['MANIFEST_CAMERA_SOCKET']
-    base = os.environ.get('XDG_RUNTIME_DIR') or f'/tmp/manifest-{os.getuid()}'
-    folder = os.path.join(base, 'manifest')
-    os.makedirs(folder, mode=0o700, exist_ok=True)
-    suffix = install_suffix()
-    if suffix:
-        folder = os.path.join(folder, 'roborun' + suffix)
-        os.makedirs(folder, mode=0o700, exist_ok=True)
-    return os.path.join(folder, 'camera.sock')
+    return socket_path('camera.sock', make=True)
 
 
 UNITS = ('roborun-local', 'roborun-robot', 'roborun-sim', 'roborun-station', 'roborun-cameras')

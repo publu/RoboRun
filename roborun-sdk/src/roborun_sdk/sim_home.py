@@ -24,9 +24,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import secrets
 import shutil
 import socket
 import stat
+import time
 import urllib.request
 from pathlib import Path
 
@@ -64,25 +66,26 @@ def is_copy(path, home=None):
 
 def robot_socket(path):
     """True when path is a robot's camera socket: this install's (camera_socket(), $MANIFEST_CAMERA_SOCKET included) or any
-    Roborun install's camera.sock under <runtime dir>/manifest/ (the default install's, or roborun-<8 hex>/camera.sock)."""
+    Roborun install's camera.sock under <runtime dir>/manifest/ (the default install's, or roborun-<8 hex>/camera.sock) or in
+    a short folder of this user's (/tmp/rr-<uid>-<hex>/camera.sock, for a runtime dir too deep for a Unix socket)."""
     from .cameras import _socket_path
     if same(path, _socket_path()):
         return True
     p = Path(os.path.realpath(str(path)))
     if p.name != 'camera.sock':
         return False
+    if p.parent.parent == Path(os.path.realpath('/tmp')) and p.parent.name.startswith(f'rr-{os.getuid()}-'):
+        return True                                     # an install's camera.sock in its short folder (robot.socket_path)
     base = Path(os.path.realpath(os.path.join(os.environ.get('XDG_RUNTIME_DIR') or f'/tmp/manifest-{os.getuid()}', 'manifest')))
     return p.parent == base or (p.parent.parent == base and p.parent.name.startswith('roborun-'))
 
 
 def camera_socket():
-    """Bare `roborun sim`'s camera socket: sim-camera.sock beside this install's camera.sock ($MANIFEST_CAMERA_SOCKET, which
-    names the robot's, is not followed)."""
-    from .robot import install_suffix
-    base = os.environ.get('XDG_RUNTIME_DIR') or f'/tmp/manifest-{os.getuid()}'
-    path = os.path.join(base, 'manifest', *(['roborun' + install_suffix()] if install_suffix() else []))
-    os.makedirs(path, mode=0o700, exist_ok=True)
-    return os.path.join(path, 'sim-camera.sock')
+    """Bare `roborun sim`'s camera socket: sim-camera.sock beside this install's camera.sock, or in a short folder of its own
+    when that path would be too long for a Unix socket (robot.socket_path; $MANIFEST_CAMERA_SOCKET, which names the robot's,
+    is not followed)."""
+    from .robot import socket_path
+    return socket_path('sim-camera.sock', make=True)
 
 
 def live_runtime(c=None):
@@ -296,11 +299,34 @@ def _owner(path):
     return Path(str(path) + OWNER)
 
 
-def _made_by_a_simulation(path):
+def _identity(st):
+    """What tells the socket a simulation made from a file made later at the same path: the device, the inode number, the
+    change time and the modification time (ns), which own_socket sets to a stamp of its own. The inode number alone does
+    not: a filesystem may give a deleted file's number to the next file made (ext4 does, at once), so a regular file or
+    another program's socket can get the number the simulation's socket had. Nor do the times the system sets: a new file's
+    are the clock tick's (a few ms) on kernels before 6.13, so a socket made there in the same tick has the same ones."""
+    return [st.st_dev, st.st_ino, st.st_ctime_ns, st.st_mtime_ns]
+
+
+def _mark_socket(path):
+    """Give the socket just made at path a modification time no other file gets by chance: the last second, with random ns."""
     try:
+        os.utime(path, ns=(os.lstat(path).st_atime_ns, (time.time_ns() // 10**9 - 1) * 10**9 + secrets.randbelow(10**9)))
+    except OSError:
+        pass                                            # then the times the system set are all it has
+
+
+def _made_by_a_simulation(path):
+    """True when path is still the socket a Roborun simulation made there (own_socket wrote its .owner file)."""
+    try:
+        st = os.lstat(path)
         row = json.loads(_owner(path).read_text())
-        return row.get('by') == 'roborun sim' and row.get('inode') == os.lstat(path).st_ino
-    except (OSError, ValueError, AttributeError):
+        if row.get('by') != 'roborun sim' or not stat.S_ISSOCK(st.st_mode):
+            return False
+        if 'socket' in row:
+            return row['socket'] == _identity(st)
+        return row.get('inode') == st.st_ino            # an .owner file from before the device and time were recorded
+    except (OSError, ValueError, AttributeError, TypeError):
         return False
 
 
@@ -329,14 +355,16 @@ def claim_socket(path):
 
 def own_socket(path):
     """Record that this simulation made the socket at path (just bound); returns the function that removes both again, only
-    while the socket is still the one it made."""
+    while path is still that socket (same device, inode number and times: _identity)."""
     path = Path(path)
-    ino = os.lstat(path).st_ino
-    _owner(path).write_text(json.dumps(dict(by='roborun sim', pid=os.getpid(), inode=ino)))
+    _mark_socket(path)
+    mine = _identity(os.lstat(path))
+    _owner(path).write_text(json.dumps(dict(by='roborun sim', pid=os.getpid(), inode=mine[1], socket=mine)))
 
     def release():
         try:
-            if os.lstat(path).st_ino == ino:
+            st = os.lstat(path)
+            if stat.S_ISSOCK(st.st_mode) and _identity(st) == mine:      # not a file or socket made there since
                 path.unlink()
                 _owner(path).unlink(missing_ok=True)
         except OSError:

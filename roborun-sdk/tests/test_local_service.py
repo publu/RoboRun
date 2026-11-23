@@ -34,6 +34,10 @@ def server(routes):
 @pytest.fixture()
 def home(tmp_path, monkeypatch):
     monkeypatch.setattr(robot, 'HOME', tmp_path); monkeypatch.setattr(robot, 'CONFIG', tmp_path / 'robot.json')
+    # never the real home: $HOME and the account's default install are the test's own (see test_install_lifecycle's home)
+    (tmp_path / 'user').mkdir()
+    monkeypatch.setenv('HOME', str(tmp_path / 'user'))
+    monkeypatch.setattr(robot, 'account_home', lambda: tmp_path / 'account' / '.config' / 'roborun')
     (tmp_path / 'token').write_text(TOKEN)
     return tmp_path
 

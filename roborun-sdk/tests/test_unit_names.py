@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -44,14 +45,17 @@ def systemd(tmp_path, monkeypatch):
     monkeypatch.setenv('PATH', f"{stubs}{os.pathsep}{os.environ.get('PATH', '')}")
     for name in ('systemctl', 'systemd-run', 'loginctl'):
         assert shutil.which(name) == str(stubs / name)          # never the real one
-    monkeypatch.setenv('XDG_RUNTIME_DIR', str(tmp_path / 'run'))
-    (tmp_path / 'run').mkdir()
+    # a short runtime dir of its own, like /run/user/<uid>: under pytest's tmp_path a second install's socket folder has no
+    # room for its sockets, and robot.socket_path would make short folders in /tmp instead (test_socket_path.py tests that)
+    run = tempfile.mkdtemp(prefix='rr', dir='/tmp')
+    monkeypatch.setenv('XDG_RUNTIME_DIR', run)
     monkeypatch.delenv('MANIFEST_CAMERA_SOCKET', raising=False)
     monkeypatch.delenv('DBUS_SESSION_BUS_ADDRESS', raising=False)
 
     def calls():
         return [line.split() for line in log.read_text().splitlines()]
-    return calls
+    yield calls
+    shutil.rmtree(run, ignore_errors=True)
 
 
 def _home(tmp_path, monkeypatch, name, default=False):
@@ -82,7 +86,7 @@ def test_the_default_home_keeps_today_s_names(tmp_path, monkeypatch, systemd):
     _home(tmp_path, monkeypatch, 'default', default=True)
     assert robot.install_suffix() == ''
     assert [robot.unit_name(u) for u in robot.UNITS] == list(robot.UNITS)
-    assert robot.camera_socket() == str(tmp_path / 'run' / 'manifest' / 'camera.sock')
+    assert robot.camera_socket() == str(Path(os.environ['XDG_RUNTIME_DIR']) / 'manifest' / 'camera.sock')
     for u in robot.UNITS:
         robot._stop(u)
     robot._unit('roborun-robot', ['true'], {})
@@ -117,7 +121,7 @@ def test_each_home_has_its_own_camera_socket(tmp_path, monkeypatch, systemd):
     first = robot.camera_socket()
     _home(tmp_path, monkeypatch, 'b')
     second = robot.camera_socket()
-    default = str(tmp_path / 'run' / 'manifest' / 'camera.sock')
+    default = str(Path(os.environ['XDG_RUNTIME_DIR']) / 'manifest' / 'camera.sock')
     assert len({first, second, default}) == 3
     assert Path(first).parent.parent == Path(default).parent and Path(first).name == 'camera.sock'
     from roborun_sdk import cameras

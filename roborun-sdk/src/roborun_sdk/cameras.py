@@ -1261,10 +1261,8 @@ def _socket_path():
     """Where the camera service listens, worked out without creating anything (robot.camera_socket makes its folder)."""
     if os.environ.get('MANIFEST_CAMERA_SOCKET'):
         return os.environ['MANIFEST_CAMERA_SOCKET']
-    from .robot import install_suffix
-    base = os.environ.get('XDG_RUNTIME_DIR') or f'/tmp/manifest-{os.getuid()}'
-    suffix = install_suffix()
-    return os.path.join(base, 'manifest', *(['roborun' + suffix] if suffix else []), 'camera.sock')
+    from .robot import socket_path
+    return socket_path('camera.sock')
 
 
 def broker_status(path, timeout=2.):
