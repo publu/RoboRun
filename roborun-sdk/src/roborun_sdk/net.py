@@ -85,8 +85,11 @@ NOTICE_EVERY_S = 86400
 UPGRADE = 'roborun upgrade'
 
 
-def _home():
-    return Path(os.environ.get('ROBORUN_HOME', Path.home() / '.config' / 'roborun'))
+def roborun_home():
+    """This install's Roborun home: ROBORUN_HOME (set but empty counts as unset), else $HOME/.config/roborun. Always absolute
+    and with ~ expanded, so the systemd units roborun up starts (which run in the account's home folder, not this shell's
+    folder) get the same folder as the command that started them; symlinks are kept as given."""
+    return Path(os.path.abspath(os.path.expanduser(os.environ.get('ROBORUN_HOME') or Path.home() / '.config' / 'roborun')))
 
 
 def client_headers(runtime=None):
@@ -99,14 +102,14 @@ def client_headers(runtime=None):
 
 def _read_update():
     try:
-        out = json.loads((_home() / UPDATE_FILE).read_text())
+        out = json.loads((roborun_home() / UPDATE_FILE).read_text())
         return out if isinstance(out, dict) else {}
     except (OSError, ValueError):
         return {}
 
 
 def _write_update(state):
-    path = _home() / UPDATE_FILE
+    path = roborun_home() / UPDATE_FILE
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(path.name + f'.{os.getpid()}.tmp')

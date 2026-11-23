@@ -17,7 +17,6 @@ firmware, and the CANable firmwares (normaldotcom/canable-fw, normaldotcom/canab
 import collections
 import errno
 import getpass
-import grp
 import hashlib
 import json
 import logging
@@ -62,8 +61,9 @@ def udev_rules():
 
 def in_dialout():
     try:
+        import grp                      # POSIX only: importing this module works on Windows too
         return grp.getgrnam('dialout').gr_gid in os.getgroups() or getpass.getuser() in grp.getgrnam('dialout').gr_mem
-    except (KeyError, OSError):
+    except (ImportError, KeyError, OSError):
         return False
 
 

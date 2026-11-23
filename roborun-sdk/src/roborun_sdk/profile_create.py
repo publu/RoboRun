@@ -43,7 +43,8 @@ def _place(text):
 
 def convert(urdf, out_dir, name, joints, fingers, tcp_link, tcp_offset=(0, 0, 0), base_link=None, first_link=None, tcp_quat=None):
     """URDF or MJCF -> <out_dir>/<name>.xml with the planner's names. Returns the xml path."""
-    import mujoco
+    from ._optional import require
+    mujoco = require('mujoco', 'urdf')
     urdf = Path(urdf).resolve()
     spec = mujoco.MjSpec.from_file(str(urdf))
     spec.compiler.fusestatic = False                    # keep fixed links (the grasp link is usually one)

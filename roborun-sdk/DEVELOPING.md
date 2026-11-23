@@ -15,6 +15,25 @@ service (systemd where it is available, plain child processes elsewhere):
 | `roborun-robot` | 127.0.0.1:8120 | The robot runtime: the local API, tasks, recordings; asks the hosted API (`https://api.roborun.app`) for motion |
 | `roborun-local` | 127.0.0.1:8135 | The connector that lets https://app.roborun.app, open in a browser on this computer, reach this robot |
 
+These are the default home's (`~/.config/roborun`) service names. Any other Roborun home (`ROBORUN_HOME`, or another `$HOME`
+on the same account) gets `<name>-<8 hex of its path>` (`robot.unit_name`), its own camera socket folder, and with
+`ROBORUN_HOME` its own `<home>/roborun/` runtime. So a sandboxed or second install never stops the default one's services.
+Everything goes through `robot._unit` / `_stop` / `_state`, which take the part name (`roborun-robot`) and translate it;
+don't call `systemctl` with a literal name. `robot.second_install()` (same rule as the names) decides what
+`uninstall` and `upgrade` may touch: a second install never deletes a path for which `robot.protected()` is true (the
+account's default install, `robot.touches_default_install()`, and `$HOME`'s own install unless `robot.home_is_ours()`), and
+removes an install folder only when it is inside its own home. `robot.own_home()` (runtime in `<home>/roborun`) uses the
+same helpers. Every command that writes or deletes install files (`up`, `setup`, `down`, `upgrade`, `uninstall`, `login`)
+first calls `robot.refuse_default_install(command, paths)` with the paths it would touch (`robot.home_paths()`,
+`robot.down_paths()`, `robot.installer_paths()`, the key file): for a second install it follows symlinks and stops with
+nothing changed when one of them resolves into the default install. A new command that writes install files must call it
+too (`hw calibrate`, `hw check`'s direction results, `cameras` and `profile create` write only inside `<home>` and do not
+yet). Whether a home is the default one (`robot.install_suffix()`) needs both: it resolves to the account's
+`~/.config/roborun`, and it is named the account's way (that exact path, or from a `$HOME` that resolves to the account's
+folder), so a sandbox that symlinks its `.config` to the account's is a second install. Read the home with
+`net.roborun_home()` (or `robot.HOME`), never `os.environ['ROBORUN_HOME']`: it is absolute and `~`-expanded, which the
+systemd units (run in the account's home folder) need. `tests/test_unit_names.py` checks this with recording `systemctl` stubs.
+
 The robot runtime is a separate, versioned bundle that `roborun up` downloads into `~/roborun/robot/runtime`; it is not in
 this package. Motion comes from the hosted API: the runtime sends the camera view and the arms' state and plays back what
 comes back. Safety, Stop and the arm drivers are local and live here.
@@ -27,7 +46,7 @@ src/roborun_sdk/
   robot.py            roborun up / down / status / setup / profiles: installs the runtime, writes its config, starts the services
   guided.py           the guided first-run setup
   scaffold.py         roborun new: the starter project for integrations
-  client.py           roborun_sdk.client.Robot: the typed client for the local API (public; keeps its docstrings in the wheel)
+  client.py           roborun_sdk.client.Robot: the typed client for the local API (public)
   errors.py           RoborunError, the base of every error raised to programs; ArmLoadError
   devkit.py           roborun --version, roborun docs, roborun python
   embodiment.py       ArmAdapter (the driver interface), KinematicArm, run_station, `roborun station`
@@ -46,6 +65,7 @@ src/roborun_sdk/
   arm_profiles.py     arm profiles from the catalog models; any pair of arms
   profile_create.py   roborun profile create --urdf: a profile for your own arm
   mujoco_sim.py       roborun sim: the profile as a MuJoCo simulation behind the same station API
+  sim_home.py         where a simulation runs: its own runtime copy (<home>/sim), socket and port; refuses live ones
   body/               humanoid profiles (Booster K1, Galaxea R1): BaseAdapter / HeadAdapter, their simulation, the
                       body-job client, and the local robot API a humanoid profile runs on :8120
   local_proxy.py      the page connector on 127.0.0.1:8135
@@ -58,7 +78,9 @@ src/roborun_sdk/
 examples/             runnable examples for integrators (see examples/README.md)
 docs/BUILDING.md      the integrator guide; docs/HOSTED_API.md: what a developer may call on the hosted API
                       (README, docs/ and examples/ ship in every wheel as roborun_sdk/_docs: setup.py copies them in)
-tools/                arm_models/ (rebuilds data/arm_models from makers' models; needs the robot runtime)
+tools/                arm_models/ (rebuilds data/arm_models from makers' models; needs the robot runtime),
+                      stable_surface.py + stable_surface.json (the stable Python surface and the last release's snapshot)
+CHANGELOG.md          every release (ships in the wheel; `roborun docs changelog`)
 tests/                pytest suites; fakes for every motor bus (fake_*.py) and for the station owners; tests/data/*.segment.json:
                       signed sim segments (DEV keys) for the rt tests
 ```
@@ -72,7 +94,7 @@ Python 3.10 or newer. From this folder, in a virtual environment:
 
 ```sh
 python -m venv .venv && . .venv/bin/activate
-pip install -e ../roborun-station -e '.[test]'
+pip install -e ../roborun-station -e '.[robot,test]'      # [robot]: everything a robot runs, as install.sh installs it
 ```
 
 Or, without installing, put the source trees on the path: `PYTHONPATH=src:../roborun-station/src`.
@@ -98,20 +120,13 @@ hardware. Tests that need MuJoCo or the station package skip themselves when tho
 
 ## Run it from source
 
-**On a computer where a robot already runs under your user, a separate home is not enough.** `roborun up`, `down`,
-`setup` and `station` start and stop systemd user units with fixed names (`roborun-station`, `roborun-robot`,
-`roborun-cameras`, `roborun-local`, `roborun-sim`), whatever `HOME` says. A source run that reaches your systemd user
-manager stops that robot's units, and its station may park the arms first. Best: run from source on another computer
-(or a VM). If you must use this one, hide systemd from the run as well: no session bus, a private runtime folder, and
-`systemctl` / `systemd-run` stand-ins that print nothing and fail, so Roborun runs its parts as plain background processes
-(logs in `$HOME/.config/roborun/logs/`):
+Use a separate home and a network namespace. A run with its own `$HOME` is a second install (docs/BUILDING.md, "Two
+installs on one computer"): its services, sockets and files have their own names, so it never stops or changes a robot
+already set up on this computer, and the namespace keeps its ports its own:
 
 ```sh
 TOKEN=~/roborun-token; export PYTHONPATH=$PWD/src:$PWD/../roborun-station/src
 export HOME=$(mktemp -d) && export XDG_RUNTIME_DIR=$HOME/run && mkdir -m 700 $XDG_RUNTIME_DIR
-unset DBUS_SESSION_BUS_ADDRESS
-mkdir $HOME/bin && for t in systemctl systemd-run; do printf '#!/bin/sh\nexit 1\n' > $HOME/bin/$t; chmod +x $HOME/bin/$t; done
-export PATH=$HOME/bin:$PATH
 python -m roborun_sdk.cli up --robot my-sim --key-file $TOKEN --sim cup
 python -m roborun_sdk.cli status
 python -m roborun_sdk.cli down
@@ -137,6 +152,19 @@ The source keeps `version = "0.1.0"` in both pyproject.toml files; only release 
 has a build id `<UTC YYYYMMDD-HHMMSS>-<digest of the sources>` (`roborun --version`) and the PEP 440 version
 `0.1.<YYYYMMDDHHMMSS>` from the same time; `roborun-sdk` requires `roborun-station` of the same version. Build ids compare as
 strings and versions as numbers in the same order. `ROBORUN_VERSION=<version>` pins the installer to one release.
+
+The wheels keep every docstring (comments are removed): the interfaces a driver,
+camera or body implements are described there, and `help()` shows them to people building on Roborun.
+
+Every change a user can notice goes in CHANGELOG.md under `## Unreleased`. When a release is published, that heading
+becomes `## <version> (build <build id>)` and a new empty `## Unreleased` goes above it; then
+`python tools/stable_surface.py --update --release <version>` makes that release the snapshot. `tests/test_stable_surface.py`
+runs the check: a stable name (BUILDING.md's stable column: `roborun_sdk.client`, `RoborunError`, `StreamedArm`'s
+`__init__` and `*_hardware` methods, `open_arm`, how the rules `check()` and a camera class are called) that is removed or
+whose signature changes since the snapshot fails the suite until CHANGELOG.md names it exactly in backticks
+(`` `Robot.stop` `` or `` `Robot.stop()` ``, not `` `Robot.stop_task()` ``) in an entry under **Removed** or **Changed** in
+a section newer than the snapshot. A mention under **Added** or in prose does not count.
+`python tools/stable_surface.py --old OLD.whl --new NEW.whl` compares two releases.
 
 The series (`0.1`) is the major.minor of the source pyproject.toml. Raise it, in both packages together, only for an
 incompatible change to what docs/BUILDING.md lists as stable ("Versions and upgrades"); such a change comes as `/v2` beside

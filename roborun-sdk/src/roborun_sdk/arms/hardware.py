@@ -42,12 +42,13 @@ def config_from_args(a, old=None):
             raise SystemExit(f'--arm-options {path}: a JSON object, e.g. {{"limits": [[-3, 3], ...], "home": [...]}}')
         out[side] = dict(out[side], options=options)
     if a.camera:
+        from ..camera_card import overlay_cameras
         cams = dict(out.get('cameras') or {})
         for item in a.camera:
             role, sep, source = item.partition('=')
             if not sep or role not in ('top', 'left', 'right') or not source:
                 raise SystemExit(f'--camera {item!r}: use top=SOURCE, left=SOURCE or right=SOURCE')
-            cams[role] = source
+            cams = overlay_cameras(cams, role, source, say=lambda text: print(f'warning: {text}'))   # as before for id ROLE
         out['cameras'] = cams
     if not (out.get('left') or out.get('right')):
         raise SystemExit('name at least one arm: --left ARM@ADDRESS or --right ARM@ADDRESS')

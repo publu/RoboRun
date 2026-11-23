@@ -1,0 +1,28 @@
+# A body profile: what Roborun tells the motion service about your robot, and the limits it plays every move within.
+# Put it (and my_rover.xml) in ~/.config/roborun/bodies/ (python rover.py install does that); the file name is the profile id.
+# Checked when it is read: `roborun profiles` lists it, or says which field is wrong.
+label: My rover
+maker: me
+description: A diff-drive rover with one fixed camera on a mast.
+kind: wheeled              # wheeled (also: rover) or humanoid
+base: wheeled              # wheeled or legged
+arms: 0
+head_dof: 0                # 0: the camera is fixed (1: it pitches, 2: it pitches and turns)
+limits:
+  vx_m_s: [-0.2, 0.5]      # forward speed range, m/s (+x forward)
+  vy_m_s: [0, 0]           # sideways: none on a diff drive
+  vyaw_rad_s: [-1.0, 1.0]  # turning rate range, rad/s (+ counter-clockwise)
+camera:                    # the one camera every move is planned from
+  size_px: [640, 480]
+  hfov_deg: 90
+  eye_height_m: 0.35       # the camera's height above the floor
+  pitch_rad: 0.2           # tilted down this much (+ looks down)
+  lens: a 90 degree USB webcam
+footprint_m: 0.25          # the base's radius: the obstacle guard keeps this clear
+motion:                    # optional: how commands are shaped (these are the defaults, but a quicker turn)
+  accel_m_s2: [0.5, 0.5]
+  accel_yaw_rad_s2: 1.5
+sim:                       # optional: roborun up --profile my_rover --sim room
+  model: my_rover.xml      # an MJCF file next to this one: a base body with a free joint, and a camera
+  base_body: base_link
+  head_camera: head

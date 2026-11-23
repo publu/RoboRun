@@ -13,7 +13,9 @@ import math
 import struct
 import zlib
 
-import msgpack
+from .._optional import require
+
+msgpack = require('msgpack', 'link')
 
 # Constants shared with manifest_wire.state_binary (the two must produce identical bytes; tests cross-decode).
 STATE_TYPE = 3

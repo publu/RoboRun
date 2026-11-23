@@ -17,6 +17,9 @@ Sources (`roborun hw detect` prints the connected ones):
 A camera in robot.yaml is a source string, or:
   top: {source: SOURCE, width: 640, height: 480, fps: 30, rotate: 90,
         exposure: {managed: true, target_median: 110, limit_us: 20000, seed_us: 8000, smooth_idle: 0.15}}
+Cameras are named top, left and right, or any name of your own (lower-case letters, digits and _) with an optional
+card: {alias: top|left|right, label, mount: world|left.tool|right.tool, pose, depth, rectified, sees, device} saying where it
+is and which task camera it answers as. `roborun cameras describe` prints every camera's card (camera_card.py).
 
 A camera without depth is declared, not disguised. The wire format requires a depth array, so it carries zeros (the
 RealSense value for "no measurement"), together with depth_available=False and depth_scale_m=None. A number there would make
@@ -47,16 +50,18 @@ import urllib.parse
 import uuid
 from pathlib import Path
 
-import numpy as np
-
 from . import camera_capture_helper as helper
+from . import net
 from . import camera_privacy as privacy
+from ._optional import lazy
 from .camera_exposure import ExposureController
+
+np = lazy('numpy', 'cameras', globals())   # imported when a frame is first handled: the module itself loads without numpy
 
 ROLES = ('top', 'left', 'right')
 STREAM_SCHEMES = ('rtsp', 'rtsps', 'rtmp', 'http', 'https', 'udp', 'tcp', 'file')
 CUSTOM_SOURCE = re.compile(r'(.+\.py|[A-Za-z_][\w.]*):[A-Za-z_]\w*')
-CAMERA_KEYS = {'source', 'width', 'height', 'fps', 'rotate', 'exposure'}
+CAMERA_KEYS = {'source', 'width', 'height', 'fps', 'rotate', 'exposure', 'card'}    # card: camera_card.py, never a class's
 EXPOSURE_KEYS = {'managed', 'target_median', 'limit_us', 'seed_us', 'smooth_idle'}
 ROTATIONS = (0, 90, 180, 270)
 STREAM_OPEN_MS, STREAM_READ_MS = 10000, 5000
@@ -202,17 +207,26 @@ def camera_settings(role, entry):
 
 
 def camera_configs(hardware):
-    """{role: (kind, ident, settings, extra keys)}, checked before anything starts."""
+    """{role: (kind, ident, settings, extra keys)}, checked before anything starts. The role is the camera's alias (top, left,
+    right: the ids top/left/right are their own) or, for a camera of your own name with no alias, its id. settings['id'] is
+    the robot.yaml id and settings['card'] its checked card (camera_card.check_config)."""
+    from . import camera_card
     cameras = (hardware or {}).get('cameras') or {}
+    if not isinstance(cameras, dict):
+        raise ValueError('cameras must be a section: top, left, right or your own camera names')
+    cards, _ = camera_card.check_config(cameras)
     out, seen = {}, set()
-    for role, entry in cameras.items():
-        if role not in ROLES:
-            raise ValueError(f'unknown camera role {role!r}: use top, left or right')
-        settings, extra = camera_settings(role, entry)
+    for cid, entry in cameras.items():
+        settings, extra = camera_settings(cid, entry)
         kind, ident = parse_source(settings['source'])
         if kind != 'custom' and (kind, ident) in seen:         # your own class may serve several cameras, one instance per role
             raise ValueError('the same camera is assigned to two roles')
         seen.add((kind, ident))
+        role = cards[cid]['alias'] or cid
+        if role in out:
+            raise ValueError(f'camera {cid}: the name {role} is already a camera\'s name or alias')
+        if cid != role or (isinstance(entry, dict) and entry.get('card') is not None):     # an old entry's settings stay as they were
+            settings = dict(settings, id=cid, card=cards[cid])
         out[role] = (kind, ident, settings, extra)
     return out
 
@@ -679,7 +693,7 @@ def load_camera_class(ref):
     where, _, name = ref.rpartition(':')
     try:
         if where.endswith('.py'):
-            candidates = [Path(where).expanduser(), Path(os.environ.get('ROBORUN_HOME', Path.home() / '.config' / 'roborun')) / where]
+            candidates = [Path(where).expanduser(), net.roborun_home() / where]
             path = next((c for c in candidates if c.is_file()), None)
             if path is None:
                 raise ValueError(f'no camera file at {where}')
@@ -705,7 +719,8 @@ class CustomSource(Source):
     """Your own camera class. It is constructed with whichever of role, width, height, fps its __init__ names, plus every
     other key of the camera's section in robot.yaml.
 
-        open()   optional. May return {serial, intrinsics, depth_scale_m, warning}
+        open()   optional. May return {serial, intrinsics, depth_scale_m, warning, rectified}; rectified: true says the
+                 frames are already undistorted (a pinhole), as does intrinsics with distortion_model 'none'
         read()   an RGB uint8 image, or {rgb, depth_z16, acquired_at_s}, or None when no new frame is ready
         close()  optional
         set_exposure_us(us)  optional: enables exposure management
@@ -747,6 +762,8 @@ class CustomSource(Source):
         model = _rgb_only_model(str(info.get('serial') or self.ref), w, h, info.get('warning'))
         if info.get('intrinsics'):
             model['intrinsics'] = dict(info['intrinsics'], width=w, height=h)
+        if isinstance(info.get('rectified'), bool):
+            model['rectified'] = info['rectified']
         if 'depth_z16' in item:
             if not info.get('depth_scale_m'):
                 raise CameraError('failed', f'{self.ref} returns depth, so open() must return depth_scale_m')
@@ -900,6 +917,7 @@ class Broker:
                          acquired_at_s=at, depth_acquired_at_s=min(float(item['depth_acquired_at_s']), now) if has_depth else None,
                          sdk_received_monotonic_s=item.get('sdk_received_monotonic_s', now), received_monotonic_s=now,
                          received_at=time.time(), camera_session_id=self.session, role=role, source=model['source'],
+                         camera_id=(self.sources[role].settings or {}).get('id', role), rotate=rotate,
                          serial=model['serial'], intrinsics=model['intrinsics'], profiles=model['profiles'],
                          depth_available=has_depth, depth_scale_m=model['depth_scale_m'],
                          depth_aligned_to=model['depth_aligned_to'], reference_stream='color',
@@ -941,15 +959,20 @@ class Broker:
                                      exposure=self.exposure[role].status() if role in self.exposure else None)
             total = len(self.sources)
             state = 'streaming' if live == total else 'degraded' if live and errors else 'failed' if errors else 'warming'
+            # the task cameras (top, left, right) are what the runtime iterates; a camera of your own name with no alias is
+            # served under its name for viewing and recording, listed in extra_roles only
             result = dict(state=state, camera_session_id=self.session, motor_access=False, calibrated=False,
                           models={r: self.models[r] for r in self.models}, frame_age_s=ages, errors=errors, cameras=cameras,
-                          available_roles=list(self.sources), unavailable_roles=[r for r in ROLES if r not in self.sources],
-                          complete_observation=total == len(ROLES),
-                          roles_without_depth=[r for r, m in self.models.items() if not m['depth_available']])
+                          available_roles=[r for r in self.sources if r in ROLES],
+                          unavailable_roles=[r for r in ROLES if r not in self.sources],
+                          complete_observation=all(r in self.sources for r in ROLES),
+                          roles_without_depth=[r for r, m in self.models.items() if r in ROLES and not m['depth_available']],
+                          extra_roles=[r for r in self.sources if r not in ROLES])
         return result
 
     def frame(self, role, after):
-        if role not in ROLES or (after is not None and (isinstance(after, bool) or not isinstance(after, int) or after < 0)):
+        if not isinstance(role, str) or (role not in ROLES and role not in self.sources) or \
+                (after is not None and (isinstance(after, bool) or not isinstance(after, int) or after < 0)):
             raise ValueError('Invalid frame selector')
         if role not in self.sources:
             raise ValueError(f'No fresh acquired frame: no {role} camera is configured on this robot')
@@ -1234,7 +1257,80 @@ def cmd_check_roles(a):
     return 0 if answer['verdict'] == 'ok' else 1
 
 
+def _socket_path():
+    """Where the camera service listens, worked out without creating anything (robot.camera_socket makes its folder)."""
+    if os.environ.get('MANIFEST_CAMERA_SOCKET'):
+        return os.environ['MANIFEST_CAMERA_SOCKET']
+    from .robot import install_suffix
+    base = os.environ.get('XDG_RUNTIME_DIR') or f'/tmp/manifest-{os.getuid()}'
+    suffix = install_suffix()
+    return os.path.join(base, 'manifest', *(['roborun' + suffix] if suffix else []), 'camera.sock')
+
+
+def broker_status(path, timeout=2.):
+    """The camera service's status (its read-only `status` operation), or None when nothing answers."""
+    try:
+        with socket.socket(socket.AF_UNIX) as conn:
+            conn.settimeout(timeout); conn.connect(path); send(conn, json.dumps(dict(operation='status')).encode())
+            answer = json.loads(receive(conn, MAX_PACKET))
+        return answer if isinstance(answer, dict) and not answer.get('error') else None
+    except (OSError, ValueError, struct.error):
+        return None
+
+
+def _design_mount():
+    """The YAM's design wrist mount from the installed robot runtime, or None (no runtime here, or it cannot say)."""
+    try:
+        from .robot import CONFIG
+        root = Path(json.loads(Path(CONFIG).read_text()).get('manifest') or '') if Path(CONFIG).exists() else None
+        if not root or not (root / 'kin.py').exists():
+            return None
+        for p in (str(root), str(root / 'workspaces' / 'yam' / 'policies')):
+            if p not in sys.path:
+                sys.path.append(p)
+        import video_calibration
+        return [[float(v) for v in row] for row in video_calibration.mount()]
+    except Exception:
+        return None
+
+
+def cmd_describe(a):
+    """roborun cameras describe: every camera's card (the SDK's layer), as text or --json. Reads robot.yaml, the profile and
+    the camera service's status; opens no device, starts nothing, writes nothing."""
+    import yaml
+    from . import camera_card
+    from .arms import settings
+    path = Path(a.config).expanduser() if a.config else settings.path()
+    try:
+        data = (yaml.safe_load(path.read_text()) if path.exists() else None) or {}
+    except yaml.YAMLError as exc:
+        raise SystemExit(f'{path} is not valid: {exc}')
+    if not isinstance(data, dict):
+        raise SystemExit(f'{path}: expected settings like "cameras:" at the top level')
+    cams = data.get('cameras') or {}
+    arms = data.get('arms') if isinstance(data.get('arms'), dict) else {}
+    if arms.get('right') and not arms.get('left'):            # a single right arm runs in the left slot, its cameras with it
+        cams = settings.one_arm_on_the_left(dict(right=arms['right'], cameras=cams)).get('cameras') or {}
+    body = data.get('body') if isinstance(data.get('body'), dict) else {}
+    profile = a.profile or data.get('profile') or body.get('profile')
+    status = broker_status(a.socket or _socket_path())
+    try:
+        doc, warnings = camera_card.describe(cams, profile=profile, status=status, cad=_design_mount())
+    except ValueError as exc:
+        print(f'error: {exc}', file=sys.stderr)
+        return 1
+    if a.json:
+        print(json.dumps(doc, indent=1))
+        for w in warnings:
+            print(f'warning: {w}', file=sys.stderr)
+    else:
+        print(camera_card.describe_text(doc, warnings))
+    return 0
+
+
 def cmd_cameras(a):
+    if getattr(a, 'action', None) == 'describe':
+        return cmd_describe(a)                                # read-only: installs nothing, opens nothing
     from .arms.packages import ensure
     ensure('cameras', 'cameras')
     if a.list:
@@ -1242,7 +1338,7 @@ def cmd_cameras(a):
     if a.check_roles:
         return cmd_check_roles(a)
     if not (a.hardware and a.socket):
-        raise SystemExit('roborun cameras: use --list, --check-roles, or --hardware FILE --socket PATH')
+        raise SystemExit('roborun cameras: use describe, --list, --check-roles, or --hardware FILE --socket PATH')
     hardware = json.loads(Path(a.hardware).read_text())
     try:
         sources = build_sources(hardware, a.socket)
@@ -1279,6 +1375,11 @@ def cmd_cameras(a):
 def add_parser(sub):
     p = sub.add_parser('cameras', help='serve this robot\'s real cameras to Roborun; --list shows the connected ones',
                        description=__doc__, formatter_class=__import__('argparse').RawDescriptionHelpFormatter)
+    p.add_argument('action', nargs='?', choices=('describe',),
+                   help='describe: print every camera\'s card (where it is, what it delivers); nothing is opened or changed')
+    p.add_argument('--json', action='store_true', help='with describe: the cards as JSON (roborun.cameras/1)')
+    p.add_argument('--config', help='with describe: this robot.yaml instead of the one in ~/.config/roborun')
+    p.add_argument('--profile', help='with describe: this profile instead of robot.yaml\'s')
     p.add_argument('--list', action='store_true', help='print connected cameras and the SOURCE to use for each')
     p.add_argument('--check-roles', action='store_true', help='check, from arm motion, that the wrist cameras are on the right arms')
     p.add_argument('--seconds', type=float, default=30., help='how long --check-roles watches')

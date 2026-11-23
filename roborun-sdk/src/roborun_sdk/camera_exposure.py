@@ -6,7 +6,9 @@ brightness; while a task runs it holds still, so brightness does not drift under
 import math
 import time
 
-import numpy as np
+from ._optional import lazy
+
+np = lazy('numpy', 'cameras', globals())
 
 DEFAULTS = dict(target_median=110., limit_us=20000., seed_us=8000., smooth_idle=.15)
 PERIOD_S = .5          # a new exposure takes a few frames to show up in the image

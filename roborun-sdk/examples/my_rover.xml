@@ -1,0 +1,18 @@
+<!-- my_rover.yaml's simulation model: a box chassis on two wheels, and a camera on a mast 0.35 m above the floor.
+     The simulation moves the base body (it needs the free joint) by the velocity commands; nothing here is driven by physics. -->
+<mujoco model="my_rover">
+  <worldbody>
+    <body name="base_link" pos="0 0 0.08">
+      <freejoint name="root"/>
+      <geom name="chassis" type="box" size="0.2 0.15 0.05" pos="0 0 0.03" rgba="0.25 0.45 0.7 1"/>
+      <geom name="wheel_left" type="cylinder" size="0.08 0.02" pos="0 0.17 0" euler="90 0 0" rgba="0.1 0.1 0.1 1"/>
+      <geom name="wheel_right" type="cylinder" size="0.08 0.02" pos="0 -0.17 0" euler="90 0 0" rgba="0.1 0.1 0.1 1"/>
+      <geom name="caster" type="sphere" size="0.03" pos="-0.16 0 -0.05" rgba="0.1 0.1 0.1 1"/>
+      <body name="mast" pos="0.15 0 0.08">
+        <geom type="box" size="0.02 0.02 0.1" pos="0 0 0.09" rgba="0.8 0.8 0.8 1"/>
+        <!-- 0.08 + 0.08 + 0.19 = 0.35 m: camera.eye_height_m. Looks along +x, tilted 0.2 rad down -->
+        <camera name="head" pos="0.03 0 0.19" xyaxes="0 -1 0 0.199 0 0.980"/>
+      </body>
+    </body>
+  </worldbody>
+</mujoco>

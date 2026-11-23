@@ -10,7 +10,11 @@ head's pitch and yaw, and the head camera's frame with its intrinsics). Write yo
     head.state()                  {pitch, yaw}
     head.frame()                  {jpeg: bytes, width, height, intrinsics: {width, height, fx, fy, ppx, ppy},
                                    T_base_camera (4x4, OpenCV camera axes in the floor-level base frame) or None,
-                                   eye_height_m, pitch, yaw}
+                                   eye_height_m, pitch, yaw}. Only jpeg is required: what is left out comes from the
+                                   body's profile (camera.hfov_deg, eye_height_m, pitch_rad; yaw 0)
+
+Run your own with `roborun up --profile <your profile> --body my_body.py:MyBody` (body/custom.py says what the class may be;
+your profile goes in <ROBORUN_HOME>/bodies, body/profiles.py).
 
 A real Booster K1 or Galaxea R1 is reached through a small agent running on the robot (HTTP, with its own key, deadman and
 caps): AgentBody(profile, url, key) gives its base and head. The agent's routes are in the profile (data/bodies/<id>.json).

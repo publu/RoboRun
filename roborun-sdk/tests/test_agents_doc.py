@@ -143,7 +143,9 @@ def test_the_client_methods_it_lists_exist():
     listed = re.search(r'Methods: (.+?)\n\n', AGENTS.split('## 6.')[1], re.S).group(1)
     for name in re.findall(r'`([a-z_]+)\(', listed):
         assert callable(getattr(Robot, name, None)), name
-    public = {n for n in dir(Robot) if not n.startswith('_') and callable(getattr(Robot, n))}
+    removed = {'clip'}                                       # a stub that only raises RobotError code 'removed': not offered
+    assert 'clip' not in re.findall(r'`([a-z_]+)\(', listed)
+    public = {n for n in dir(Robot) if not n.startswith('_') and callable(getattr(Robot, n))} - removed
     assert public <= set(re.findall(r'`([a-z_]+)\(', listed)), public - set(re.findall(r'`([a-z_]+)\(', listed))
 
 

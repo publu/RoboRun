@@ -394,8 +394,12 @@ def test_the_example_links_resolve():
 
 def test_users_get_positions_only():
     from roborun_sdk import client
-    assert not hasattr(Robot, 'clip') and 'clip_url' not in client.Task.__annotations__
-    for name, text in (('README', README), ('BUILDING', BUILDING), ('HOSTED_API', HOSTED), ('examples', (EXAMPLES / 'README.md').read_text())):
+    assert 'clip_url' not in client.Task.__annotations__
+    with pytest.raises(RobotError) as removed:                     # Robot.clip() is only a stub saying it was removed
+        Robot('http://127.0.0.1:9').clip('t')
+    assert removed.value.code == 'removed' and not re.search(r'/clip\b|clip_url', (SDK / 'src' / 'roborun_sdk' / 'client.py').read_text())
+    for name, text in (('README', README), ('BUILDING', BUILDING), ('HOSTED_API', HOSTED), ('examples', (EXAMPLES / 'README.md').read_text()),
+                       ('CHANGELOG', (SDK / 'CHANGELOG.md').read_text())):
         assert not re.search(r'/clip\b|clip_url|\.mp4', text), name
     for path in sorted(EXAMPLES.glob('*.py')):
         assert not re.search(r'/clip\b|clip_url|\.clip\(|\.mp4', path.read_text()), path.name

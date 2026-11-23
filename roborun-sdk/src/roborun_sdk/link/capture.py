@@ -15,7 +15,9 @@ import io
 import uuid
 from dataclasses import dataclass
 
-import numpy as np
+from .._optional import require
+
+np = require('numpy', 'link')
 
 
 class CaptureRefused(RuntimeError):

@@ -31,6 +31,7 @@ import numpy as np
 
 from . import canbus
 from . import safety
+from .. import net
 from .base import ArmHardwareError, StreamedArm
 
 THIRD_PARTY = Path(__file__).resolve().parents[1] / 'third_party'
@@ -161,7 +162,7 @@ FADE_WATCH_STEPS = 10
 
 
 def _state_dir() -> Path:
-    return Path(os.environ.get('ROBORUN_HOME', Path.home() / '.config' / 'roborun')) / 'arms'
+    return net.roborun_home() / 'arms'
 
 
 def _profile_home(side):

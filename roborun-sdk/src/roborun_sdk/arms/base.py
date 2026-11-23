@@ -148,6 +148,12 @@ def _say(event, **fields):
 
 
 class StreamedArm(ArmAdapter):
+    """The stable driver base: subclass it, set `home` and `limits` (rad, one per arm joint) and implement open_hardware(),
+    read_hardware(), write_hardware() and limp_hardware() (open_dry() for dry_run). Roborun runs a 100 Hz stream around them
+    that limits speed, acceleration and jerk, brakes on Stop, holds when commands stop arriving, runs the thermal, stall and
+    jaw guards and the rules file. The class attributes below are the tunables; robot.yaml's arm section overrides them, and
+    keys Roborun does not know are in self.options (name them in EXTRA_SETTINGS to keep them out of the unused-settings note).
+    Angles are radians, gripper 0 (closed) .. 1 (open)."""
     rate_hz = 100.0
     joint_speed_rad_s = 0.6
     joint_accel_rad_s2 = 2.0
@@ -260,6 +266,8 @@ class StreamedArm(ArmAdapter):
         raise NotImplementedError
 
     def write_hardware(self, positions_rad, gripper):
+        """Send one target (radians per arm joint; gripper 0 closed .. 1 open), at rate_hz. It is already limited and
+        shaped: send it as is. Raise on a bus failure and Roborun stops the arm."""
         raise NotImplementedError
 
     def limp_hardware(self):
@@ -267,6 +275,7 @@ class StreamedArm(ArmAdapter):
         raise NotImplementedError
 
     def close_hardware(self):
+        """Optional: release the bus. Called after the stream has stopped: when the arm closes, and before a reopen."""
         pass
 
     def motors_off_hardware(self) -> str | None:

@@ -9,6 +9,7 @@ each extension point; `roborun new my-robot` writes a starter project with a dri
 | `folder_camera.py` | Your own camera: a class whose `read()` returns RGB images | `python folder_camera.py FOLDER_OF_IMAGES` |
 | `keep_out_box.py` | A rules file: the gripper stays out of a box on the table | `python keep_out_box.py` |
 | `robot_client.py` | A command line on `roborun_sdk.client.Robot`: tasks, live stream, Stop, a camera frame | `roborun python robot_client.py status` (needs `roborun up`) |
+| `rover.py` (+ `my_rover.yaml`, `my_rover.xml`) | Your own robot body: a diff-drive rover with a fixed camera, its profile and its simulation model | `roborun python rover.py` (offline), `--mujoco` (simulated), `install` (then `roborun up --profile my_rover --sim room`) |
 | `llm_tools.py` | The robot as an LLM's tools: specs (JSON Schema) and `call_tool()` for look, run a task, arm state, Stop | `roborun python llm_tools.py tools` |
 
 Run them with `roborun python FILE`: Roborun's own Python, where `roborun_sdk` is installed. `roborun docs --examples DIR`

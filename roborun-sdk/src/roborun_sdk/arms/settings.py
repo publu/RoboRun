@@ -69,6 +69,11 @@ TEMPLATE = """\
 #   gripper_open_margin: 0.003
 #   powered_at_connect: hold # or refuse
 
+# body: my_rover.py:MyRover  # your own mobile base or humanoid: its class (BaseAdapter + HeadAdapter) and, with profile:,
+#                           # its profile in ~/.config/roborun/bodies/<profile>.yaml. Or a section: adapter:, profile:, and
+#                           # anything else for the class's constructor. Used for that profile only (--profile of
+#                           # another body or of arms leaves it out). See BUILDING.md, "Your own robot body"
+
 # privacy:                 # faces are blurred on every image that leaves this computer; false sends frames as they are
 #                          # to the motion service and keeps history images here
 #   face_blur: true
@@ -83,7 +88,7 @@ TEMPLATE = """\
 #           return False                               # refuse: the arm holds where it is
 #       return positions_rad, gripper                  # or return changed values; None also means "fine"
 """
-KNOWN = {'robot', 'profile', 'token_file', 'arms', 'cameras', 'motion', 'privacy', 'rules', 'dry_run', 'sim'}
+KNOWN = {'robot', 'profile', 'token_file', 'arms', 'cameras', 'motion', 'privacy', 'rules', 'dry_run', 'sim', 'body'}
 
 
 def path() -> Path:
@@ -277,6 +282,11 @@ def one_arm_on_the_left(hardware):
         cams = hardware.get('cameras')
         if isinstance(cams, dict) and cams.get('right') and not cams.get('left'):   # its wrist camera goes with it
             cams = dict(cams); cams['left'] = cams.pop('right'); hardware['cameras'] = cams
+        if isinstance(cams, dict):                        # and so does every card written for the right gripper
+            from ..camera_card import move_right_to_left
+            kept = {k: v for k, v in cams.items() if k == 'right'}     # a right camera that stayed keeps its own card
+            moved = move_right_to_left({k: v for k, v in cams.items() if k != 'right'})
+            hardware['cameras'] = {k: kept[k] if k in kept else moved[k] for k in cams}
     return hardware
 
 
@@ -287,23 +297,57 @@ def scene_of(value):
 def _wants_setup(a, s):
     """Nothing says what to run: no arms in robot.yaml, no flags, no simulation asked for, and no earlier setup."""
     from .. import robot
-    if to_hardware(s) or a.left or a.right or a.sim or a.rig or a.profile or a.camera or getattr(a, 'arm_options', None):
+    if to_hardware(s) or a.left or a.right or a.sim or a.rig or a.profile or a.camera or getattr(a, 'arm_options', None) \
+            or getattr(a, 'body', None) or getattr(a, 'body_file', None):
         return False
     return not robot.CONFIG.exists()
 
 
+def body_setting(s):
+    """robot.yaml's body: (your own body class) as up() takes it: {adapter, base_dir, profile?, options...}, or None."""
+    value = s.get('body')
+    if not value:
+        return None
+    if isinstance(value, str):
+        value = dict(adapter=value)
+    if not isinstance(value, dict) or not value.get('adapter'):
+        raise SystemExit(f'{path().name}: body is your body class (body: my_body.py:MyBody), or a section with "adapter:"')
+    out = dict(value, base_dir=str(path().parent))
+    if not out.get('profile') and s.get('profile'):
+        out['top_profile'] = str(s['profile'])   # robot.yaml's profile: names the body's profile when neither it nor the class does
+    return out
+
+
+def arms_named(a):
+    """True when the command line names arms: --rig, --left, --right, or --sim with an arm scene (cup, ...; not a body's room or
+    empty). robot.yaml's `sim:` does not count: it says how this robot runs, not what to run now."""
+    from ..body.profiles import SCENES
+    sim = getattr(a, 'sim', None)
+    return bool(getattr(a, 'rig', None) or getattr(a, 'left', None) or getattr(a, 'right', None)
+                or (sim and sim not in SCENES and not getattr(a, 'sim_from_file', False)))
+
+
 def _apply_file(a, s):
+    """robot.yaml's settings where no flag gives them. Its body: goes on a.body_file, not a.body, and its section's profile is not
+    put on a.profile here: it is the body class of its own profile only, and body.up.from_file() decides whether this `roborun up`
+    runs it (--profile of another body, or arms named: no). With arms named on the command line, a body profile in robot.yaml's
+    profile: is left out as well, so --rig, --left/--right and --sim cup run arms."""
     from ..arm_profiles import user_profile
+    from ..body.profiles import is_body
+    a.body_file = body_setting(s)
     if not a.profile and s.get('profile'):
-        a.profile = user_profile(str(s['profile']))
+        name = user_profile(str(s['profile']))
+        if not (arms_named(a) and is_body(name)):
+            a.profile = name
     if s.get('sim') and not a.sim and not getattr(a, 'no_sim', False):
         a.sim = scene_of(s['sim'])
+        a.sim_from_file = True
     return s
 
 
 def setup_if_needed(a):
     """The guided setup, when nothing says what to run. It comes before every check `roborun up` makes."""
-    for name in ('profile', 'rig', 'robot', 'key_file', 'sim', 'left', 'right', 'camera'):
+    for name in ('profile', 'rig', 'robot', 'key_file', 'sim', 'left', 'right', 'camera', 'body', 'body_file'):
         if not hasattr(a, name):
             setattr(a, name, None)
     s = _apply_file(a, load())
@@ -330,7 +374,7 @@ def first_run(a):
     else:
         _ask_token(key, _token_server(a))
     a.key_file = str(key)
-    if a.profile or a.rig:
+    if a.profile or a.rig or getattr(a, 'body', None) or (getattr(a, 'body_file', None) and not arms_named(a)):
         return
     hardware = to_hardware(s)
     if hardware:

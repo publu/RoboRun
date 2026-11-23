@@ -46,6 +46,7 @@ the drivers, the speed and jerk limits, the guards, your rules, and Stop.
 | Use any image source | [Your own camera](#your-own-camera) | `cameras: top: source: /path/my_cam.py:MyCamera` |
 | Keep-out zones, extra limits, interlocks | [Rules](#rules) | `rules: /path/my_rules.py` |
 | Plan for your arm's shape | [Arm profile from a URDF](#arm-profile-from-a-urdf) | `roborun profiles create --urdf ...` |
+| Run your own mobile base or humanoid | [Your own robot body](#your-own-robot-body) | `~/.config/roborun/bodies/my_rover.yaml` + `roborun up --body /path/my_rover.py:MyRover` |
 | Run tasks from an app, a script or an agent | [The local API](#the-local-api) | `http://127.0.0.1:8120/v1/...` |
 | Do it from Python | [The Python client](#the-python-client) | `from roborun_sdk.client import Robot` |
 | Give the robot to an LLM | [An LLM's tools](#an-llms-tools) | `examples/llm_tools.py` |
@@ -67,7 +68,7 @@ udev and `dialout` steps `roborun setup` shows.
 | --- | --- | --- |
 | Check | `roborun --version` | `roborun-sdk 0.1.<time> (build <id>)`, the robot runtime, Python |
 | Upgrade | `roborun upgrade` | `already on the newest Roborun (...)`, or `upgraded (<build>)` and a restart (never while a task runs) |
-| Remove | `roborun uninstall` | It stops Roborun (no arm is dropped) and removes `~/.roborun`, the `roborun` command and the PATH line the installer added. It asks before deleting your settings, key and recordings (`~/.config/roborun`, `~/roborun`): `--purge` deletes them, `--keep-data` keeps them, `--yes` does not ask |
+| Remove | `roborun uninstall` | It stops Roborun (no arm is dropped) and removes `~/.roborun`, the `roborun` command and the PATH line the installer added. It asks before deleting your settings, key, recordings and datasets (`~/.config/roborun`, `~/roborun`, with `~/roborun/datasets`): `--purge` deletes them, `--keep-data` keeps them, `--yes` does not ask. In a second install (`ROBORUN_HOME` set, or another `$HOME`) it removes only that install ([Two installs on one computer](#two-installs-on-one-computer)) |
 
 If the installer says no release is published yet, a build id you were given installs with `ROBORUN_BUILD=ID`; a release
 installs with `ROBORUN_VERSION=<version>` ([Versions and upgrades](#versions-and-upgrades)).
@@ -118,8 +119,87 @@ switches them off where they are while you support the arm.
   session); otherwise it prints the one admin command, `sudo loginctl enable-linger $USER`. `roborun status` says
   `after logout: keeps running` or `stops`. `ROBORUN_NO_LINGER=1` leaves it alone.
 - Logs: `journalctl --user -u roborun-robot` (and `roborun-sim`, `roborun-station`, `roborun-local`, `roborun-cameras`);
-  without systemd, in `~/.config/roborun/logs/`.
-- `port 8120 ... in use by another program`: stop that program (`lsof -i :8120`), then `roborun up` again.
+  without systemd, in `~/.config/roborun/logs/`. A second install has its own names; see below.
+- `port 8120 ... in use by another program`: stop that program (`lsof -i :8120`), then `roborun up` again. Roborun never
+  stops a program it did not start to free a port.
+
+### Two installs on one computer
+
+Each Roborun home is one install: its settings, key, logs, services and camera socket. The default home is
+`~/.config/roborun`. Set `ROBORUN_HOME` to another folder for a second install on the same computer account (a test robot
+next to the real one, or a sandbox). Every `roborun` command run with that variable acts on that install only:
+
+- **Services.** The default home's services keep their names: `roborun-robot`, `roborun-local`, `roborun-station`,
+  `roborun-cameras` and `roborun-sim`. Any other home adds a short code made from its folder, for example
+  `roborun-robot-1a2b3c4d`. `roborun status` shows the home and its service names
+  (`journalctl --user -u roborun-robot-1a2b3c4d`). `up`, `down`, `status` and `uninstall` only start, stop or check that
+  home's services. A changed `$HOME` on the same account also counts as another home, because systemd belongs to the account,
+  not to `$HOME`.
+- **Files.** Pid files and logs are in `<home>/run` and `<home>/logs`, the station's control files in `<home>/robot`.
+  The camera socket is
+  `$XDG_RUNTIME_DIR/manifest/camera.sock` for the default home and `$XDG_RUNTIME_DIR/manifest/roborun-<code>/camera.sock`
+  for any other. A home set with `ROBORUN_HOME` (to a folder other than `$HOME/.config/roborun`) also keeps its runtime,
+  recordings and datasets in `<home>/roborun/` instead of `~/roborun/`. A sandbox that changes only `$HOME` keeps them in
+  its own `$HOME/roborun/`.
+- **Ports.** Ports are shared by the whole computer. When a port the second install needs is taken, `roborun up` stops,
+  names the port and says what to change. It never stops the other install. Give the second install its own ports
+  with `roborun up` flags. They are saved in `<home>/robot.json`, so the next `roborun up` uses them too:
+  - `--backend http://127.0.0.1:8220` for the local API (8120 by default).
+  - `--live-port 8235` for the page connection and viewer (8135 by default). Use `0` to turn them off. The
+    app.roborun.app page only connects to 8135, so only one install at a time can use the page.
+  - The arms' station (real or simulated) always uses 8091, so only one install at a time can run arms. A humanoid
+    profile doesn't use 8091. `roborun sim` alone uses 8191 (`--port` for another).
+  - A simulation runs from the install's own copy of the runtime, `<home>/sim/`, even when `--runtime` names
+    another install's runtime.
+- **`roborun uninstall`** in a second install (`ROBORUN_HOME` set, or only `$HOME` changed: the same rule as the service
+  names) stops that install, removes its home (when asked or with `--purge`) and, if it runs from its own folder, that
+  folder. It never removes the account's `~/.roborun`, `roborun` command, PATH line, `~/roborun`, `~/.config/roborun` or
+  the after-logout setting of the default install, also when you run it with the usual `roborun` command (which runs from
+  `~/.roborun`). Here `~` is the account's own folder, whatever `$HOME` says. A home that holds the default install (for
+  example `ROBORUN_HOME=~`) is left alone. It only removes an install folder that is inside its own home: a sandbox with
+  its own `$HOME` (and `ROBORUN_HOME` unset, or `$HOME/.config/roborun`) that installed Roborun there with the installer
+  removes its own `$HOME/.roborun`, command and PATH line. With `ROBORUN_HOME` naming another folder, the `$HOME/.roborun`,
+  command, PATH line, `~/roborun` and `~/.config/roborun` of that `$HOME` belong to `$HOME`'s own install and are left
+  alone too. Everything left alone is listed as `left alone: ...`.
+- **`roborun upgrade`** with `ROBORUN_HOME` naming another folder stops without changing anything: the installer always
+  installs into `$HOME/.roborun`, which is the software the default install's (or the sandbox's own) robot runs from. Run
+  `roborun upgrade` without `ROBORUN_HOME` (it upgrades both and restarts that robot), then `roborun up` for the second
+  install. A sandbox that changes only `$HOME` upgrades its own `$HOME/.roborun`, unless that folder, its
+  `.local/bin/roborun` or a shell startup file is a symlink into the account's install (then it stops, as below).
+- **Folders that lead back to the default install.** Before `up`, `setup`, `down`, `upgrade`, `uninstall` or `login` of a
+  second install writes or deletes anything, it follows every symlink in the paths it would touch: its settings
+  (`robot.json`), its station's control files (`<home>/robot/`: `down` asks the station named there to let go of its arms
+  and signals its pid), pid files and logs, its runtime and data folder (also one named with `--runtime` or in
+  `robot.json`), for `upgrade` the installer's `$HOME/.roborun`, `$HOME/.local/bin/roborun` and shell startup
+  files, and for `login` the key file. If any of them leads into the account's default install (`~/.roborun`, the `roborun`
+  command, `~/.config/roborun`, `~/roborun` or the PATH line's startup file), or holds it, the command stops with
+  `roborun <command> stopped: ... Nothing was changed`, before it stops, asks or signals anything. This covers a sandbox
+  whose `.roborun`, `roborun`, `.bashrc`, `.config` or `.config/roborun` is a symlink to the account's, a second home whose
+  `robot`, `run` or `token` is, and a `ROBORUN_HOME` inside the default install (for example `~/.config/roborun/test`,
+  `~/.roborun/x` or `~/roborun`). Give the second install folders of its own. A `ROBORUN_HOME` that holds the default
+  install (`~`, `/home`) is not refused by `uninstall`, which leaves that home alone (see above).
+- **What counts as the default install.** Only the account's own `~/.config/roborun`, reached the way the account reaches
+  it: from the account's own `$HOME` (also a `$HOME` that is a symlink to the account's folder, and also when the account's
+  `.config` is a symlink, as with dotfiles), or with `ROBORUN_HOME` set to that exact path (`/home/<you>/.config/roborun`)
+  from any `$HOME`. That is the default install itself: it uses the plain service names, and `up`, `down`, `upgrade` and
+  `uninstall` act on the running robot as usual. A sandbox with its own `$HOME` whose `.config` or `.config/roborun` is a
+  symlink to the account's (or a `ROBORUN_HOME` that is a symlink to it) is a second install that borrows the default
+  install's files, so every command above stops there. An empty `ROBORUN_HOME=` counts as unset, and a relative
+  `ROBORUN_HOME` (or one with a quoted `~`) is made absolute from the folder you run `roborun` in: the services get that
+  absolute folder, never a path they would resolve against the account's home.
+- The default home is decided by the account's own folder (the password database), not `$HOME`. On a computer where
+  `$HOME` is not the account's folder, the install there counts as a second one and gets suffixed names. If such an
+  install was already running before this version, its services still have the plain names after the upgrade: stop them
+  once with `systemctl --user stop roborun-robot roborun-local roborun-station roborun-cameras roborun-sim`, then
+  `roborun up`. Do this only on that computer. Never run it from a sandbox on a computer whose default install is
+  running: those are the running robot's services, and stopping the station may park the arms.
+
+```
+ROBORUN_HOME=~/roborun-test roborun up --profile booster_k1 --sim room --robot test --key-file ~/k \
+    --backend http://127.0.0.1:8220 --live-port 8235
+ROBORUN_HOME=~/roborun-test roborun status
+ROBORUN_HOME=~/roborun-test roborun down
+```
 
 ## Your arms: setup and hardware checks
 
@@ -192,6 +272,30 @@ A profile is the arm shape Manifest plans for. `roborun profiles` lists them (`*
 `mixed-objects` (a pack, a bottle, a mug and a hammer), `cluttered-bench` (two boxes among smaller objects) and `low-light`
 (the pickup bench, dimly lit). Humanoid scenes: `room`, `empty`. `sim: cup` in `robot.yaml` does the same; the simulator
 never starts on its own, and `roborun up --no-sim` goes back to your arms.
+
+A simulation never runs in your live robot. It runs from its own copy of the robot runtime in `<Roborun home>/sim/`
+(made on the first simulation without the runtime's `log/`, and refreshed when the runtime changes). The copy has its
+own `log/` and `config.json` (it takes the runtime's `config.json` again only when that one changes), so the simulated
+calibration, motion sessions and the simulated profile never reach the runtime your real arms use. `roborun up --sim`
+runs the robot's backend and the simulation from that copy. The simulation is then the robot, so it uses the robot's
+station port (8091) and camera socket. `roborun up --sim` refuses, and changes nothing, while your live robot's station
+or camera service runs or a camera service serves that socket. Run `roborun down` first. Before it starts the
+simulation it removes the install's own camera socket if nothing serves it (a left-over of a stopped camera service; the
+camera service does the same when it starts). Going back with `roborun up --no-sim` (or `--left ...`) runs the runtime
+and profile your arms had.
+
+A humanoid simulation (`roborun up --profile booster_k1 --sim room`) follows the same rule. It refuses, and changes
+nothing, while this install's arms station or camera service runs, or its robot service runs a real robot. Run
+`roborun down` first: it parks or holds the arms, which stopping them from here would not.
+
+`roborun sim` alone (a developer command: the simulated station and cameras without the robot's backend) runs from the
+same copy on a port and socket of its own: the station on `127.0.0.1:8191` and the cameras on `sim-camera.sock` beside
+the robot's camera socket. It asks no backend for motions unless you give one with `--predict URL`. `--port` and
+`--camera-socket` change them. It refuses a port or socket that something already serves, and never removes a socket
+that a Roborun simulation did not make. It never takes the robot's port 8091 or a robot's `camera.sock` (this install's
+or another's), even while they are free: the live robot may only be between restarts. To simulate as the robot, run
+`roborun down`, then `roborun up --sim <scene>`. `--runtime FOLDER` simulates another runtime (a checkout, another
+install's): it runs from its own copy of that folder in `<Roborun home>/sim/runtimes/`, and the folder is only read.
 
 ## Privacy and your data
 
@@ -333,6 +437,9 @@ class MyArm(StreamedArm):
 (0 free .. 1 at its force limit). With `gripper_effort`, Roborun can tell a jaw that closed on an object from an empty one.
 Optional methods: `close_hardware()`, `survey()` (the read-only check behind `roborun hw check`), `thermal_motors()`,
 `motors_off_hardware()` with `rest_pose`. Settings from `robot.yaml` that Roborun does not know are in `self.options`.
+The docstrings of these classes and methods ship in the wheel:
+`roborun python -c "from roborun_sdk.arms.base import StreamedArm; help(StreamedArm)"` (likewise `ArmAdapter` in
+`roborun_sdk.embodiment`, `CustomSource` in `roborun_sdk.cameras`, `BaseAdapter` and `HeadAdapter` in `roborun_sdk.body`).
 
 **A plain `ArmAdapter` (the low-level path).** The smallest driver: `read()` and `command()`. The station sends a smooth, step-limited target
 at 30 Hz, and Stop holds the last measured position. There is no 100 Hz shaping, no guards and no rules file. See
@@ -391,7 +498,7 @@ cameras:
 ```python
 class FolderCamera:
     def __init__(self, folder, role='top', fps=10): ...     # gets whichever of role, width, height, fps it names
-    def open(self): return dict(serial='folder:frames')     # optional: serial, intrinsics, depth_scale_m
+    def open(self): return dict(serial='folder:frames')     # optional: serial, intrinsics, depth_scale_m, rectified
     def read(self): ...                                     # RGB image, or {rgb, depth_z16}, or None
 ```
 
@@ -407,6 +514,73 @@ frame 1 (480, 640, 3) uint8
 frame 2 (480, 640, 3) uint8
 frame 3 (480, 640, 3) uint8
 ```
+
+## Describe your cameras
+
+Every camera has a card: where it is fixed, what image it delivers and which task camera it answers as. Wrist cameras and
+cameras of any other kind are described the same way. `robot.yaml` names cameras `top`, `left` and `right` as before, and
+you can also give a camera a name of your own (lower-case letters, digits and `_`). An optional `card:` section adds the
+facts:
+
+```yaml
+cameras:
+  top: realsense:SERIAL               # top, left and right are their own task camera, as always
+  left:
+    source: usb:ID
+    rotate: 180                       # mounted upside down
+    card: {depth: false}              # a statement: the camera's frames decide, a mismatch is a warning
+  door:                               # a name of your own: viewed and recorded, not a task camera
+    source: rtsp://HOST/live
+    card: {label: Door camera, sees: [table]}
+  stereo:                             # or a camera of your own name that answers as one of them
+    source: ~/my-robot/stereo.py:StereoHead
+    card: {alias: right, mount: right.tool, rectified: true}
+```
+
+| Card key | What it says |
+| --- | --- |
+| `alias` | `top`, `left` or `right`: the task camera this one answers as (names of your own only; each alias once) |
+| `mount` | `world` (fixed to the table), `left.tool` or `right.tool` (rides that gripper). Default: from the alias |
+| `label`, `device` | text for people |
+| `depth` | `true` or `false`: what you expect. The frames decide; in `roborun sim` this decides |
+| `rectified` | `true` when the source already serves undistorted (pinhole) frames |
+| `pose` | your measured `T_parent_camera` (4x4). Reported only: the robot plans from its own calibration |
+| `sees` | up to 8 short names, such as `table` or `left.gripper` |
+
+A wrist camera plans only its own arm: `left.tool` can only be the `left` camera. A camera on the table can only be
+`top`. Any other key in `card:` is refused, as are names like `overhead`, and every mistake is named in plain words
+before anything starts. The `card` key never reaches your camera class. Every other key of the section still goes to
+its `__init__`, exactly as before.
+
+```sh
+roborun cameras describe          # one line per camera; reads robot.yaml, the profile and the camera service
+roborun cameras describe --json   # the cards: {"schema": "roborun.cameras/1", "profile", "table_frame", "cameras": [...]}
+```
+
+`describe` opens no camera, starts nothing and writes nothing, and it exits 1 on an invalid entry. A card follows
+OpenCV's camera axes (x right, y down, z forward). Its pose is `T_parent_camera` in metres: the parent is the table frame
+the planner uses for `world`, or that arm's grasp site for `<arm>.tool`. Its intrinsics are in pixels of the image as
+delivered, after `rotate`. A pose, a pinhole or a calibration this computer cannot know is `null`. A pose taken from the
+profile is marked `preview`, because the robot decides the pose it plans from. Calibration and planning (`calibration`,
+`planning`) come from the robot, never from your file. Defaults are strict:
+
+- A YAM wrist camera uses the YAM's design mount until it is calibrated. Every other arm's wrist camera (OpenArm, Metal,
+  your own) has no pose until its calibration exists, so motion is not planned from it.
+- A design or nominal pose is for the camera unrotated. A camera served with `rotate` gets no pose until it is calibrated
+  as it is delivered.
+- A camera that gives no depth says so (`depth.available: false`). Its frames carry zeros and no depth scale.
+
+What leaves the robot for a wrist-camera task is camera facts only: its name, the pinhole intrinsics of the frame, its
+pose at the exposure (`T_table_camera`, worked out on the robot), its mount on the gripper (`T_tool_camera`) and the
+table height. Joints, serial numbers and paths never leave. Only a rectified frame goes: a frame whose intrinsics still
+carry lens distortion is refused, even when its K equals the camera's pinhole.
+
+In `roborun sim` (and `roborun up --sim`) the simulation draws the profile's cameras and a wrist camera on every arm,
+with the size and `depth` of your `robot.yaml` cameras of the same alias that have a `card:` section. A camera entry
+without a card leaves the simulation as it was, so a size written for your real camera does not change it. A
+`depth: false` camera serves no depth, exactly like a real webcam. While the
+simulation runs, `describe` shows the pose and intrinsics each camera is drawn with. Humanoids describe their head camera
+from the body profile (`roborun cameras describe --profile booster_k1`).
 
 ## Rules
 
@@ -620,7 +794,8 @@ Every method: `status()`, `health()`, `state()`, `frame(camera, blur=True)`, `st
 `tasks(limit)`, `live(id)` (an iterator of task views), `wait(id, timeout, on_update)`, `run(prompt, mode, arm, timeout,
 on_update)`, `stop_task(id)`, `recording(id)`, `body_move(prompt, duration_s)`, `body_move_status(id)`,
 `body_run(prompt, duration_s, timeout, on_update)` (a humanoid move, waited for), `stop()`, `stop_status()`, and
-`call(method, path, body)` for any other `/v1` route.
+`call(method, path, body)` for any other `/v1` route. `clip(id)` is left only to say it was removed: it raises `RobotError`
+code `removed` (`roborun docs changelog`). `help(Robot)` shows each method's docstring.
 
 [examples/robot_client.py](../examples/robot_client.py) is a small command line on top of it:
 
@@ -714,6 +889,31 @@ pip install --find-links https://roborun.app/dl/simple/ "roborun-sdk==0.1.202611
 pip install --find-links https://roborun.app/dl/20261119-172831-3f9c1e02ab/ "roborun-sdk==0.1.20261119172831"   # one build only
 ```
 
+### Install only what you need
+
+`pip install roborun-sdk` is the light SDK: the client (`roborun_sdk.client`), your own drivers and rules (`StreamedArm`,
+`ArmAdapter`), the camera and body interfaces and the `roborun` command, with three small dependencies (PyYAML, packaging,
+roborun-station). Importing it never loads numpy, MuJoCo or OpenCV, and it imports on Windows too. Heavy and hardware packages
+are extras; a missing one fails with the line that adds it, for example `mujoco is not installed: pip install
+'roborun-sdk[urdf]'`.
+
+| Extra | Adds | For |
+| --- | --- | --- |
+| `robot` | numpy and MuJoCo (exact pins), OpenCV, Pillow, msgpack, websockets, zstandard, cryptography, the USB-CAN and serial packages, the YAM driver's | everything a robot runs: `roborun up`, the simulator, cameras, the YAM and USB-CAN/serial arms. The installer (and `roborun upgrade`) install `roborun-sdk[robot]`; `roborun up` adds pyrealsense2 and an arm maker's SDK when they are first needed |
+| `sim` | MuJoCo, numpy, Pillow | simulated arms and bodies |
+| `urdf` | MuJoCo, numpy | `roborun profiles create --urdf` |
+| `cameras` | numpy, OpenCV, pyrealsense2 | RealSense and USB cameras |
+| `link` | msgpack, numpy, websockets, zstandard, Pillow | the session link (`roborun_sdk.link.codec`, `capture`) |
+| `crypto` | cryptography | fast Ed25519 checks (a pure-Python fallback runs without it) |
+| `dataset` | pyarrow, PyAV, numpy | the LeRobot dataset (`roborun up` installs it once) |
+| `yam`, `damiao`, `robstride`, `feetech`, `dynamixel`, `piper`, `trossen`, `xarm`, `ur`, `franka`, `abb`, `arx`, `rosbridge` | that arm's packages | `roborun up` installs the one an arm needs the first time it is used |
+
+```sh
+pip install --find-links https://roborun.app/dl/simple/ "roborun-sdk[robot]==0.1.20261119172831"   # the whole robot
+```
+
+Releases built before the extras existed (0.1.20261121012822 and older) install everything with plain `roborun-sdk`.
+
 `https://roborun.app/dl/simple/` lists every release (a find-links page, and a PEP 503 index: `--extra-index-url` works too;
 prefer `--find-links` with an exact `==` pin). `roborun new` writes the pin into the project's `pyproject.toml`, with
 `[tool.uv] find-links` set, so `pip install --find-links https://roborun.app/dl/simple/ -e .` or `uv sync` gets the same
@@ -724,9 +924,17 @@ What stays compatible within a series (every `0.1.*` release):
 | Stable | Not stable (changes without notice) |
 | --- | --- |
 | The local API's `/v1` routes in [The local API](#the-local-api), their fields and the error shape: fields and routes are added, never renamed or removed. `GET /v1/openapi.json` describes the running release. | `/api/...` and `/internal/...` on port 8120 (the page's; `POST /api/stop` and `GET /api/stop/status` keep working) |
-| `roborun_sdk.client` (`Robot`, `RobotError`, `RobotUnavailable`, `Task`, `StopResult`, `StopStatus`) and `roborun_sdk.errors.RoborunError` | Every other `roborun_sdk` module, and the station's own routes and ports |
-| Your extension points: `StreamedArm` and its `*_hardware` methods, `open_arm`, the rules `check(side, positions_rad, gripper, state)`, the camera source class, the `robot.yaml` keys documented here | The robot runtime's files (it is replaced on every update) and the generated configuration |
+| `roborun_sdk.client` (`Robot`, `RobotError`, `RobotUnavailable`, `Task`, `StopResult`, `StopStatus`) and `roborun_sdk.errors.RoborunError`. `Robot.clip()` was removed in 0.1.20261119224249 (a break in this series); it now raises `RobotError` code `removed`, and `Robot.recording(id)` is what the cameras saw | Every other `roborun_sdk` module, and the station's own routes and ports |
+| Your extension points: `StreamedArm` and its `*_hardware` methods, `open_arm`, the rules `check(side, positions_rad, gripper, state)`, the camera source class, the `robot.yaml` keys documented here. Camera cards: the `roborun.camera/1` fields and `roborun_sdk.camera_card` (`check_config`, `derive`, `body_card`, `describe`, `validate`, `outbound`, `normalise_intrinsics`, `nominal_pinhole`) | The robot runtime's files (it is replaced on every update) and the generated configuration |
 | The `roborun` commands and flags documented here | Text meant for people: messages, log lines, `--help` wording |
+
+Every release is in the changelog, `CHANGELOG.md` beside the README (`roborun docs changelog` prints it), and anything
+in the stable column that is removed or changed is listed there under **Removed** or **Changed**. The SDK's own test
+suite runs `tools/stable_surface.py`, which compares the stable Python names and signatures with the last release and
+fails on a removal or change that the changelog does not name, exactly and in backticks, under **Removed** or
+**Changed**. Your driver and your program run on the SDK installed in
+Roborun's own Python, not on the pin in your project: `roborun upgrade` (or a release the hosted API no longer supports)
+changes it, so read the changelog before you upgrade.
 
 An incompatible change to any of the stable column starts a new series (`0.2.*`) and comes as a new path (`/v2`) beside the
 old one: `/v1` keeps answering through the next series, so a program written for `0.1` keeps running for one more series
@@ -792,9 +1000,142 @@ says what came back:
 A humanoid prompt may be split up by the service: one move does what fits its length, and the rest is listed in
 `deferred` for your next move. A move may play somewhat longer than `duration_s` (the plan sets its own pace). The humanoid
 `POST /v1/stop` answers `{"stopped", "state" (stopping), "confirmed", "move", "stopped_tasks", "message"}`; follow it with
-`GET /v1/stop/status` until `stopped`. To build on your own body, subclass `roborun_sdk.body.BaseAdapter` (velocity
-`command`, `stop`, `state`) and `HeadAdapter` (`command`, `state`, `frame`); `roborun_sdk.body.sim.BodySim` is a complete
-example.
+`GET /v1/stop/status` until `stopped`. To run your own body (a rover, another humanoid), see
+[Your own robot body](#your-own-robot-body).
+
+## Your own robot body
+
+A mobile base or a humanoid of your own runs from two files of yours, without changing Roborun: a **profile** that
+describes the body, and a **class** that drives it. The same local API, player, obstacle guard, Stop, recordings and page
+then work for it as for the packaged bodies. `examples/rover.py` is a complete one: a diff-drive rover with one fixed
+camera (`examples/my_rover.yaml`, `examples/my_rover.xml`).
+
+```sh
+roborun docs --examples ~/my-rover && cd ~/my-rover
+roborun python rover.py                     # offline: drives the rover through Roborun's player, prints what a move would send
+roborun python rover.py --mujoco            # the same in the MuJoCo simulation of my_rover.xml, in the room
+roborun python rover.py install             # copies my_rover.yaml and my_rover.xml into ~/.config/roborun/bodies
+roborun up --profile my_rover --sim room                      # the rover simulated, its local API on 127.0.0.1:8120
+roborun up --profile my_rover --body ~/my-rover/rover.py:Rover   # your class, on your robot
+roborun up                                                     # afterwards: the same again
+```
+
+### The profile
+
+Your profiles are files in `~/.config/roborun/bodies/` (`<ROBORUN_HOME>/bodies/`): `<id>.yaml`, `.yml` or `.json`, where
+the file name is the profile's id (lowercase letters, digits, `_` and `-`; not a packaged body's id, and not a name that
+means arms, such as `so101`, `yam_dual` or `so101+piper`). `roborun profiles` lists them, and names every file that cannot
+be used with the reason. A profile is checked when it is read: a mistake stops `roborun up` before anything
+starts, with the file and the field (`my_rover.yaml: camera.eye_height_m: between 0.1 and 3.0 (got 7)`). The motion service
+plans every move from what the profile says, so give the real numbers of your robot.
+
+```yaml
+label: My rover
+kind: wheeled              # wheeled (also: rover) or humanoid
+base: wheeled              # wheeled or legged; a wheeled kind has a wheeled base, a humanoid says which
+arms: 0                    # 0 to 2 (told to the planner; this API drives no arms yet)
+head_dof: 0                # 0: a fixed camera, 1: it pitches, 2: it pitches and turns
+limits:
+  vx_m_s: [-0.2, 0.5]      # forward speed range, m/s; must include 0
+  vy_m_s: [0, 0]           # sideways (default [0, 0]: a base that cannot strafe)
+  vyaw_rad_s: [-1.0, 1.0]  # turning rate range, rad/s
+  # head_pitch_rad: [-0.3, 0.8]   required with head_dof 1 or 2;  head_yaw_rad: [-1, 1]   required with head_dof 2
+  # head_rate_rad_s: 1.5, deadband_m_s: 0, walk_min_pitch_rad: 0.3 (a walking head looks at least this far down)
+camera:                    # the one camera every move is planned from
+  size_px: [640, 480]
+  hfov_deg: 90             # horizontal field of view: the intrinsics are made from it when your frame gives none
+  eye_height_m: 0.35       # the camera's height above the floor (0.1 to 3 m)
+  pitch_rad: 0.2           # its tilt, + looks down
+  lens: a 90 degree USB webcam     # optional: words for the planner
+footprint_m: 0.25          # the base's radius, for the obstacle guard (default 0.25)
+motion:                    # optional; these are the defaults
+  accel_m_s2: [0.5, 0.5]   # vx, vy
+  accel_yaw_rad_s2: 1.0
+  stop_decel_m_s2: 1.5
+  stop_decel_yaw_rad_s2: 3.0
+  deadman_s: 0.3           # a velocity target is fresh this long: the player resends it at command_hz
+  command_hz: 50
+sim:                       # optional: for --sim room|empty and the page's 3-D view
+  model: my_rover.xml      # an MJCF file, relative to the profile: a base body with a <freejoint/>, and a camera
+  base_body: base_link     # default: base
+  head_camera: head        # the camera in the model (default: head)
+  # head_joints: {pitch: ..., yaw: ...} for a head that moves; stance: {joint: angle} for a standing pose
+# guard: {...}             # optional: the obstacle guard's settings, made from footprint_m and eye_height_m when left out
+```
+
+What a move sends the motion service about your body (`robot`: kind, base, arms, head_dof, limits; `camera`: intrinsics,
+eye height, tilt, lens) comes from this profile and your camera's frame, never from a packaged body. A packaged profile
+(`data/bodies/booster_k1.json`, with its `robot:` section) is valid here too, as a starting point; give your copy its own
+name: a packaged id always means the packaged body.
+
+### The class
+
+Name your class like an arm driver: a file and a class (`/path/my_rover.py:MyRover`; in `robot.yaml` a relative path is
+from robot.yaml's folder), or a module of a package installed in Roborun's Python (`acme_robots.rover:Rover`). Give it
+with `--body` (with `--profile`), or in `robot.yaml`:
+
+```yaml
+body: my_rover.py:MyRover            # its profile: the class's own `profile = 'my_rover'`, else robot.yaml's profile:
+# or, with settings for its constructor:
+body:
+  adapter: my_rover.py:MyRover
+  profile: my_rover                  # this one wins over the class's attribute
+  port: /dev/ttyACM0                 # every other key is a keyword argument of MyRover(...)
+```
+
+`body:` in robot.yaml is the class of that one profile. A bare `roborun up` (or `--profile my_rover`) runs it; `--profile`
+of anything else (another body such as `booster_k1`, or arms such as `yam_dual`, also from the page's switch),
+`--body-agent`, `--rig`, `--left`/`--right`, `--sim` with an arm scene (`--sim cup`) or `--body` leave it out, and it is
+never remembered for another profile. Arms named that way also leave out robot.yaml's `profile:` when it names a body, so
+`roborun up --rig rig.json` or `--sim cup` runs arms (robot.yaml's own `sim:` does not count: it says how the robot runs). With
+no profile in the section, in the class or in robot.yaml, `roborun up` asks you to name one. `--body` refuses a class
+whose `profile` attribute names another profile than `--profile` (`--body rover.py:Rover --profile booster_k1` would drive
+a rover described to the planner as a K1); to use one class for several profiles, leave the attribute out, or name the
+profile in robot.yaml's section.
+
+Roborun makes one object of the class, in the robot service `roborun up` starts: `MyRover(profile=<the profile, a dict>,
+**settings)` (the profile only when the constructor takes a `profile` argument; a setting it does not take is reported and
+left out). The object is one of: an object with `.base` (a `BaseAdapter`) and `.head` (a `HeadAdapter`), and optionally
+`close()`; one class that subclasses both; or a `BaseAdapter` with a `.head`. It is remembered per profile, like an agent,
+so a bare `roborun up` (or the page's profile switch) runs it again; a class whose robot service does not start (its
+constructor fails, say) is not remembered: `roborun up` stops that service, keeps the class the profile had before (if
+any), and points to the log. `--profile` takes a profile id: `--profile rover.py:Rover` says the class goes on `--body`. `--sim` simulates the profile instead, from its
+`sim.model`.
+
+```python
+from roborun_sdk.body import BaseAdapter, HeadAdapter
+
+class Base(BaseAdapter):
+    kind = 'wheeled'
+    def command(self, vx, vy, vyaw): ...   # velocity target: m/s, m/s, rad/s; +x forward, +y left, +yaw counter-clockwise.
+                                           # Fresh for deadman_s: the player resends it; stop the base when none comes
+    def stop(self): ...                    # zero velocity now (brake or stand; never a power-off)
+    def state(self):                       # odometry and measured velocity
+        return dict(x=0., y=0., yaw=0., vx=0., vy=0., vyaw=0., commanded=dict(vx=0., vy=0., vyaw=0.), t=time.time())
+
+class Camera(HeadAdapter):
+    dof = 0                                # as the profile's head_dof
+    def command(self, pitch, yaw): ...     # head targets, rad (+ pitch looks down, + yaw looks left); a fixed camera ignores them
+    def state(self): return dict(pitch=0.2, yaw=0.)
+    def frame(self): return dict(jpeg=...) # the camera now. Optional: width, height, intrinsics {width, height, fx, fy, ppx, ppy},
+                                           # T_base_camera (4x4), eye_height_m, pitch, yaw: what is left out comes from the profile
+    def depth(self): return None           # optional: {depth_m (HxW, metres), K {fx, fy, cx, cy}, T_base_camera, odom {x, y, yaw}}
+
+class MyRover:
+    profile = 'my_rover'
+    def __init__(self, profile, port='/dev/ttyACM0'):
+        self.base, self.head = Base(), Camera()
+```
+
+Without `depth()` a body has no obstacle guard: every move is slow (`blind_v_m_s`, 0.15 m/s) and goes at most
+`blind_travel_max_m` (0.4 m), and `/v1/status` says so (`guard.obstacle_guard: false`). `GET /v1/body/model` needs the
+profile's `sim.model`; without one it answers `503 model_unavailable` and the rest works. `/v1/status` gives `body_kind`
+(`wheeled` or `humanoid`, from the profile) beside `kind: "humanoid"`, which stays the same for every body (it means "a
+body profile's API", not the arm API, and existing clients test it): read `body_kind` for what the body is.
+
+A body profile and arms are one or the other: arms on a mobile base are not supported yet. A robot-side agent speaking
+the packaged K1 or R1 routes can also run with your profile (`agent: {protocol: booster|galaxea}` in it, and
+`--body-agent`); the description sent is then your profile's too.
 
 ## Your own interface
 

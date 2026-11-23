@@ -30,15 +30,20 @@ Developers can install from source into their own Python 3.10+ environment:
 # from a clone
 git clone https://github.com/publu/RoboRun.git roborun-sdk && cd roborun-sdk
 python -m venv .venv && . .venv/bin/activate
-pip install ./roborun-station ./roborun-sdk
+pip install ./roborun-station "./roborun-sdk[robot]"
 
 # or straight from git (station first: the SDK depends on it)
 pip install "git+https://github.com/publu/RoboRun.git#subdirectory=roborun-station" \
-            "git+https://github.com/publu/RoboRun.git#subdirectory=roborun-sdk"
+            "roborun-sdk[robot] @ git+https://github.com/publu/RoboRun.git#subdirectory=roborun-sdk"
 ```
 
-Add extras for your hardware, for example `pip install "./roborun-sdk[cameras,feetech]"`; the full list is in
-[`roborun-sdk/pyproject.toml`](roborun-sdk/pyproject.toml). `roborun docs` prints the guides from any of these installs.
+`[robot]` is everything a robot runs (the simulator, cameras, the arm drivers), the same set the installer installs.
+Without it, `pip install ./roborun-sdk` is the light SDK: the Python client, your own drivers and rules and the `roborun`
+command, with no simulator or hardware packages. Or pick only the extras you need, for example
+`pip install "./roborun-sdk[cameras,feetech]"`; the list is in
+[`roborun-sdk/pyproject.toml`](roborun-sdk/pyproject.toml) and
+[Install only what you need](roborun-sdk/docs/BUILDING.md#install-only-what-you-need). `roborun docs` prints the guides
+from any of these installs.
 
 Using the service needs a Roborun key. Roborun is invite-only: if you don't have a key, email support@roborun.dev.
 
@@ -75,29 +80,37 @@ roborun docs                           # the guides; roborun docs --examples DIR
 The reference is [`roborun-sdk/docs/BUILDING.md`](roborun-sdk/docs/BUILDING.md):
 
 - [Your own arm driver](roborun-sdk/docs/BUILDING.md#your-own-arm-driver)
-- [Your own camera](roborun-sdk/docs/BUILDING.md#your-own-camera)
+- [Your own camera](roborun-sdk/docs/BUILDING.md#your-own-camera) and
+  [Describe your cameras](roborun-sdk/docs/BUILDING.md#describe-your-cameras) (camera cards: mount, lens, depth;
+  `roborun cameras describe`)
 - [Rules](roborun-sdk/docs/BUILDING.md#rules) (keep-out zones and limits that run locally)
 - [Arm profile from a URDF](roborun-sdk/docs/BUILDING.md#arm-profile-from-a-urdf)
 - [The local API](roborun-sdk/docs/BUILDING.md#the-local-api)
 - [The Python client](roborun-sdk/docs/BUILDING.md#the-python-client)
 - [An LLM's tools](roborun-sdk/docs/BUILDING.md#an-llms-tools)
 - [Humanoids: Booster K1 and Galaxea R1](roborun-sdk/docs/BUILDING.md#humanoids-booster-k1-and-galaxea-r1)
+- [Your own robot body](roborun-sdk/docs/BUILDING.md#your-own-robot-body) (a mobile base or a humanoid of your own)
+- [Profiles and simulation](roborun-sdk/docs/BUILDING.md#profiles-and-simulation) (`roborun sim` runs from its own copy
+  of the runtime and never touches a live robot) and
+  [Two installs on one computer](roborun-sdk/docs/BUILDING.md#two-installs-on-one-computer)
 
 Also: [`roborun-sdk/docs/AGENTS.md`](roborun-sdk/docs/AGENTS.md) (a short guide for coding agents that install and drive Roborun),
 [`roborun-sdk/docs/HOSTED_API.md`](roborun-sdk/docs/HOSTED_API.md) (the hosted API), and
 [`roborun-sdk/DEVELOPING.md`](roborun-sdk/DEVELOPING.md) / [`roborun-station/DEVELOPING.md`](roborun-station/DEVELOPING.md)
-for changing the packages themselves.
+for changing the packages themselves. What changed in each release: [`roborun-sdk/CHANGELOG.md`](roborun-sdk/CHANGELOG.md)
+(`roborun docs changelog`).
 
 ## Examples
 
 [`roborun-sdk/examples/`](roborun-sdk/examples/): a minimal arm driver, a camera from a folder of images, a keep-out rules
-file, a command-line client for the local API, and the robot as an LLM's tools. `roborun new my-robot` writes a starter
+file, a command-line client for the local API, the robot as an LLM's tools, and a rover of your own (`rover.py`, a custom
+robot body). `roborun new my-robot` writes a starter
 project.
 
 ## Tests
 
 ```sh
-pip install "./roborun-station" "./roborun-sdk[test]" pytest-xdist pytest-timeout
+pip install "./roborun-station" "./roborun-sdk[robot,test]" pytest-xdist pytest-timeout
 cd roborun-sdk && python -m pytest -q -n auto --timeout=180 \
   --ignore=tests/test_guided_setup.py
 cd ../roborun-station && python -m pytest -q

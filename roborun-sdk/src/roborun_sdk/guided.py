@@ -190,6 +190,28 @@ def _kept_camera(entry):
     return None if kind in ('realsense', 'usb') else entry
 
 
+def _setup_cameras(assigned, existing):
+    """robot.yaml's cameras changes from setup's {role: source}: an unassigned top/left/right entry without a card that setup
+    finds itself is removed; a role held by a camera of your own name (card: alias) gets the new source in that entry. The
+    result is checked as `roborun up` will check it."""
+    from . import camera_card
+    holders = {camera_card.alias_of(cid, e): cid for cid, e in existing.items() if cid not in camera_card.ALIASES
+               and camera_card.alias_of(cid, e)}
+    out = {}
+    for role, source in assigned.items():
+        out[holders[role] if role in holders and role not in existing and source is not None else role] = source
+    for role, entry in existing.items():
+        carded = isinstance(entry, dict) and entry.get('card') is not None
+        if role in camera_card.ALIASES and role not in out and not carded and _kept_camera(entry) is None:
+            out[role] = None
+    from .arms import settings
+    try:
+        camera_card.check_config(settings._merged(dict(cameras=existing), dict(cameras=out)).get('cameras') or {})
+    except ValueError as exc:
+        raise SystemExit(f'robot.yaml cameras: {exc}. Nothing was written; fix robot.yaml, then run roborun setup again')
+    return out
+
+
 def camera_rows():
     """([(source, description)], [notes]). Cameras are optional: anything that goes wrong here is only a note."""
     from .arms.packages import ensure
@@ -1207,11 +1229,9 @@ class Wizard:
                 if side not in arms and (now.get('arms') or {}).get(side):
                     arms[side] = None
             # a role setup did not assign is removed only when it is a camera setup itself finds (realsense:, usb:) and so
-            # could have offered; your own camera class or stream address stays as you wrote it
-            cameras = dict(self.st['cameras'])
-            for role, entry in (now.get('cameras') or {}).items():
-                if role not in cameras and _kept_camera(entry) is None:
-                    cameras[role] = None
+            # could have offered; your own camera class or stream address stays as you wrote it, and so does a camera of
+            # your own name or one with a card (setup manages only top, left and right)
+            cameras = _setup_cameras(dict(self.st['cameras']), now.get('cameras') or {})
             changes = dict(robot=name, arms=arms, cameras=cameras, sim=None)
             profile = self.profile_to_write(now)
             if profile:

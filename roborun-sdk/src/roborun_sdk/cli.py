@@ -26,7 +26,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import SDK_NAME
+from . import SDK_NAME, net
 
 USER_HELP = """Roborun: run your robot arms (or a humanoid) from this computer.
 
@@ -51,7 +51,7 @@ def _manifest_install():
     import json, os
     if os.environ.get("MANIFEST_DREAMAPI"):
         return Path(os.environ["MANIFEST_DREAMAPI"])
-    cfg = Path(os.environ.get("ROBORUN_HOME", Path.home() / ".config" / "roborun")) / "robot.json"
+    cfg = net.roborun_home() / "robot.json"
     try:
         return Path(json.loads(cfg.read_text())["manifest"])
     except (OSError, ValueError, KeyError):
@@ -694,10 +694,17 @@ def main(argv=None) -> int:
         sub._choices_actions[:] = sorted((c for c in sub._choices_actions if c.dest in USER_COMMANDS),
                                          key=lambda c: USER_COMMANDS.index(c.dest))
     args = ap.parse_args(argv)
-    if getattr(args, "func", None) is not None:
-        return args.func(args)
-    return {"doctor": cmd_doctor, "stop": cmd_stop, "run": cmd_run, "rt": cmd_rt,
-            "clear-stop": cmd_clear_stop}[args.cmd](args)
+    run = args.func if getattr(args, "func", None) is not None else {
+        "doctor": cmd_doctor, "stop": cmd_stop, "run": cmd_run, "rt": cmd_rt, "clear-stop": cmd_clear_stop}[args.cmd]
+    try:
+        return run(args)
+    except ModuleNotFoundError as exc:               # a light install (pip install roborun-sdk): name the extra to add
+        from roborun_sdk._optional import explain
+        hint = explain(exc)
+        if hint is None:
+            raise
+        print(f"roborun {args.cmd}: {hint}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

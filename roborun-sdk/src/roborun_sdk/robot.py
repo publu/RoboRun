@@ -26,9 +26,168 @@ from pathlib import Path
 
 from . import net
 
-HOME = Path(os.environ.get('ROBORUN_HOME', Path.home() / '.config' / 'roborun'))
+HOME = net.roborun_home()        # absolute, ~ expanded; ROBORUN_HOME set but empty is the default, never '.'
 UA = net.user_agent()            # roborun-sdk/<version> (build ...): a named client (the API's edge refuses Python's default)
 CONFIG = HOME / 'robot.json'
+
+
+def _real(path):
+    return os.path.realpath(os.path.expanduser(str(path)))
+
+
+def account_home():
+    """The default Roborun home of this computer account: ~/.config/roborun, with ~ from the account itself (not $HOME), because
+    systemd --user is one per account: a changed $HOME is still the same systemd, so it is still a second install."""
+    try:
+        import pwd
+        base = pwd.getpwuid(os.getuid()).pw_dir
+    except (ImportError, KeyError, AttributeError):
+        base = str(Path.home())
+    return Path(base) / '.config' / 'roborun'
+
+
+def _named_default(home):
+    """True when home leads to the account's default home the way the default install itself names it: the account's
+    ~/.config/roborun as written (ROBORUN_HOME=/home/<you>/.config/roborun, or the account's own $HOME), or any path from a
+    $HOME that is the account's own folder (a $HOME that is a symlink to it). False for a path that only reaches it through
+    a symlink inside another folder, like a sandbox $HOME whose .config or .config/roborun links to the account's: that is
+    a sandbox borrowing the default install's files, a second install, which the guard (refuse_default_install) stops."""
+    if os.path.abspath(os.path.expanduser(str(home))) == os.path.abspath(str(account_home())):
+        return True
+    return _real(Path.home()) == _real(_account_dir())
+
+
+def install_suffix(home=None):
+    """'' for the account's default home: today's names (roborun-robot, ...), so an upgraded install keeps its running units.
+    Any other home: '-' and 8 hex digits of its path, stable for that home and distinct from every other one. A home that
+    resolves to the default one only through a symlink from another folder (_named_default) is another home too."""
+    import hashlib
+    home = home if home is not None else HOME
+    here = _real(home)
+    if here == _real(account_home()) and _named_default(home):
+        return ''
+    return '-' + hashlib.sha256(here.encode()).hexdigest()[:8]
+
+
+def unit_name(name, home=None):
+    """The systemd --user unit of one part of this install: roborun-robot for the default home, roborun-robot-1a2b3c4d for
+    another (ROBORUN_HOME). roborun up / down / status / uninstall only ever name their own home's units."""
+    return name + install_suffix(home)
+
+
+def second_install(home=None):
+    """True for every home but the account's default one: ROBORUN_HOME set elsewhere, or a changed $HOME (a sandbox). The same
+    rule as the unit names (install_suffix), so whatever gets its own units also never removes the default install's files."""
+    return install_suffix(home) != ''
+
+
+def own_home():
+    """True for a second install whose home is not $HOME's default one (ROBORUN_HOME names another folder): that install keeps
+    its runtime, recordings and datasets inside its home, so it never updates, reconfigures or purges the ones in ~/roborun.
+    A sandbox that changes only $HOME (ROBORUN_HOME unset or $HOME/.config/roborun) keeps them in its own $HOME/roborun."""
+    return bool(os.environ.get('ROBORUN_HOME')) and second_install() and not home_is_ours()
+
+
+def _account_dir():
+    """The account's own home folder (from the password database, not $HOME)."""
+    return account_home().parents[1]
+
+
+def _install_paths(folder, settings):
+    """What the install made in a home folder owns: its software (.roborun), the roborun command, its settings, its runtime
+    and recordings (roborun), and the shell startup files holding its PATH line."""
+    return (folder / '.roborun', folder / '.local' / 'bin' / 'roborun', settings, folder / 'roborun',
+            *(folder / name for name in RC_FILES))
+
+
+def _overlaps(path, owned):
+    """True when deleting path would delete one of owned: path is one of them, inside one, or holds one."""
+    mine = {os.path.abspath(os.path.expanduser(str(path))), _real(path)}
+    theirs = set()
+    for q in owned:
+        theirs |= {os.path.abspath(str(q)), _real(q)}
+    for p in mine:
+        p_dir = p.rstrip(os.sep) + os.sep
+        for q in theirs:
+            if p == q or p.startswith(q.rstrip(os.sep) + os.sep) or q.startswith(p_dir):
+                return True
+    return False
+
+
+def touches_default_install(path):
+    """True when deleting path would delete some of the account's default install (~/.roborun, the roborun command,
+    ~/.config/roborun, ~/roborun, with ~ the account's own folder): path is one of them, inside one, or holds one (the
+    account's folder itself, /home, /). A second install's uninstall never deletes such a path."""
+    return _overlaps(path, _install_paths(_account_dir(), account_home()))
+
+
+def home_is_ours():
+    """True for a second install that is the default home of a changed $HOME (a sandbox: ROBORUN_HOME unset, or set to
+    $HOME/.config/roborun): the install.sh files in that $HOME (.roborun, the roborun command, the PATH line) are its own.
+    False for the default install, and for ROBORUN_HOME naming another folder: $HOME's files then belong to $HOME's own
+    install (the account's default one, or the sandbox's), never to this one."""
+    here = Path.home()
+    return (second_install() and _real(HOME) == _real(here / '.config' / 'roborun')
+            and not touches_default_install(here))
+
+
+def protected(path):
+    """True when a second install must not delete path: it is the account's default install's, or (for a ROBORUN_HOME that
+    is not $HOME's default home) $HOME's own install's."""
+    if not second_install():
+        return False
+    here = Path.home()
+    return touches_default_install(path) or (not home_is_ours() and
+                                             _overlaps(path, _install_paths(here, here / '.config' / 'roborun')))
+
+
+def installer_paths():
+    """What install.sh (so roborun upgrade) writes: $HOME/.roborun, the roborun command in $HOME/.local/bin and the PATH
+    line in $HOME's shell startup files."""
+    here = Path.home()
+    return [here / '.roborun', here / '.local' / 'bin' / 'roborun'] + [here / name for name in RC_FILES]
+
+
+def home_paths(manifest=None):
+    """What up, setup and down write or delete for this install: its settings and rig, pid files, logs, own profiles, the
+    after-logout mark, its data folder (runtime, recordings, datasets) and the runtime it runs (--runtime, robot.json, or
+    the data folder's)."""
+    if not manifest:
+        try:
+            manifest = json.loads(CONFIG.read_text()).get('manifest')
+        except (OSError, ValueError, AttributeError):
+            manifest = None
+    runtime = Path(manifest or _manifest_root()).expanduser()
+    return [CONFIG, HOME / 'robot', HOME / 'run', HOME / 'logs', HOME / 'profiles', HOME / LINGER_MARK, HOME / 'sim', data_top(), runtime]
+
+
+def down_paths():
+    """What down (and uninstall, which asks the same units and runs down) reads, writes or signals for this install: its
+    settings, its station's control files (robot/station-ready.json holds the pid it signals, robot/station-request.json
+    what it asks), its pid files and logs. Not the runtime or data folder: down never writes those."""
+    return [CONFIG, HOME / 'robot', HOME / 'run', HOME / 'logs']
+
+
+def refuse_default_install(command, paths):
+    """The one guard every command that writes or deletes install files runs first. The default install: nothing to check.
+    A second install (install_suffix() != ''): stop, with nothing changed, when any of paths resolves (symlinks followed:
+    a symlinked $HOME, .roborun, .local/bin, roborun folder or startup file, or a ROBORUN_HOME inside the default install)
+    to the account's default install, is inside it or holds it (touches_default_install)."""
+    if not second_install():
+        return
+    for path in paths:
+        if path is not None and touches_default_install(path):
+            raise SystemExit(f'roborun {command} stopped: this is a second Roborun install ({HOME}, services '
+                             f'{unit_name("roborun-robot")} ...), but {path} resolves to {_real(path)}, which is this '
+                             f'account\'s default install ({_account_dir()}: .roborun, the roborun command, .config/roborun, '
+                             'roborun, the PATH line) or holds it. Nothing was changed. Next: give this install folders of its '
+                             f'own (no symlinks into {_account_dir()} from {Path.home()} or ROBORUN_HOME), or run roborun '
+                             f'{command} as the default install (without ROBORUN_HOME, with the account\'s own HOME)')
+
+
+def data_top():
+    """Where the runtime, its recordings and the datasets live: ~/roborun, or <ROBORUN_HOME>/roborun for a home of its own."""
+    return HOME / 'roborun' if own_home() else Path.home() / 'roborun'
 SERVER = os.environ.get('ROBORUN_SERVER', 'https://api.roborun.app')     # the hosted API: motion jobs and history
 
 
@@ -193,6 +352,7 @@ def _premade_lines():
 
 
 def cmd_setup(a) -> int:
+    refuse_default_install('setup', home_paths(getattr(a, 'manifest', None)))
     if getattr(a, 'detect', False) or not (a.robot and a.key_file):      # plain `roborun setup`: the guided setup
         from .guided import main
         return main(a)
@@ -243,7 +403,7 @@ def cmd_setup(a) -> int:
 
 def _manifest_root():
     """This robot's Roborun install (the backend's code and its managed config.json)."""
-    return os.environ.get('MANIFEST_DREAMAPI') or str(Path.home() / 'roborun' / 'robot' / 'runtime')
+    return os.path.abspath(os.path.expanduser(os.environ.get('MANIFEST_DREAMAPI') or str(data_top() / 'robot' / 'runtime')))
 
 
 def _write_jobs(cfg):
@@ -311,8 +471,9 @@ def key_date_notice(c, today=None):
 
 def dataset_root(robot):
     """This robot's LeRobot v2.1 dataset (one episode per finished task or move): ~/roborun/datasets/<robot>/, beside the
-    recordings, so `roborun uninstall` keeps it unless asked to purge (never inside ~/.roborun, which uninstall removes)."""
-    return Path.home() / 'roborun' / 'datasets' / str(robot)
+    recordings, so `roborun uninstall` keeps it unless asked to purge (never inside ~/.roborun, which uninstall removes).
+    A home of its own (ROBORUN_HOME) keeps it in <home>/roborun/datasets/<robot>/."""
+    return data_top() / 'datasets' / str(robot)
 
 
 def _data_sources(runtime, data_root=None, video_motion=None):
@@ -416,13 +577,19 @@ def cmd_local(a) -> int:
 
 def camera_socket():
     """Where the robot's camera broker listens: $MANIFEST_CAMERA_SOCKET, else a short per-user path (Unix sockets allow
-    ~108 characters, so not under a deep home folder)."""
+    ~108 characters, so not under a deep home folder). The default home's is <runtime dir>/manifest/camera.sock, as always;
+    another home's is in its own folder, <runtime dir>/manifest/roborun-<8 hex>/camera.sock, beside its capture helper's."""
     import os
     if os.environ.get('MANIFEST_CAMERA_SOCKET'):
         return os.environ['MANIFEST_CAMERA_SOCKET']
     base = os.environ.get('XDG_RUNTIME_DIR') or f'/tmp/manifest-{os.getuid()}'
-    os.makedirs(os.path.join(base, 'manifest'), mode=0o700, exist_ok=True)
-    return os.path.join(base, 'manifest', 'camera.sock')
+    folder = os.path.join(base, 'manifest')
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    suffix = install_suffix()
+    if suffix:
+        folder = os.path.join(folder, 'roborun' + suffix)
+        os.makedirs(folder, mode=0o700, exist_ok=True)
+    return os.path.join(folder, 'camera.sock')
 
 
 UNITS = ('roborun-local', 'roborun-robot', 'roborun-sim', 'roborun-station', 'roborun-cameras')
@@ -548,6 +715,10 @@ def cmd_profiles(a) -> int:
     from .arm_profiles import PREMADE, models, parse, shown_profile
     c = json.loads(CONFIG.read_text()) if CONFIG.exists() else {}
     root = Path(a.manifest or c.get('manifest') or _manifest_root())
+    if not a.manifest and c.get('sim') and not c.get('body'):
+        from . import sim_home                       # a simulated robot runs its profile from the simulation's runtime
+        if (sim_home.runtime() / 'config.json').exists():
+            root = sim_home.runtime()
     cur = shown_profile(current_profile(root)) if (root / 'config.json').exists() and not c.get('body') else None
     rows = dict(PREMADE)
     found = [pid for pid in install_profiles(root)] + [f.parent.name for f in (HOME / 'profiles').glob('*/config.json')]
@@ -565,7 +736,17 @@ def cmd_profiles(a) -> int:
     running = (c.get('body') or {}).get('profile')
     print('humanoids (simulate one: --sim room or empty):')
     for row in body_profiles.rows():
-        print(f"{'*' if row['id'] == running else ' '} {row['id']:<12} {row['label']} (humanoid, {row['base']} base; --sim room, or --body-agent)")
+        if not row['own']:
+            print(f"{'*' if row['id'] == running else ' '} {row['id']:<12} {row['label']} (humanoid, {row['base']} base; --sim room, or --body-agent)")
+    print(f'your own bodies ({body_profiles.user_dir()}; run one: --body my_body.py:MyBody, or --sim room with sim.model):')
+    own = [row for row in body_profiles.rows() if row['own']]
+    for row in own:
+        print(f"{'*' if row['id'] == running else ' '} {row['id']:<12} {row['label']} ({row['kind']}, {row['base']} base, "
+              f"{row['arms']} arms, head_dof {row['head_dof']})")
+    for file, why in body_profiles.problems():
+        print(f'  not usable: {why}' if why.startswith(file) else f'  not usable: {file}: {why}')
+    if not own and not body_profiles.problems():
+        print('  none yet (docs/BUILDING.md, "Your own robot body")')
     print('switch: roborun up --profile <name>    your own arm: roborun profiles create --urdf ...')
     return 0
 
@@ -594,10 +775,11 @@ STOP_WAIT_S = {'roborun-station': 60}                    # it may be parking the
 
 
 def _stop(name):
+    """Stop one part of this install (`name` is the part: roborun-robot, ...; its unit is this home's, unit_name)."""
     import signal, subprocess, time
     if _systemd():
-        subprocess.run(['systemctl', '--user', 'stop', name], capture_output=True)
-        subprocess.run(['systemctl', '--user', 'reset-failed', name], capture_output=True)
+        subprocess.run(['systemctl', '--user', 'stop', unit_name(name)], capture_output=True)
+        subprocess.run(['systemctl', '--user', 'reset-failed', unit_name(name)], capture_output=True)
     pf = _pidfile(name)
     try:
         pid = int(pf.read_text())
@@ -614,14 +796,14 @@ def _stop(name):
 
 def _unit(name, argv, env):
     """Start a long-running part: a systemd --user unit where there is one (restarts on failure), else a background
-    process in its own session with its log in <home>/logs/<name>.log."""
+    process in its own session with its log in <home>/logs/<name>.log. The unit is this home's (unit_name)."""
     import subprocess
     _stop(name)
     if _systemd():
-        out = subprocess.run(['systemd-run', '--user', f'--unit={name}', '-p', 'Restart=on-failure', '-p', 'RestartSec=3',
+        out = subprocess.run(['systemd-run', '--user', f'--unit={unit_name(name)}', '-p', 'Restart=on-failure', '-p', 'RestartSec=3',
                               *[f'--setenv={k}={v}' for k, v in env.items()], *argv], capture_output=True, text=True)
         if out.returncode:
-            raise SystemExit(f'could not start {name}: {out.stderr.strip()[:300]}')
+            raise SystemExit(f'could not start {unit_name(name)}: {out.stderr.strip()[:300]}')
         return
     logs = HOME / 'logs'; logs.mkdir(parents=True, exist_ok=True)
     log = open(logs / f'{name}.log', 'ab')
@@ -630,10 +812,15 @@ def _unit(name, argv, env):
     _pidfile(name).write_text(str(proc.pid))
 
 
+def logs_hint(name):
+    """Where one part's log is: its journal under systemd (this home's unit), else <home>/logs/<name>.log."""
+    return f'journalctl --user -u {unit_name(name)}' if _systemd() else f"see {HOME / 'logs' / (name + '.log')}"
+
+
 def _state(name):
     import subprocess
     if _systemd():
-        st = subprocess.run(['systemctl', '--user', 'is-active', name], capture_output=True, text=True).stdout.strip()
+        st = subprocess.run(['systemctl', '--user', 'is-active', unit_name(name)], capture_output=True, text=True).stdout.strip()
         if st == 'active': return st
     try:
         return 'running' if _alive(int(_pidfile(name).read_text())) else 'stopped'
@@ -833,20 +1020,98 @@ def _port_taken(port):
         return s.connect_ex(('127.0.0.1', int(port))) == 0
 
 
+STATION_PORT = 8091                 # the arms' station (real or simulated): one per computer, not configurable
+
+
+DEFAULT_BACKEND = 'http://127.0.0.1:8120'
+
+
+def backend_arg(a):
+    """`roborun up` without --backend: the saved one (default 8120). a.backend_given: the one typed, if any."""
+    a.backend_given = getattr(a, 'backend', None)
+    a.backend = a.backend_given or DEFAULT_BACKEND
+
+
+def remember_ports(a, c):
+    """`roborun up --backend URL / --live-port N` on a robot already set up: saved in robot.json, so a second install on this
+    computer can move off the default install's ports."""
+    changed = False
+    given = getattr(a, 'backend_given', None)
+    if given and given.rstrip('/') != (c.get('backend') or DEFAULT_BACKEND).rstrip('/'):
+        url = urllib.parse.urlsplit(given)
+        if url.scheme != 'http' or url.hostname not in ('127.0.0.1', 'localhost') or not url.port:
+            raise SystemExit(f'--backend {given}: an address on this computer, http://127.0.0.1:<port>')
+        c['backend'] = given.rstrip('/'); changed = True
+    port = getattr(a, 'live_port', None)
+    if port is not None and c.get('live_port') != port:
+        if not 0 <= port < 65536:
+            raise SystemExit(f'--live-port {port}: a port number, or 0 for no page connection')
+        c['live_port'] = port; changed = True
+    if changed:
+        CONFIG.write_text(json.dumps(c, indent=1))
+
+
 def _check_ports(c, hardware):
-    """Every port this start needs is free, or already ours. Otherwise nothing starts, and the port is named."""
+    """Every port this start needs is free, or already this install's. Otherwise nothing starts (nothing is stopped either:
+    the port may be another Roborun install's on this computer), and the port is named with how to free or move it."""
     from .local_proxy import PORT
-    wanted = [('roborun-robot', urllib.parse.urlsplit(c.get('backend') or 'http://127.0.0.1:8120').port or 8120, 'the local robot API')]
+    wanted = [('roborun-robot', urllib.parse.urlsplit(c.get('backend') or 'http://127.0.0.1:8120').port or 8120, 'the local robot API',
+               '--backend http://127.0.0.1:<free port>')]
     if int(c.get('live_port', PORT) or 0):
-        wanted.append(('roborun-local', int(c.get('live_port', PORT)), 'the connection to the app.roborun.app page'))
-    if c.get('sim'):
-        wanted.append(('roborun-sim', 8091, 'the simulated arms'))
+        wanted.append(('roborun-local', int(c.get('live_port', PORT)), 'the connection to the app.roborun.app page',
+                       '--live-port <free port> (or 0: no page connection; the page reaches only 8135)'))
+    if c.get('body'):
+        pass                                         # a humanoid simulates inside its robot service: no station port
+    elif c.get('sim'):
+        wanted.append(('roborun-sim', STATION_PORT, 'the simulated arms', None))
     elif hardware or c.get('hardware'):
-        wanted.append(('roborun-station', 8091, 'the arms'))
-    for unit, port, what in wanted:
-        if _state(unit) not in ('active', 'running') and _port_taken(port):
+        wanted.append(('roborun-station', STATION_PORT, 'the arms', None))
+    for unit, port, what, setting in wanted:
+        if _port_taken(port) and _state(unit) not in ('active', 'running'):
+            other = (f' If it is another Roborun install on this computer, give this one its own port: roborun up {setting} (saved in {CONFIG}).'
+                     if setting else f' If it is another Roborun install on this computer: port {port} is one per computer, so '
+                     'stop the arms there first (roborun down with that install\'s ROBORUN_HOME).')
             raise SystemExit(f'port {port} on this computer is in use by another program, and Roborun needs it for {what}. '
-                             f'Next: stop that program (see it with: lsof -i :{port}), then run roborun up again')
+                             f'Next: stop that program (see it with: lsof -i :{port}), then run roborun up again.' + other)
+
+
+def _refuse_live_for_sim(c, scene):
+    """`roborun up --sim`: the simulation becomes this robot's station (:8091) and camera service (its camera socket). Refused,
+    with nothing changed, while the live robot's station or camera service runs (this install's, or a live station on :8091)
+    or a camera service serves the socket: a simulation never takes a live robot's port or socket over."""
+    from . import sim_home
+    running = sim_home.live_parts(c, backend=False)
+    if _state('roborun-sim') not in ('active', 'running'):
+        user = sim_home.socket_user(_camera_socket_path())
+        if user == 'a live camera service':
+            running.append(f'a live camera service on {_camera_socket_path()}')
+    if running:
+        raise SystemExit(f"roborun up --sim: the live robot is running here ({', '.join(running)}), and a simulation does not "
+                         'take its station or cameras over. Nothing was changed. Next: roborun down (it parks or holds the '
+                         f'arms as usual), then roborun up --sim {scene}')
+
+
+def _camera_socket_path():
+    """camera_socket() without making its folder."""
+    from .cameras import _socket_path
+    return _socket_path()
+
+
+def _forget_stale_socket(path):
+    """This install's own camera socket left behind by a camera service or simulation of this install that is gone (nothing
+    answers on it): removed, as the camera service itself does, so the simulation can listen there. A socket something
+    serves, one under $MANIFEST_CAMERA_SOCKET, or anything that is not a socket is left alone (the simulation then refuses it)."""
+    import stat as _st
+    from . import sim_home
+    if os.environ.get('MANIFEST_CAMERA_SOCKET') or str(path) != _camera_socket_path():
+        return
+    try:
+        if not _st.S_ISSOCK(os.lstat(path).st_mode) or sim_home.socket_user(path):
+            return
+    except OSError:
+        return
+    Path(path).unlink(missing_ok=True)
+    Path(str(path) + sim_home.OWNER).unlink(missing_ok=True)
 
 
 def resolve_profile(a):
@@ -868,7 +1133,9 @@ def cmd_up(a) -> int:
     import shlex
     if sys.platform == 'win32':
         raise SystemExit('roborun runs on Linux: on Windows, install WSL2 with Ubuntu and run it there (wsl --install -d Ubuntu)')
+    refuse_default_install('up', home_paths(getattr(a, 'manifest', None)))
     from .arm_profiles import shown_profile
+    backend_arg(a)
     if getattr(a, 'sim', None):
         gl_env()                                     # a missing OpenGL library says so first, before any setup is written
     resolve_profile(a)
@@ -905,6 +1172,7 @@ def cmd_up(a) -> int:
     if a.key_file and str(Path(a.key_file).expanduser().resolve()) != str(Path(c.get('key_file') or '').expanduser().resolve()):
         c['key_file'] = str(Path(a.key_file).expanduser().resolve())     # a key given now replaces the saved one
         CONFIG.write_text(json.dumps(c, indent=1)); print(f"key: {c['key_file']}", flush=True)
+    remember_ports(a, c)
     from .arms.settings import settle_token
     settle_token(c['key_file'], c['server'])                           # a revoked token stops here, before anything starts
     refresh_keys(c)                                                    # the API's current signing keys, every start
@@ -913,6 +1181,7 @@ def cmd_up(a) -> int:
         print('a task is running on this robot: runtime update check skipped', flush=True)
     ensure_runtime(c['manifest'], c['server'], Path(c['key_file']).read_text().strip(), update=not busy)
     if getattr(a, 'sim', None):
+        _refuse_live_for_sim(c, a.sim)                 # before robot.json says simulation: the live robot keeps running as it is
         c['sim'] = a.sim; CONFIG.write_text(json.dumps(c, indent=1))
     if getattr(a, 'no_sim', False) and c.get('sim'):
         c.pop('sim'); CONFIG.write_text(json.dumps(c, indent=1)); _stop('roborun-sim')
@@ -929,12 +1198,16 @@ def cmd_up(a) -> int:
         raise SystemExit('a task is running on this robot: stop it before changing its arms or settings')
     if not getattr(a, 'sim', None) and (hardware != c.get('hardware') or (hardware and c.get('sim'))):
         c['hardware'] = hardware; c.pop('sim', None); CONFIG.write_text(json.dumps(c, indent=1)); _stop('roborun-sim')
+    if c.get('sim') and not getattr(a, 'sim', None):  # robot.json's simulation (--sim was checked above)
+        _refuse_live_for_sim(c, c['sim'])
     _check_ports(c, hardware)
     d = c.setdefault('data', {})
     before = json.dumps(d, sort_keys=True)
     for k in ('telemetry', 'telemetry_db'): d.pop(k, None)
     ours = _ours(c['manifest'])                      # a source checkout's log/ may hold other data: left exactly as configured
-    if ours and not d.get('custom'): d['sources'] = _data_sources(c['manifest'])  # the runtime's own log/
+    if ours and not d.get('custom'):                 # the log/ of the runtime that runs: the simulation's copy when simulating
+        from . import sim_home
+        d['sources'] = _data_sources(sim_home.runtime() if c.get('sim') else c['manifest'])
     if getattr(a, 'no_data_sync', False): d.update(enabled=False, opt_out=True)
     elif getattr(a, 'data_sync', False): d.update(enabled=True, opt_out=False)
     elif ours and not d.get('opt_out'): d['enabled'] = True
@@ -942,9 +1215,14 @@ def cmd_up(a) -> int:
     if json.dumps(d, sort_keys=True) != before:
         CONFIG.write_text(json.dumps(c, indent=1)); _say_data(d)
     _recording_tools(a, c)                           # the dataset extra, once, before the robot starts
-    root = Path(c['manifest'])
+    root = Path(c['manifest']).expanduser().absolute()       # the units run in the account's home folder, not this one
     if not (root / 'config.json').exists():
         raise SystemExit(f'no Roborun install at {root} (its config.json); pass --runtime on the first run')
+    if c.get('sim'):                                 # a simulation runs from its own copy of the runtime, never the live one
+        from . import sim_home
+        if not busy and not sim_home.current(root):
+            _stop('roborun-sim'); _stop('roborun-robot')     # they run from the copy being refreshed; both start again below
+        root = sim_home.prepare_copy(root, refresh=not busy)
     rid = _rid(a)
     if rid and (rid != current_profile(root) or not profile_config_matches(root, rid)):
         if _busy(c['backend']):
@@ -960,10 +1238,14 @@ def cmd_up(a) -> int:
     port = urllib.parse.urlsplit(c['backend']).port or 8120
     camera = camera_socket()
     if c.get('sim'):
-        # the MuJoCo simulation of this profile: its station on :8091 and its cameras, before the backend looks for them
+        # the MuJoCo simulation of this profile, from the simulation's runtime: the robot's station on :8091 and its cameras
+        # on the robot's camera socket (the robot is the simulation), before the backend looks for them
+        _stop('roborun-sim')
+        _forget_stale_socket(camera)
         _unit('roborun-sim', [sys.executable, '-m', 'roborun_sdk.cli', 'sim', '--scene', c['sim'], '--runtime', str(root),
-                               '--camera-socket', camera], dict(PYTHONPATH=_sdk_path(), **gl_env(),
-                                                                PYTHONUNBUFFERED='1', ROBORUN_HOME=str(HOME)))
+                               '--camera-socket', camera, '--port', str(STATION_PORT), '--as-robot',
+                               '--predict', c['backend'].rstrip('/') + '/internal/video-motion/predict'],
+              dict(PYTHONPATH=_sdk_path(), **gl_env(), PYTHONUNBUFFERED='1', ROBORUN_HOME=str(HOME)))
         print(f"simulation: {shown_profile(current_profile(root))}, scene {c['sim']}")
         import time as _t
         for _ in range(60):
@@ -998,8 +1280,7 @@ def cmd_up(a) -> int:
             except Exception:
                 _t.sleep(1)
         else:
-            raise SystemExit('the arms did not come up: ' + ('journalctl --user -u roborun-station' if _systemd()
-                                                             else f"see {HOME / 'logs' / 'roborun-station.log'}"))
+            raise SystemExit('the arms did not come up: ' + logs_hint('roborun-station'))
         for side, row in sorted((status.get('arm_status') or {}).items()):
             for text in row.get('warnings') or ():
                 print(f'warning: {text}')
@@ -1011,7 +1292,7 @@ def cmd_up(a) -> int:
     if not blur:
         print('face blur is OFF (privacy: face_blur: false): camera frames go to the motion service unblurred, and history images are not uploaded')
     entry = shlex.split(os.environ.get('MANIFEST_BACKEND_ENTRY', '')) or [str(root / 'server.py')]
-    env = dict(MANIFEST_JOBS='api', MANIFEST_JOBS_CONFIG=c['jobs'], MANIFEST_WEB_UNIT='roborun-robot.service', MANIFEST_PROFILES_FROM_SDK='1',
+    env = dict(MANIFEST_JOBS='api', MANIFEST_JOBS_CONFIG=c['jobs'], MANIFEST_WEB_UNIT=unit_name('roborun-robot') + '.service', MANIFEST_PROFILES_FROM_SDK='1',
                MANIFEST_PROFILE_ID=current_profile(root), MANIFEST_CAMERA_SOCKET=camera,
                MANIFEST_DREAMAPI=str(root), PYTHONUNBUFFERED='1', PYTHONPATH=_sdk_path(), ROBORUN_HOME=str(HOME),
                ROBORUN_FACE_BLUR='1' if blur else '0')
@@ -1023,8 +1304,7 @@ def cmd_up(a) -> int:
     _unit('roborun-robot', [sys.executable, *entry, *sep, '--config', str(root / 'config.json'), '--port', str(port), '--host', '127.0.0.1'], env)
     print(f'robot: 127.0.0.1:{port}, profile {shown_profile(current_profile(root))}')
     if not _backend_up(c['backend']):
-        raise SystemExit('the robot did not start: ' + ('journalctl --user -u roborun-robot' if _systemd()
-                                                        else f"see {HOME / 'logs' / 'roborun-robot.log'}"))
+        raise SystemExit('the robot did not start: ' + logs_hint('roborun-robot'))
     _unit('roborun-local', [sys.executable, '-m', 'roborun_sdk.cli', 'local'],
           dict(PYTHONPATH=_sdk_path(), PYTHONUNBUFFERED='1', ROBORUN_HOME=str(HOME)))
     from .overhead import check as overhead_check, describe as overhead_line
@@ -1099,6 +1379,7 @@ def ready(c, say=print):
 
 def cmd_down(a) -> int:
     """Everything stops, and no arm is dropped: an arm that is not resting on something stays held until it is parked or supported."""
+    refuse_default_install('down', down_paths())   # before the station is asked anything or a pid is signalled
     from .arms.hardware import ask_station
     held = None
     bad = {}
@@ -1148,8 +1429,12 @@ def cmd_status(a) -> int:
         if u in on or u in expected:
             print(f"{LABEL[u]:<17} {'running' if u in on else 'stopped'}")
     print(f"{'robot name':<17} {c['robot']}")
+    if install_suffix():                                       # a second install on this account: say which one this is
+        print(f"{'install':<17} {HOME} (its own; services {unit_name('roborun-robot')}, ...)")
     backend = c.get('backend') or 'http://127.0.0.1:8120'
     try:
+        if 'roborun-robot' not in on:                          # its port may answer for another Roborun install here
+            raise RuntimeError('this install\'s robot is not running')
         st = _get(backend + '/v1/status')
         from .arm_profiles import shown_profile
         print(f"{'profile':<17} {shown_profile(st.get('profile'))}")
@@ -1166,7 +1451,9 @@ def cmd_status(a) -> int:
         print(f"{'local API':<17} {backend} (not answering)")
     from .local_proxy import PORT
     port = int(c.get('live_port', PORT) or 0)
-    if port:
+    if port and 'roborun-local' not in on:
+        print(f"{'page connection':<17} 127.0.0.1:{port} (not running)")
+    elif port:
         try:
             with urllib.request.urlopen(urllib.request.Request(f'http://127.0.0.1:{port}/roborun/hello', headers={'Origin': 'https://app.roborun.app'}), timeout=2) as r:
                 ready = json.load(r).get('ready')
@@ -1207,7 +1494,7 @@ def cmd_status(a) -> int:
                                           f'stops (to keep it running: sudo loginctl enable-linger {_user()})'))
     if 'roborun-robot' not in on:
         print('next: roborun up   (no arms: roborun up --sim cup; logs: ' +
-              ('journalctl --user -u roborun-robot' if _systemd() else str(HOME / 'logs')) + ')')
+              (f"journalctl --user -u {unit_name('roborun-robot')}" if _systemd() else str(HOME / 'logs')) + ')')
     return 0
 
 
@@ -1237,7 +1524,13 @@ def cmd_upgrade(a) -> int:
     keeps running on the version it started with, and `roborun up` after the task switches). Nothing changes when this is
     already the newest, or when roborun.app cannot be reached."""
     import subprocess, tempfile
-    have = installed_build()
+    if second_install() and not home_is_ours():      # install.sh installs into $HOME/.roborun: not this install's
+        raise SystemExit(f'this is a second Roborun install ({HOME}), and it runs the software of the install in '
+                         f'{Path.home() / ".roborun"}: upgrading here would replace that software under that install\'s '
+                         'running robot. Nothing was changed. Next: run roborun upgrade without ROBORUN_HOME (it upgrades both '
+                         'and restarts that robot), then roborun up for this install')
+    refuse_default_install('upgrade', installer_paths() + home_paths())     # a $HOME whose .roborun, command or startup file
+    have = installed_build()                                                # is a symlink into the default install: theirs
     try:
         latest = latest_build()
     except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -1285,54 +1578,105 @@ def _ask_yes(question):
         return False
 
 
+def _maybe_exists(path):
+    """path.exists(), and True when it cannot be checked (a folder this account may not read): then assume it is there."""
+    try:
+        return path.exists()
+    except OSError:
+        return True
+
+
 def cmd_uninstall(a) -> int:
     """Remove Roborun from this computer: stop it (no arm is dropped), then ~/.roborun, the `roborun` command and the PATH line
-    install.sh added. Your settings, key and recordings are kept unless you say otherwise (--purge, or yes when asked)."""
+    install.sh added. Your settings, key and recordings are kept unless you say otherwise (--purge, or yes when asked).
+    Any other home than the account's default (ROBORUN_HOME elsewhere, or a sandbox that changes only $HOME: the homes whose
+    units get their own names) removes only what is its own: its units, its home, and the install folder this roborun runs
+    from; never the account's ~/.roborun, ~/roborun, the roborun command, the PATH line or the logout setting of the default
+    install it shares this account with, also when the account's installed roborun runs it."""
     import subprocess
     root, home = install_root(), Path.home()
-    if not (a.yes or _ask_yes(f'Remove Roborun from this computer ({root})?')):
+    separate = second_install()                      # the rule the unit names use: ROBORUN_HOME elsewhere, or a changed $HOME
+    home_ours = home_is_ours()                       # a sandbox's own $HOME: its .roborun, command and PATH line are its own
+
+    def inside(p, folder):
+        return _real(p).startswith(_real(folder) + os.sep)
+    if separate and (protected(root) or not (inside(root, HOME) or (home_ours and inside(root, home))) or
+                     (_real(sys.prefix) != _real(root) and not inside(sys.prefix, root))):
+        root = None                                  # the default install's ~/.roborun (even when this roborun runs from it),
+                                                     # another install's, or a folder this roborun does not run from: only a
+                                                     # folder inside this install's own home(s) is ours to remove
+    if not (a.yes or _ask_yes(f'Remove Roborun from this computer ({root or HOME})?')):
         raise SystemExit('nothing was removed. To remove Roborun without being asked: roborun uninstall --yes')
+    c = json.loads(CONFIG.read_text()) if CONFIG.exists() else {}
+    runtime = Path(c.get('manifest') or _manifest_root()).expanduser()
+    top = runtime.parents[1] if _ours(runtime) else None
+    removed, kept, left = [], [], []
+    if separate and top is not None and (protected(top) or
+                                         not (inside(top, HOME) or (home_ours and inside(top, home)))):
+        left.append(f'{top} (a runtime outside {HOME}: maybe another install\'s; remove it yourself if it is this one\'s)')
+        top = None
+    rcs = []                                         # the account's PATH line serves every install of this account
+    for name in RC_FILES if root is not None and (home_ours or not separate) else ():
+        try:
+            if RC_BLOCK in (home / name).read_text():
+                rcs.append(home / name)
+        except OSError:
+            continue
+    link = home / '.local' / 'bin' / 'roborun'
+    unlink = (root is not None and (home_ours or not separate) and link.is_symlink()
+              and str(Path(os.readlink(link))).startswith(str(root)))
+    if protected(HOME):
+        left.append(f'{HOME} (it holds another install\'s files: remove what is this install\'s yourself)')
+    data = [p for p in (HOME, top) if p is not None and p.exists() and not protected(p)]
+    # the last word before anything is stopped, edited or deleted: none of it may resolve into the default install
+    refuse_default_install('uninstall', [root, *rcs, link if unlink else None, *data, *down_paths()])
     if any(_state(u) in ('active', 'running') for u in UNITS):
         print('stopping Roborun ...', flush=True)
         cmd_down(argparse.Namespace(park=a.park, release=a.release))
         if any(_state(u) in ('active', 'running') for u in UNITS):
             raise SystemExit('nothing was removed: an arm is still powered and held (see above). Finish with roborun down --park '
                              '(or --release while you support it), then run roborun uninstall again')
-    c = json.loads(CONFIG.read_text()) if CONFIG.exists() else {}
-    runtime = Path(c.get('manifest') or home / 'roborun' / 'robot' / 'runtime').expanduser()
-    top = runtime.parents[1] if _ours(runtime) else None
-    removed, kept = [], []
     mark = HOME / LINGER_MARK
-    if mark.is_file() and shutil.which('loginctl'):
+    shared = separate and (_maybe_exists(account_home() / 'robot.json') or      # the default install still needs it, or
+                           (not home_ours and _maybe_exists(home / '.config' / 'roborun' / 'robot.json')))   # $HOME's own
+    if mark.is_file() and shared:
+        left.append('keep-running-after-logout (another Roborun install on this account uses it too)')
+    elif mark.is_file() and shutil.which('loginctl'):
         subprocess.run(['loginctl', 'disable-linger', _user()], capture_output=True, stdin=subprocess.DEVNULL)
         removed.append('keep-running-after-logout (loginctl disable-linger)')
-    for name in RC_FILES:
-        rc = home / name
+    for rc in rcs:
         try:
             text = rc.read_text()
         except OSError:
             continue
         if RC_BLOCK in text:
             rc.write_text(text.replace(RC_BLOCK, '\n', 1)); removed.append(f'the PATH line in {rc}')
-    link = home / '.local' / 'bin' / 'roborun'
-    if link.is_symlink() and str(Path(os.readlink(link))).startswith(str(root)):
+    if unlink:
         link.unlink(); removed.append(str(link))
-    data = [p for p in (HOME, top) if p is not None and p.exists()]
+    elif separate and not home_ours and link.is_symlink():
+        left.append(f'{link} (the roborun command every install of this account shares)')
     purge = a.purge or (not a.keep_data and data and _ask_yes(
-        'Also delete your settings, key and recordings (' + ', '.join(str(p) for p in data) + ')?'))
+        'Also delete your settings, key, recordings and datasets (' + ', '.join(str(p) for p in data) + ')?'))
     for p in data:
         if purge:
             shutil.rmtree(p, ignore_errors=True); removed.append(str(p))
         else:
             kept.append(str(p))
-    if (root / 'python').is_dir() or (root / 'tools').is_dir():
+    if root is not None and ((root / 'python').is_dir() or (root / 'tools').is_dir()):
         shutil.rmtree(root, ignore_errors=True); removed.append(str(root))
-    print('Roborun is removed from this computer.' if removed else 'Roborun was not installed here: nothing to remove.')
+    elif root is None:
+        left.append(f'{install_root()} and its roborun command (the default install\'s, or not the one this roborun runs from: '
+                    f'{sys.prefix})')
+    print('Roborun is removed from this computer.' if removed else
+          'Nothing of Roborun to remove here besides the data kept below.' if kept else
+          'Roborun was not installed here: nothing to remove.')
     for r in removed:
         print(f'  removed {r}')
     if kept:
         print('Kept (your settings, key and recordings): ' + ', '.join(kept))
         print('  delete them when you no longer want them: rm -rf ' + ' '.join(kept))
+    for why in left:
+        print(f'  left alone: {why}')
     print('Install again any time: curl -fsSL https://roborun.app/install.sh | sh')
     return 0
 
@@ -1368,7 +1712,10 @@ def add_parsers(sub):
                        ('--data-root', 'folder of task records (default: inside the runtime)'), ('--video-motion', 'folder of recordings')):
         u.add_argument(flag, help=text, **({'dest': 'manifest'} if flag == '--runtime' else {}))
     u.add_argument('--profile-id', help=argparse.SUPPRESS)          # the page's profile switch: the runtime's id, as is
-    u.add_argument('--backend', default='http://127.0.0.1:8120', help='address of the local robot API (this computer only)')
+    u.add_argument('--backend', help='address of the local robot API (this computer only; default http://127.0.0.1:8120). '
+                                     'Remembered')
+    u.add_argument('--live-port', type=int, help='port of the page connection and viewer (default 8135; 0: off). Remembered; '
+                                                 'for a second install on this computer (ROBORUN_HOME)')
     u.add_argument('--insecure', action='store_true', help='allow a plain http --server on another computer (the key travels unencrypted)')
     u.add_argument('--data-sync', action='store_true', help='upload the history again after --no-data-sync')
     u.add_argument('--no-data-sync', action='store_true', help="do not upload this robot's task records and recordings (history)")
@@ -1383,6 +1730,8 @@ def add_parsers(sub):
     u.add_argument('--arm-options', action='append', help='left=FILE or right=FILE: a JSON file of driver options (limits, home, ...)')
     u.add_argument('--body-agent', help='a humanoid profile on a real robot: the address of the agent on the robot, http://ROBOT:PORT')
     u.add_argument('--body-agent-key-file', help='with --body-agent: the file holding that agent\'s key')
+    u.add_argument('--body', help='your own mobile base or humanoid: its class, my_body.py:MyBody or package.module:MyBody '
+                                  '(with --profile: its profile in ROBORUN_HOME/bodies)')
     u.set_defaults(func=cmd_up)
     d = sub.add_parser('down', help='stop Roborun on this computer; an arm that would fall stays held and you are told what to do')
     d.add_argument('--park', action='store_true', help='move held arms slowly to their rest pose, then switch their motors off')
@@ -1395,7 +1744,7 @@ def add_parsers(sub):
     x = sub.add_parser('uninstall', help='remove Roborun from this computer (asks before deleting your settings and recordings)')
     x.add_argument('--yes', action='store_true', help='do not ask whether to remove Roborun')
     x.add_argument('--keep-data', action='store_true', help='keep your settings, key and recordings without asking')
-    x.add_argument('--purge', action='store_true', help='also delete your settings, key and recordings, without asking')
+    x.add_argument('--purge', action='store_true', help='also delete your settings, key, recordings and datasets, without asking')
     x.add_argument('--park', action='store_true', help='if an arm is held: move it slowly to its rest pose first')
     x.add_argument('--release', action='store_true', help='if an arm is held and you support it: switch its motors off first')
     x.set_defaults(func=cmd_uninstall)

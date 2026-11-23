@@ -87,6 +87,8 @@ def _compile(profile):
 
 def _build(profile_id, scene):
     profile = profiles.load(profile_id)
+    if not (profile.get('sim') or {}).get('model'):
+        raise ValueError(f'{profile_id} has no 3-D model: add sim: model: <your MJCF file> to its profile')
     sim, robot, camera = profile['sim'], profile['robot'], profile['camera']
     mujoco, m = _compile(profile)
     d = mujoco.MjData(m)

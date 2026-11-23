@@ -13,13 +13,15 @@ import threading
 import time
 from pathlib import Path
 
+from .. import net
+
 MIN_SWEEP_RAD = 0.3
 MIN_JAW_RAD = 0.2
 MARGIN_RAD = 0.02
 
 
 def path(arm, address):
-    home = Path(os.environ.get('ROBORUN_HOME', Path.home() / '.config' / 'roborun'))
+    home = net.roborun_home()
     return home / 'calibration' / (re.sub(r'[^A-Za-z0-9._-]+', '_', f'{arm}@{address}').strip('_') + '.json')
 
 

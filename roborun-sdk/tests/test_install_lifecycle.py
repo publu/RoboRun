@@ -136,6 +136,7 @@ def _installed(home, monkeypatch):
     robot.CONFIG.write_text(json.dumps(dict(manifest=str(runtime))))
     monkeypatch.setattr(robot, 'install_root', lambda: root)
     monkeypatch.setattr(robot.Path, 'home', classmethod(lambda cls: user))
+    monkeypatch.setattr(robot, 'account_home', lambda: robot.HOME)      # this is the account's default install
     monkeypatch.setattr(robot, '_state', lambda u: 'inactive')
     monkeypatch.setattr(sys.stdin, 'isatty', lambda: False)
     return user, root, runtime

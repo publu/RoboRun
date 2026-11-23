@@ -51,7 +51,7 @@ Everything runs in simulation with fake hardware; no arm, camera or Roborun key 
 Python 3.10+ virtual environment:
 
 ```sh
-pip install "./roborun-station" "./roborun-sdk[test]" pytest-xdist pytest-timeout
+pip install "./roborun-station" "./roborun-sdk[robot,test]" pytest-xdist pytest-timeout
 cd roborun-sdk && python -m pytest -q -n auto --timeout=180 \
   --ignore=tests/test_guided_setup.py
 cd ../roborun-station && python -m pytest -q

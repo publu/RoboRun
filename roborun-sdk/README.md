@@ -15,6 +15,10 @@ curl -fsSL https://roborun.app/install.sh | sh
 macOS and Linux (Windows: WSL2), no administrator rights, its own Python. If something needs one administrator command
 (the simulator's OpenGL library, USB access for real arms), Roborun prints that exact line.
 
+Only the Python SDK, in your own environment (the client, your own drivers and rules): `pip install roborun-sdk` is small
+(no simulator, OpenCV or numpy), and `roborun-sdk[robot]` is everything a robot runs, as the installer installs it. See
+docs/BUILDING.md, "Install only what you need".
+
 ## 2. Sign in
 
 ```sh
@@ -71,10 +75,12 @@ leaves the arms safe.
 - `roborun --help` for the commands, `roborun status` for what is running, `roborun view` for this robot's own viewer.
 - [docs/BUILDING.md](docs/BUILDING.md), the reference: [your own arms](docs/BUILDING.md#your-arms-setup-and-hardware-checks),
   [profiles and simulation](docs/BUILDING.md#profiles-and-simulation), [the local API](docs/BUILDING.md#the-local-api),
-  [your own driver, camera and rules](docs/BUILDING.md#your-own-arm-driver), [privacy and your data](docs/BUILDING.md#privacy-and-your-data),
+  [your own driver, camera and rules](docs/BUILDING.md#your-own-arm-driver), [your own robot body](docs/BUILDING.md#your-own-robot-body)
+  (a mobile base or humanoid), [privacy and your data](docs/BUILDING.md#privacy-and-your-data),
   and [upgrading or removing Roborun](docs/BUILDING.md#install-upgrade-and-remove).
-- [examples/](examples/): a client, an LLM's tools, a minimal arm, a camera, a rules file. `roborun docs` says where all of
+- [examples/](examples/): a client, an LLM's tools, a minimal arm, a camera, a rules file, a rover. `roborun docs` says where all of
   this is on your computer.
+- `roborun docs changelog` (CHANGELOG.md): what each release changed. Read it before `roborun upgrade`.
 
 ## License
 

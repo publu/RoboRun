@@ -1,0 +1,207 @@
+# Changelog: roborun-sdk
+
+Every release of `roborun-sdk` (with the `roborun-station` of the same version), newest first. A version is
+`0.<series>.<UTC build time>` and the build id names the same time ([Versions and upgrades](docs/BUILDING.md#versions-and-upgrades)).
+`roborun docs changelog` prints this file.
+
+Within a series, the stable column of [Versions and upgrades](docs/BUILDING.md#versions-and-upgrades) is only added to.
+Anything in it that is removed or changed is listed here under **Removed** or **Changed**, named in backticks;
+`python tools/stable_surface.py` (run by the test suite) fails when a stable name is removed or changed without an entry.
+
+Releases before 0.1.20261121012822 were put together from the source history and the release builds. Remember that
+`roborun upgrade` (or a release the hosted API no longer supports) changes the SDK your driver and your program run on.
+
+## Unreleased
+
+**Added**
+
+- `Robot.clip()` is back as a stub so that a program written for 0.1.20261119203708 gets a clear error instead of
+  `AttributeError`. It raises `RobotError` with status 410 and code `removed` and sends no request. The cameras' own
+  recording of a task is `Robot.recording(task_id)`.
+- This changelog. It ships in the wheel and `roborun docs changelog` prints it. Also new is the stable-surface check
+  (`tools/stable_surface.py`, snapshot in `tools/stable_surface.json`).
+- The wheels keep every docstring, so `help()` and editors show them. Before, only `client`, `errors` and `devkit` kept
+  theirs. This includes the driver interfaces (`StreamedArm`, `ArmAdapter`), the camera source (`CustomSource`) and the
+  body adapters (`BaseAdapter`, `HeadAdapter`).
+- Your own robot body ([Your own robot body](docs/BUILDING.md#your-own-robot-body)). A mobile base or a humanoid profile
+  is a file of yours in `<ROBORUN_HOME>/bodies/<id>.yaml` (or `.yml`, `.json`). It is checked when it is read, and a
+  mistake names the file and the field. Its class is named with `roborun up --body file.py:Class` or
+  `package.module:Class` (or `body:` in `robot.yaml`), and `roborun up` remembers it per profile. `roborun profiles`
+  lists your bodies and says what is wrong with any. `/v1/status` gains `body_kind`. `examples/rover.py` (with
+  `my_rover.yaml` and `my_rover.xml`) runs offline, in the MuJoCo room and under `roborun up --sim room`.
+- Camera cards ([Describe your cameras](docs/BUILDING.md#describe-your-cameras)). Each camera is described by one card
+  (`roborun.camera/1`): where it is mounted (`world`, `left.tool`, `right.tool`, or a body's head), the image it delivers
+  (size after `rotate`, lens, pinhole, depth) and which task camera it answers as. Cameras in `robot.yaml` may have names
+  of your own and an optional `card:` section (`alias`, `label`, `mount`, `pose`, `depth`, `rectified`, `sees`,
+  `device`). `roborun cameras describe` (and `--json`) prints the cards and opens nothing. `roborun_sdk.camera_card`
+  has the checks, the cards, the body head card and `outbound()`, the camera facts a wrist-camera job may send. A camera
+  class's `open()` may return `rectified`; `outbound()` sends only rectified frames (intrinsics without lens distortion).
+  In `roborun sim`, each camera with a `card:` section is drawn from its card: its size, its depth (a `depth: false`
+  camera serves no depth and says so) and, for a wrist camera, the rig's `T_tool_camera`. `robot.yaml` camera entries
+  without a card leave the simulation exactly as before (sizes, pixels, and no checks), and every arm keeps its wrist
+  camera even when the profile lists no camera for it. The simulated camera service's status lists the cameras it
+  draws, with their cards.
+
+**Changed**
+
+- `card` is now a reserved key in a `robot.yaml` camera entry: it is the camera's card section. A camera class of your own
+  that took a `card=` argument from `robot.yaml` no longer receives it; rename that setting (any other extra key still
+  reaches your class's `__init__` as before).
+- A camera in `robot.yaml` named other than `top`, `left` or `right` was refused (`unknown camera role`). It is now a
+  camera of its own name: it is served and recorded under that name (the camera service lists it in a new `extra_roles`)
+  and is not a task camera unless its card gives it an alias. A name that breaks the rule (`Top`, `overhead`) is refused
+  in plain words. Frames gain `camera_id` and `rotate`. `roborun up --camera ROLE=SOURCE` takes ROLE from a camera of
+  your own name for that run, and `roborun setup` leaves cameras of your own name, and any camera with a card, as you
+  wrote them.
+- An unknown body profile says which bodies there are instead of starting the arm runtime download. Arms named on the
+  command line (`--rig`, `--left`/`--right`, `--sim` with an arm scene) and `--profile` of another body or of arms leave
+  out `robot.yaml`'s `body:`, which is the class of its own profile only. `--body` refuses a class whose profile is not
+  `--profile`, and a body class whose robot service does not start is stopped and not remembered.
+- `pip install roborun-sdk` is now the light install: the client, your own drivers and rules and the `roborun` command
+  (PyYAML, packaging, roborun-station). numpy, MuJoCo, OpenCV, the CAN/serial and YAM packages move to extras;
+  `roborun-sdk[robot]` is the old full set with its pins, and the installer (and `roborun upgrade`) installs it. A missing
+  package names its extra ([Install only what you need](docs/BUILDING.md#install-only-what-you-need)).
+- OpenArm 1.0 (`openarm_v1`): the DM-J4340 speed range is now 10 rad/s, and only the jaw ends are calibrated (the joint
+  zeros are the maker's).
+- The history upload now also sends the robot's telemetry by default: one file per hour (`log/telemetry`, uploaded as
+  `logs`) with the arms' joint positions, jaws, speeds and motor temperatures once a second, task or not, and events such
+  as Home or a fault (no images). `roborun up --no-data-sync` turns the whole upload off, telemetry included
+  ([Privacy and your data](docs/BUILDING.md#privacy-and-your-data)).
+- A `~/roborun` that holds `datasets/` beside the runtime is now taken as Roborun's own install: runtime updates apply
+  there (before, they were refused with "holds other files" or skipped) and keep `datasets/`.
+- Because of that, `roborun uninstall --purge` (or yes when it asks) now deletes `~/roborun` with `~/roborun/datasets`.
+  Before, an install with a dataset kept `~/roborun` whatever the answer. Without `--purge` (or with `--keep-data`) the
+  dataset is still kept, as before.
+
+**Fixed**
+
+- A simulation no longer runs in the live robot. Before, `roborun sim` used the runtime the robot had loaded, the robot's
+  camera socket (which it deleted and bound again, even while the real camera service served it) and port 8091. It also
+  wrote its exact overhead calibration into the live runtime's `log/`, where the real robot then took it as its newest
+  calibration. `roborun up --sim` also rewrote the live runtime's `config.json` for the simulation. Now every simulation
+  runs from its own copy of the runtime in `<Roborun home>/sim/`, with its own `config.json` and `log/`, made and
+  refreshed from the live one, which is only read. `roborun up --sim` runs the robot's backend and the simulation from
+  that copy on the robot's 8091 and camera socket. It refuses, with nothing changed, while the live robot's station or
+  camera service runs. `roborun sim` alone uses its own station port (8191), its own `sim-camera.sock` and no backend
+  (`--predict URL` to give one). Both refuse a port or camera socket that something serves. A left-over socket is
+  removed only when a Roborun simulation made it (a `.owner` file beside it) or, under `roborun up --sim`, when it is
+  the install's own camera socket and nothing serves it. `roborun sim` alone never uses port 8091 or a robot's
+  `camera.sock`, even while they are free. `roborun sim --runtime FOLDER` runs from its own copy of that folder in
+  `<Roborun home>/sim/runtimes/` and never writes into it, whether it is the live runtime or another install's. A
+  humanoid simulation (`roborun up --profile booster_k1 --sim room`) is refused, with nothing stopped, while the live
+  arms station, camera service or a real robot's service runs; before, it stopped them without parking the arms. `roborun sim --sessions DIR`
+  refuses a folder inside the robot's runtime or its data sync's folders (those sessions would be uploaded as real
+  ones). The simulated station's `/status` says `sim: true`. Simulated tasks are recorded in the copy's `log/`, and the history upload
+  (task records, recordings and telemetry) follows that copy while simulating ([Profiles and simulation](docs/BUILDING.md#profiles-and-simulation)).
+- A second Roborun install on the same computer no longer touches the first one. Its systemd units, sockets and data
+  folders now follow its own Roborun home (`ROBORUN_HOME`, or a `$HOME` other than the account's), with a short suffix.
+  The default install keeps its plain unit names, so upgrading does not leave units running without an owner.
+  `roborun up`, `down`, `upgrade` and `uninstall` from a second install refuse paths that resolve into the default install
+  ([Two installs on one computer](docs/BUILDING.md#two-installs-on-one-computer)). Still open: a second install whose
+  files are deliberately linked into the default install's files one level deeper, and `hw calibrate`, `cameras` and
+  `profile create`, which do not have this check yet.
+
+## 0.1.20261121012822 (build 20261121-012822-8f60cdaa99)
+
+- OpenArm 1.0 (Enactic): the `openarm_v1` catalog arm and its model. Damiao arms follow the CAN link's mode, so motors
+  set up for CAN FD answer.
+
+## 0.1.20261120133512 (build 20261120-133512-7ce45000da)
+
+- Setup no longer traps a person with no arm. Enter means simulated arms. A rig without a depth camera ends setup with
+  one line.
+- Docs: the `no_depth_camera` error code (tasks need a depth camera; a webcam only shows and records).
+
+## 0.1.20261120113745 (build 20261120-113745-3b1e5d8486)
+
+- `--profile yam` keeps two arms only on a robot that an older SDK set up as two YAMs. Otherwise it is one arm, as the
+  docs say.
+
+## 0.1.20261120113207 (build 20261120-113207-85e9a1251d)
+
+- Profiles: `yam` is one YAM arm and `yam_dual` is two (like `so101` / `so101_dual`). `yam_single` and `makerarm` still
+  work and say what they were renamed to.
+- The simulator obeys the `rules:` file like a real arm. The station refuses a move on an arm that is not OK and gives the
+  arm's own reason.
+- `roborun --help` lists 14 commands. The hardware checks are under `roborun hw`. `roborun login` prints an approval
+  link.
+- Guided setup asks fewer questions. A Stop holds a freely moving jaw where it is measured.
+- Datasets: columns a robot never reports are not written, and refused episodes are counted in `roborun status` and
+  `/v1/status`.
+
+## 0.1.20261120093759 (build 20261120-093759-ef6d6fb600)
+
+**Changed**
+
+- Humanoid profiles: a task starts with `POST /v1/tasks`, like on an arm profile (`POST /v1/body/move` stays as an alias).
+  The humanoid local API's error codes are now the arm API's: `invalid`, `not_found` and `busy` replace
+  `invalid_request`, `bad_json`, `unknown_move` and `move_running`. A program that branched on the old codes must change.
+
+**Added**
+
+- The robot's LeRobot v2.1 dataset: each task or humanoid move is an episode, stored in `~/roborun/datasets/<robot>/`
+  (uninstall keeps it).
+
+## 0.1.20261120085438 (build 20261120-085438-217073e79b)
+
+- The robot's dataset can be synced to the account, listed by episode, downloaded and deleted by its owner.
+
+## 0.1.20261120085045 (build 20261120-085045-b944fbc2d7)
+
+- Humanoid room simulation: the body starts 2.6 m from the table, so a first "drive forward 1 meter" completes.
+
+## 0.1.20261120084821 (build 20261120-084821-fb38181ecf)
+
+- Humanoid moves say why the obstacle guard could not see, and how to reach something out of view.
+
+## 0.1.20261120082915 (build 20261120-082915-015635251a)
+
+- Humanoid guard: tall bodies drive their full distance, and Stop confirms.
+- Setup stops a running Roborun through its station, as `roborun down` does. It keeps a camera you wrote yourself.
+- Both arms set to one CAN or serial adapter is reported as a settings mistake before either arm is opened.
+
+## 0.1.20261120081108 (build 20261120-081108-cc9b4e92d3)
+
+- Humanoids get an obstacle guard: head depth stops a walk before it reaches something.
+- Docs: `object_not_measured` and `task_failed`. A failed task always carries `error_info`.
+
+## 0.1.20261120075628 (build 20261120-075628-27f9806995)
+
+- The humanoid move record says what the body measured it did.
+
+## 0.1.20261120075544 (build 20261120-075544-504cc56d0e)
+
+- Humanoid moves land where they should, and the move record says what they did.
+
+## 0.1.20261120070335 (build 20261120-070335-670d7c3d5d)
+
+**Added**
+
+- `Robot.body_run()`: a humanoid move, waited for.
+- `roborun uninstall` and a local viewer (`roborun view`). Roborun keeps running after logout.
+- Arm connection: Damiao mode repair, YAM teaching handle, LeRobot calibration import, CAN bus-load warning and
+  `roborun motor`.
+- The humanoid local API serves the body's 3-D display model (`GET /v1/body/model`).
+
+## 0.1.20261119235416 (build 20261119-235416-9cb49890e1)
+
+- Humanoid local API: `GET /v1/body` reports `arms_offered`.
+
+## 0.1.20261119231551 (build 20261119-231551-06dca45424)
+
+- Setup does not stop when no camera is plugged in. It says so in one line and carries on.
+
+## 0.1.20261119224249 (build 20261119-224249-5f8e52cbb0)
+
+**Removed** (a break within the 0.1 series)
+
+- `Robot.clip()` and the `Task` field that went with it. A program that called `Robot.clip()` got `AttributeError` from
+  this release on. The next release after 0.1.20261121012822 brings `Robot.clip()` back as a stub
+  that raises a clear `RobotError` (code `removed`). For what the cameras saw during a task, use
+  `Robot.recording(task_id)`.
+
+## 0.1.20261119203708 (build 20261119-203708-36d943d3cd)
+
+The first release in the 0.1 series on `https://roborun.app/dl/simple/`. Each release has a PEP 440 version and a build
+id from the same time, and `roborun --version` prints the pin. It includes the typed client `roborun_sdk.client`, the
+docs and examples shipped in the wheel (`roborun docs`), and `roborun new`.

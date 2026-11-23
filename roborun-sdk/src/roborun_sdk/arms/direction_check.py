@@ -17,6 +17,8 @@ import sys
 import time
 from pathlib import Path
 
+from .. import net
+
 STEP_RAD = 0.05                     # about 3 degrees
 JAW_STEP = 0.08                     # of the stroke
 SPEED_RAD_S = 0.1
@@ -31,7 +33,7 @@ PAUSE_S = 1.0                       # in one confirmed run: each joint is announ
 
 
 def _result_file(arm_id, address):
-    home = Path(os.environ.get('ROBORUN_HOME', Path.home() / '.config' / 'roborun'))
+    home = net.roborun_home()
     return home / 'checks' / (re.sub(r'[^A-Za-z0-9._-]+', '_', f'{arm_id}@{address}').strip('_') + '.json')
 
 

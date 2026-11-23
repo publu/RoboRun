@@ -29,6 +29,8 @@ import os
 import shutil
 from pathlib import Path
 
+from . import net
+
 SCHEMA = 'roborun-dataset/1'
 CODEBASE_VERSION = 'v2.1'
 CHUNKS_SIZE = 1000
@@ -63,7 +65,7 @@ _found = False                                                    # cached: both
 
 def _state_file():
     """Where `roborun up` remembers a failed install (the same ROBORUN_HOME as roborun_sdk.robot.HOME)."""
-    return Path(os.environ.get('ROBORUN_HOME', Path.home() / '.config' / 'roborun')).expanduser() / 'robot' / 'dataset-tools.json'
+    return net.roborun_home() / 'robot' / 'dataset-tools.json'
 
 
 def _tools_found():

@@ -38,6 +38,8 @@ import time
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from . import net
+
 PORT = 8135
 HELLO = '/roborun/hello'
 UI_ORIGINS = ('https://app.roborun.app',)
@@ -163,11 +165,13 @@ class LocalProxy:
         ms = models(); label = lambda m: labels.get(m) or m
         defaults = [dict(arm=m, label=label(m), one=name_for(m), two='yam' if m == 'yam' else name_for(m, m)) for m in ms]
         default_ids = {d['one'] for d in defaults} | {d['two'] for d in defaults}
-        home = Path(os.environ.get('ROBORUN_HOME', Path.home() / '.config' / 'roborun'))
-        try: root = Path(json.loads((home / 'robot.json').read_text()).get('manifest') or '')
-        except (OSError, ValueError): root = None
+        home = net.roborun_home()
+        try: saved = json.loads((home / 'robot.json').read_text())
+        except (OSError, ValueError): saved = {}
+        root = Path(saved['manifest']) if saved.get('manifest') else None
         found = set()
-        for d in ([root / 'profiles'] if root else []) + [home / 'profiles']:
+        sim = [home / 'sim' / 'robot' / 'runtime' / 'profiles'] if saved.get('sim') else []   # a simulated robot's own runtime
+        for d in ([root / 'profiles'] if root else []) + sim + [home / 'profiles']:
             if d.is_dir():
                 found |= {f.parent.name for f in d.glob('*/rig.json')}
         if active_id: found.add(active_id)
@@ -197,7 +201,7 @@ class LocalProxy:
         at, value = getattr(self, '_hw', (0., None))
         if value is not None and time.monotonic() - at < 2.:
             return value
-        try: c = json.loads((Path(os.environ.get('ROBORUN_HOME', Path.home() / '.config' / 'roborun')) / 'robot.json').read_text())
+        try: c = json.loads((net.roborun_home() / 'robot.json').read_text())
         except (OSError, ValueError): c = {}
         try:
             from .arms import connect
@@ -215,7 +219,8 @@ class LocalProxy:
         value = dict(simulated=bool(c.get('sim')), scene=c.get('sim'), configured=configured, connected=connected,
                      arms_ready=bool(configured) and all(v['connected'] for v in configured.values()),
                      body=(c.get('body') or {}).get('profile'),
-                     bodies_connected=sorted(k for k, v in (c.get('body_agents') or {}).items() if isinstance(v, dict) and v.get('url')))
+                     bodies_connected=sorted({k for k, v in (c.get('body_agents') or {}).items() if isinstance(v, dict) and v.get('url')}
+                                             | {k for k, v in (c.get('body_adapters') or {}).items() if isinstance(v, dict) and v.get('ref')}))
         self._hw = (time.monotonic(), value)
         return value
 
@@ -250,7 +255,8 @@ class LocalProxy:
                 if not hw['simulated'] and profile_id not in hw['bodies_connected']:     # a real humanoid: only one connected here
                     return 409, dict(error=dict(code='body_not_connected', message=(
                         f'This robot has no {profile_id} connected: connect it on the robot once (roborun up --profile {profile_id} '
-                        '--body-agent http://ROBOT:PORT --body-agent-key-file FILE), or set the robot up with --sim to try it in simulation.')))
+                        '--body my_body.py:MyBody, or --body-agent http://ROBOT:PORT --body-agent-key-file FILE), or set the robot up '
+                        'with --sim to try it in simulation.')))
             elif not hw['simulated'] and not hw['arms_ready']:     # real arms only: never a simulation nobody set up
                 gone = [f"{side} {v['arm']} at {v['address']}" for side, v in hw['configured'].items() if not v['connected']]
                 return 409, dict(error=dict(code='no_arms', message=('No arms connected (' + '; '.join(gone) + '): plug them in, then switch.'
@@ -265,7 +271,7 @@ class LocalProxy:
                 if not fits:
                     return 409, dict(error=dict(code='other_arms', message='This robot runs the arms plugged into it: plug in those arms, '
                                                                            'or set the robot up with --sim to try other arms in simulation.'))
-            logs = Path(os.environ.get('ROBORUN_HOME', Path.home() / '.config' / 'roborun')) / 'logs'; logs.mkdir(parents=True, exist_ok=True)
+            logs = net.roborun_home() / 'logs'; logs.mkdir(parents=True, exist_ok=True)
             log = open(logs / 'profile-switch.log', 'ab')
             # the page names the runtime's profile id: passed as is (the names people type, `--profile yam`, are mapped to ids)
             argv = [sys.executable, '-m', 'roborun_sdk.cli', 'up'] + (['--no-sim'] if profile_id is None else ['--profile-id', profile_id])

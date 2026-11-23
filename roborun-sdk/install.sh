@@ -53,7 +53,7 @@ main() {
     say "Installing Roborun..."
     if [ -n "${ROBORUN_WHEELS:-}" ]; then
         "$uv" pip install --quiet --python "$venv/bin/python" --upgrade --find-links "$ROBORUN_WHEELS" \
-            --reinstall-package roborun-sdk --reinstall-package roborun-station roborun-sdk \
+            --reinstall-package roborun-sdk --reinstall-package roborun-station 'roborun-sdk[robot]' \
             || die "could not install Roborun"
     else
         base="${ROBORUN_DOWNLOADS:-https://roborun.app/dl}"
@@ -88,12 +88,15 @@ for row in m['wheels'].values():
     subprocess.run(['curl', '-fsSL', f"{base}/{m['build']}/{name}", '-o', str(target)], check=True)
     if hashlib.sha256(target.read_bytes()).hexdigest() != row['sha256']:
         raise SystemExit(f'{name} failed its checksum')
-    print(target)
+    # the SDK with its [robot] extra: everything a robot runs (simulator, cameras, arms); a plain pip install is the light SDK
+    print(f'{target}[robot]' if name.startswith('roborun_sdk-') else target)
 PY
 )" || die "could not download Roborun"
+        set -f                                             # the SDK wheel ends in [robot]: split the list, never glob it
         # shellcheck disable=SC2086
         "$uv" pip install --quiet --python "$venv/bin/python" --upgrade \
             --reinstall-package roborun-sdk --reinstall-package roborun-station $wheels || die "could not install Roborun"
+        set +f
         # which release this is (beside the Python, e.g. ~/.roborun/build.json): roborun --version and the User-Agent name it
         cp "$work/manifest.json" "$(dirname "$venv")/build.json" 2>/dev/null || true
     fi

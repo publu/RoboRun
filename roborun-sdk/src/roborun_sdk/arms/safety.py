@@ -14,7 +14,6 @@ Temperature limits, where each number comes from:
                                        Maker Arm gripper (RS00): the maker's limit, enable refused at 45 C, stop at 55 C.
   anything else                        warn 60 C, stop 70 C: the lowest firmware limit in this table.
 """
-import fcntl
 import json
 import math
 import os
@@ -247,8 +246,25 @@ class ArmsBusy(RuntimeError):
 
 
 def _home():
-    from .. import robot
-    return Path(os.environ.get('ROBORUN_HOME') or robot.HOME)
+    from .. import net, robot
+    return net.roborun_home() if os.environ.get('ROBORUN_HOME') else Path(robot.HOME)
+
+
+def _lock_now(handle):
+    """An exclusive lock on an open file, or OSError when another process holds it. POSIX: flock; Windows: msvcrt (imported
+    here, so importing the SDK works on both)."""
+    try:
+        import fcntl
+    except ImportError:
+        import msvcrt
+        handle.seek(1 << 30)                # one byte far past the holder's note, so others can still read who holds it
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        return
+    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _user_id():
+    return os.getuid() if hasattr(os, 'getuid') else os.environ.get('USERNAME', 'user')
 
 
 class ArmsLock:
@@ -257,7 +273,7 @@ class ArmsLock:
 
     def __init__(self, what, addresses=()):
         self.what, self.files = what, []
-        machine = Path(tempfile.gettempdir()) / f'roborun-arms-{os.getuid()}'
+        machine = Path(tempfile.gettempdir()) / f'roborun-arms-{_user_id()}'
         self.paths = [_home() / 'run' / 'arms.lock']
         for address in sorted({str(a) for a in addresses if a}):
             self.paths.append(machine / (sha256(address.encode()).hexdigest()[:24] + '.lock'))
@@ -268,7 +284,7 @@ class ArmsLock:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 handle = open(path, 'a+')
                 try:
-                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    _lock_now(handle)
                 except OSError:
                     handle.seek(0)
                     holder = handle.read().strip()

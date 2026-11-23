@@ -127,6 +127,7 @@ def cmd_login(a):
     from . import robot
     from .arms import settings
     file = Path(a.key_file) if a.key_file else settings.token_path(a)
+    robot.refuse_default_install('login', [file.expanduser(), _pending_file()])   # the key and the sign-in in progress
     if a.wait:
         login(a.server or robot.SERVER, file, name=a.name)
         return 0

@@ -19,18 +19,18 @@ You are running Roborun for a person: robot arms (or a humanoid) on the computer
 | A simulated humanoid | `roborun up --profile galaxea_r1 --sim room` (or `booster_k1`; scenes `room`, `empty`) |
 | Is it healthy; back to real arms | `roborun status`; `roborun up --no-sim` |
 | Stop motion now / stop Roborun | `roborun stop` / `roborun down` (a held arm stays held: `roborun down --park`, or `--release` while supported) |
-| Upgrade / remove | `roborun upgrade` / `roborun uninstall --yes` (`--purge` also deletes settings, key and recordings) |
+| Upgrade / remove | `roborun upgrade` / `roborun uninstall --yes` (`--purge` also deletes settings, key, recordings and datasets) |
 | Logs | `journalctl --user -u roborun-robot` (also `roborun-sim`, `roborun-station`, `roborun-local`); no systemd: `~/.config/roborun/logs/` |
 
 Without a terminal and with no arms set up, `roborun up` starts nothing and prints the manual steps (exit 1). If it prints `note: Roborun stops when you log out`, ask the person to run the admin line it gives. [More](BUILDING.md#running-roborun)
 
 ## 3. Profiles
 
-`roborun profiles` lists them (`*` = running); switch with `roborun up --profile NAME`. `yam` is one YAM arm, `yam_dual` two, `yam_metal` a YAM and a Metal arm; any catalog arm works as `<arm>`, `<arm>_dual` or `<left>+<right>`; humanoids are `booster_k1` and `galaxea_r1`. Your own arm: `roborun profiles create --urdf ...`. [More](BUILDING.md#profiles-and-simulation)
+`roborun profiles` lists them (`*` = running); switch with `roborun up --profile NAME`. `yam` is one YAM arm, `yam_dual` two, `yam_metal` a YAM and a Metal arm; any catalog arm works as `<arm>`, `<arm>_dual` or `<left>+<right>`; humanoids are `booster_k1` and `galaxea_r1`. Your own arm: `roborun profiles create --urdf ...`. Your own mobile base or humanoid: a profile in `~/.config/roborun/bodies/<id>.yaml` and `roborun up --profile <id> --body my_body.py:MyBody` ([Your own robot body](BUILDING.md#your-own-robot-body)). [More](BUILDING.md#profiles-and-simulation)
 
 ## 4. Real arms
 
-The guided setup does every step and asks before anything moves. One at a time: `roborun hw detect` (adapters, cameras, likely arms; moves nothing), `roborun hw check ARM@ADDRESS` (reads, enables nothing), `roborun hw calibrate ARM@ADDRESS`, then `roborun hw check ARM@ADDRESS --move` (in a terminal, with the person). [More](BUILDING.md#your-arms-setup-and-hardware-checks)
+The guided setup does every step and asks before anything moves. One at a time: `roborun hw detect` (adapters, cameras, likely arms; moves nothing), `roborun hw check ARM@ADDRESS` (reads, enables nothing), `roborun hw calibrate ARM@ADDRESS`, then `roborun hw check ARM@ADDRESS --move` (in a terminal, with the person). `roborun cameras describe --json` says where each camera is mounted, what it delivers and which task camera (`top`, `left`, `right`) it answers as; it opens nothing. [More](BUILDING.md#your-arms-setup-and-hardware-checks)
 
 ## 5. The pages
 

@@ -1,8 +1,8 @@
 """What a developer building on Roborun needs from the command line:
 
     roborun --version            the SDK, the installed build and the robot runtime
-    roborun docs                 where the agent guide, the README, the building guide, the hosted API notes and the examples are
-    roborun docs agents          print one of them (agents, readme, building, hosted-api, examples); `agents` is the one guide
+    roborun docs                 where the agent guide, the README, the building guide, the hosted API notes, the changelog and the examples are
+    roborun docs agents          print one of them (agents, readme, building, hosted-api, changelog, examples); `agents` is the one guide
                                  an LLM assistant needs to run Roborun for someone (install to uninstall, every route and error)
     roborun docs --examples DIR  copy the examples into DIR, ready to run
     roborun python FILE [ARGS]   run a Python file with Roborun's own Python, where roborun_sdk is installed
@@ -19,11 +19,12 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import __version__
+from . import __version__, net
 
 LOCAL_DOCS = 'http://127.0.0.1:8120/v1/docs'
 RELEASES_INDEX = 'https://roborun.app/dl/simple/'          # every Roborun release, as a pip / uv find-links page
-DOCS = {'agents': 'docs/AGENTS.md', 'readme': 'README.md', 'building': 'docs/BUILDING.md', 'hosted-api': 'docs/HOSTED_API.md', 'examples': 'examples/README.md'}
+DOCS = {'agents': 'docs/AGENTS.md', 'readme': 'README.md', 'building': 'docs/BUILDING.md', 'hosted-api': 'docs/HOSTED_API.md',
+        'changelog': 'CHANGELOG.md', 'examples': 'examples/README.md'}
 
 
 def docs_root() -> Path | None:
@@ -36,7 +37,7 @@ def docs_root() -> Path | None:
 
 
 def _config_home() -> Path:
-    return Path(os.environ.get('ROBORUN_HOME', Path.home() / '.config' / 'roborun'))
+    return net.roborun_home()
 
 
 def runtime_root() -> Path:
@@ -90,7 +91,7 @@ def cmd_docs(a) -> int:
         target.mkdir(parents=True, exist_ok=True)
         copied = []
         for item in sorted((root / 'examples').iterdir()):
-            if item.suffix in ('.py', '.md') and not item.name.startswith('_'):
+            if item.suffix in ('.py', '.md', '.yaml', '.xml') and not item.name.startswith('_'):   # yaml, xml: the rover's profile and model
                 shutil.copy2(item, target / item.name)
                 copied.append(item.name)
         print(f'copied {len(copied)} files to {target}: {", ".join(copied)}')

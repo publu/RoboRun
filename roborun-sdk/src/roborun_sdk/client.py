@@ -22,7 +22,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Callable, Dict, Iterator, List, Literal, Optional, TypedDict
+from typing import Any, Callable, Dict, Iterator, List, Literal, NoReturn, Optional, TypedDict
 
 from .errors import RoborunError
 
@@ -270,6 +270,14 @@ class Robot:
     def recording(self, task_id: str) -> Dict[str, Any]:
         """What the cameras recorded during the task: frame counts (frames are numbered from 0) and frame URLs."""
         return self.call('GET', f'/v1/tasks/{urllib.parse.quote(task_id)}/recording')
+
+    def clip(self, task_id: str) -> NoReturn:
+        """Removed: always raises RobotError (status 410, code 'removed', not retryable) and asks the robot for nothing.
+
+        It existed in 0.1.20261119203708 and was removed in the next release. What the cameras saw during the task is
+        recording(task_id). Kept so a program written for the older release gets this message, not an AttributeError."""
+        raise RobotError(410, 'removed', f'Robot.clip() was removed in 0.1.20261119224249. '
+                                         f'What the cameras saw during task {task_id}: Robot.recording({task_id!r}).')
 
     # ------------------------------------------------------------------------------------------------ humanoid profiles
     def body_move(self, prompt: str, duration_s: int = 4) -> Dict[str, Any]:

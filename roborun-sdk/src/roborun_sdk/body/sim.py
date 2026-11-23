@@ -18,10 +18,11 @@ import queue
 import threading
 import time
 
-import numpy as np
-
+from .. import _optional
 from . import profiles
 from .adapters import BaseAdapter, HeadAdapter
+
+np = _optional.require('numpy', 'sim')
 
 MOTION_HZ = 100.
 ROOM_X, ROOM_Y, ROOM_H, WALL_T = (-2.5, 4.5), (-3.0, 3.0), 2.6, .1
@@ -34,8 +35,7 @@ BOXES = (('red_box', (1.1, 1.5), (.2, .2, .2), (.85, .15, .12, 1)),
 
 
 def _mj():
-    import mujoco
-    return mujoco
+    return _optional.require('mujoco', 'sim')
 
 
 class BodySim:
@@ -88,7 +88,12 @@ class BodySim:
         if sim.get('head_camera_frame'):                      # an optical frame (z forward, y down): the camera looks along its -z
             spec.body(sim['head_camera_frame']).add_camera(name='head', pos=[0, 0, 0], quat=[0, 1, 0, 0], fovy=self.fovy)
         else:
-            spec.camera(sim['head_camera']).fovy = self.fovy
+            cam = spec.camera(sim['head_camera'])
+            if cam is None:
+                raise ValueError(f'{self.profile_id}: no camera {sim["head_camera"]!r} in its model {sim["model"]} (sim.head_camera)')
+            cam.fovy = self.fovy
+            if sim['head_camera'] != 'head':
+                cam.name = 'head'                             # the name every part of the simulation looks it up by
         world = spec.worldbody
         world.add_light(name='sun', pos=[1, 0, 6], dir=[0, .2, -1], type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL, diffuse=[.75, .75, .72], castshadow=False)
         world.add_light(name='fill', pos=[-1, 1, 3], dir=[.3, -.2, -1], type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL, diffuse=[.35, .35, .38], castshadow=False)
@@ -127,8 +132,14 @@ class BodySim:
     def _index(self):
         mujoco = _mj(); m = self.model; sim = self.profile['sim']
         free = [j for j in range(m.njnt) if m.jnt_type[j] == mujoco.mjtJoint.mjJNT_FREE]
+        if not free:
+            raise ValueError(f'{self.profile_id}: its model {sim["model"]} has no free joint: give the base body <freejoint/>')
         self.q_base = int(m.jnt_qposadr[free[0]])
         self.cam = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_CAMERA, 'head')
+        if self.cam < 0:
+            raise ValueError(f'{self.profile_id}: no camera {sim.get("head_camera")!r} in its model (sim.head_camera)')
+        if mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, sim['base_body']) < 0:
+            raise ValueError(f'{self.profile_id}: no body {sim["base_body"]!r} in its model (sim.base_body)')
         joint = lambda n: int(m.jnt_qposadr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, n)])
         self.q_head = {k: joint(n) for k, n in (sim.get('head_joints') or {}).items()}
         self.stance = {joint(n): float(v) for n, v in (sim.get('stance') or {}).items()}

@@ -39,7 +39,7 @@ jobs:
       - name: OpenGL for the simulator
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libegl1 libosmesa6
       - name: Install
-        run: pip install ./roborun-station "./roborun-sdk[test]" pytest-xdist pytest-timeout
+        run: pip install ./roborun-station "./roborun-sdk[robot,test]" pytest-xdist pytest-timeout   # [robot]: the simulator, cameras and drivers the tests use
       - name: Tests (simulation and fakes only)
         working-directory: roborun-sdk
         # The guided-setup suite runs on its own below.
@@ -78,7 +78,7 @@ jobs:
             roborun-sdk/pyproject.toml
             roborun-station/pyproject.toml
       - name: Install
-        run: pip install ./roborun-station "./roborun-sdk[test]" pytest-xdist pytest-timeout
+        run: pip install ./roborun-station "./roborun-sdk[robot,test]" pytest-xdist pytest-timeout   # [robot]: the simulator, cameras and drivers the tests use
       - name: Tests (simulation and fakes only)
         working-directory: roborun-sdk
         run: >

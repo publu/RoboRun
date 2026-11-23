@@ -46,6 +46,7 @@ def build_request(profile_id, frame, prompt, *, duration_s=4, job_id=None):
     if duration_s not in DURATIONS_S:
         raise BodyJobError('invalid_request', f'duration_s: one of {", ".join(map(str, DURATIONS_S))}')
     p = profiles.load(profile_id)
+    frame = complete_frame(p, frame)
     intr = dict(frame['intrinsics'])
     if (intr['width'], intr['height']) != (frame['width'], frame['height']):
         raise BodyJobError('invalid_request', 'the intrinsics are not the frame\'s size')
@@ -59,6 +60,31 @@ def build_request(profile_id, frame, prompt, *, duration_s=4, job_id=None):
                 frame=dict(source_sha256=hashlib.sha256(frame['jpeg']).hexdigest()), camera=camera, robot=p['robot'],
                 options=dict(duration_s=int(duration_s)))           # the service picks the rest
     return body
+
+
+def complete_frame(profile, frame):
+    """A head frame with what a HeadAdapter may leave out filled in from the body's profile: width and height (from the JPEG),
+    intrinsics (from camera.hfov_deg), eye_height_m (camera.eye_height_m), pitch (camera.pitch_rad) and yaw (0). What the
+    frame gives is kept as given."""
+    if not isinstance(frame, dict) or not isinstance(frame.get('jpeg'), (bytes, bytearray)):
+        raise BodyJobError('robot_error', 'the head camera gave no frame: HeadAdapter.frame() returns {jpeg: bytes, ...}')
+    out = dict(frame)
+    cam = profile['camera']
+    if out.get('width') is None or out.get('height') is None:
+        from .adapters import _jpeg_size
+        try:
+            out['width'], out['height'] = _jpeg_size(out['jpeg'])
+        except ValueError:
+            raise BodyJobError('robot_error', 'the head camera\'s frame is not a JPEG') from None
+    if out.get('intrinsics') is None:
+        out['intrinsics'] = profiles.intrinsics(out['width'], out['height'], cam['hfov_deg'])
+    if out.get('eye_height_m') is None:
+        out['eye_height_m'] = cam['eye_height_m']
+    if out.get('pitch') is None:
+        out['pitch'] = cam.get('pitch_rad', 0.)
+    if out.get('yaw') is None:
+        out['yaw'] = 0.
+    return out
 
 
 def request_digest(request):

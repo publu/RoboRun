@@ -93,7 +93,9 @@ class BodyRobot:
             st = self.state()
         except Exception as exc:                                 # a real body that stopped answering
             st = dict(error=str(exc)[:300])
-        return dict(ready=True, kind='humanoid', profile=self.profile_id, label=self.profile['label'], simulated=bool(self.simulated),
+        # kind 'humanoid': a body profile's API (not the arm API) for every body; body_kind is this body's own (humanoid, wheeled)
+        return dict(ready=True, kind='humanoid', body_kind=self.profile['robot']['kind'], profile=self.profile_id,
+                    label=self.profile['label'], simulated=bool(self.simulated),
                     scene=self.simulated, robot=self.robot, task=self._public(cur[0]) if cur else None, guard=self.guard_status(), **st)
 
     def guard_status(self):
@@ -108,6 +110,7 @@ class BodyRobot:
     def describe(self):
         p = self.profile
         return dict(profile=self.profile_id, label=p['label'], maker=p['maker'], description=p['description'], robot=p['robot'],
+                    own=not profiles.is_packaged(self.profile_id),          # your own profile (<ROBORUN_HOME>/bodies), not a packaged one
                     camera={k: v for k, v in p['camera'].items() if k != 'note'}, simulated=bool(self.simulated),
                     move=dict(durations_s=[2, 3, 4, 6, 8]),
                     arms_offered=[],                     # the arms this local API drives: none yet (the page shows arm controls for these)
@@ -552,16 +555,32 @@ def serve(robot, host='127.0.0.1', port=8120):
 
 
 # ---------------------------------------------------------------------------------------------------- the service
-def open_body(profile_id, scene=None, agent=None):
-    """(base, head, close, simulated) for a simulated scene or a real body's agent. A real body that does not answer is an error,
-    never replaced by a simulation."""
+def open_body(profile_id, scene=None, agent=None, adapter=None):
+    """(base, head, close, simulated) for a simulated scene, your own body class (adapter: {ref, options}) or a real body's
+    agent. A real body that does not answer is an error, never replaced by a simulation."""
     if scene:
+        if not (profiles.load(profile_id).get('sim') or {}).get('model'):
+            raise SystemExit(f'{profile_id} has no simulation model: add sim: model: <your MJCF file> to its profile, or run it '
+                             f'on the robot (roborun up --profile {profile_id} --body my_body.py:MyBody)')
         from .sim import BodySim
         sim = BodySim(profile_id, scene=scene)
         return sim.base, sim.head, sim.close, scene
+    if adapter and adapter.get('ref'):
+        from .custom import BodyLoadError, open_custom
+        try:
+            base, head, close, warnings = open_custom(adapter['ref'], profiles.load(profile_id), adapter.get('options'))
+        except BodyLoadError as exc:
+            raise SystemExit(f'{profile_id}: {exc}') from None
+        for w in warnings:
+            print(w, file=sys.stderr, flush=True)
+        return base, head, close, None
     if not agent or not agent.get('url'):
-        raise SystemExit(f'{profile_id}: no robot connected (roborun up --profile {profile_id} --body-agent http://ROBOT:PORT '
-                         '--body-agent-key-file FILE), and it is not set up to simulate (--sim room)')
+        raise SystemExit(f'{profile_id}: no robot connected (roborun up --profile {profile_id} --body my_body.py:MyBody for your own '
+                         f'body class, or --body-agent http://ROBOT:PORT --body-agent-key-file FILE for a robot-side agent), and it '
+                         'is not set up to simulate (--sim room)')
+    if not profiles.load(profile_id).get('agent'):
+        raise SystemExit(f'{profile_id}: its profile names no agent protocol (agent: protocol: booster|galaxea): run your own '
+                         f'body class instead (roborun up --profile {profile_id} --body my_body.py:MyBody)')
     from .adapters import AgentBody, AgentError
     key = Path(agent['key_file']).expanduser().read_text().strip()
     body = AgentBody(profile_id, agent['url'], key)
@@ -578,8 +597,12 @@ def cmd_serve(a) -> int:
     b = c.get('body') or {}
     pid = b.get('profile') or c.get('profile')
     if not profiles.is_body(pid):
-        raise SystemExit(f'{pid!r} is not a humanoid profile')
-    base, head, close, simulated = open_body(pid, b.get('sim'), b.get('agent'))
+        raise SystemExit(str(profiles.unknown(pid)))
+    try:
+        profiles.load(pid)
+    except profiles.ProfileError as exc:
+        raise SystemExit(str(exc)) from None
+    base, head, close, simulated = open_body(pid, b.get('sim'), b.get('agent'), b.get('adapter'))
     key = Path(c['key_file']).expanduser().read_text().strip()
     body = BodyRobot(pid, base, head, BodyJobs(c['server'], key), robot=c.get('robot', 'robot'), simulated=simulated, close=close)
     import urllib.parse
