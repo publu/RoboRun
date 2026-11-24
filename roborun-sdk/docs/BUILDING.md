@@ -654,9 +654,9 @@ policy.check('my_policy.py:Sway', arms='left')                          # offlin
 Ctrl-C, `roborun stop`, the page's Stop and the viewer's Stop all end a run; the arms settle where they are and the record
 says `stopped`. The task's own Stop works too: the page's Stop on the task and `Robot().stop_task(id)` stop that run at the
 arms' station by its id, the same hold as an ordinary task's Stop (also while the model warms up, and while Roborun's backend
-is down), and `Robot().stop_status()` and `wait(id)` count a running policy run as the running task (so do `Robot().status()`, `roborun status` and the viewer's "Now" line). The robot-wide Stop from `Robot().stop()`, the page and the viewer stops a policy run at the arms' station also when Roborun's backend is down, has not answered within 2 s, or answers with anything but a confirmed Stop (an error, a broken or non-JSON reply). On this release the
-robot's own `POST /v1/tasks/{id}/stop` at `127.0.0.1:8120` still answers `404` for a policy run: from your own program use the
-Python client, `POST /v1/stop` or `roborun stop`. Exit codes: 0 done or stopped, 1 failed, 2 refused (nothing sent, nothing moved), 3 the model was ready too
+is down), and `Robot().stop_status()` and `wait(id)` count a running policy run as the running task (so do `Robot().status()`, `roborun status` and the viewer's "Now" line). The robot-wide Stop from `Robot().stop()`, the page and the viewer stops a policy run at the arms' station also when Roborun's backend is down, has not answered within 2 s, or answers with anything but a confirmed Stop (an error, a broken or non-JSON reply). The robot's own
+`POST /v1/tasks/{id}/stop` at `127.0.0.1:8120` stops a policy run too, with the same hold, on the robot runtime released with
+this SDK; an older runtime answers `404` for a policy run, so there use the Python client, `POST /v1/stop` or `roborun stop`. Exit codes: 0 done or stopped, 1 failed, 2 refused (nothing sent, nothing moved), 3 the model was ready too
 late to start moving on its own.
 
 Policy runs in simulation use `roborun up --sim <scene>` (after `roborun down`): `roborun policy run` then drives the
@@ -731,7 +731,7 @@ While it runs, the station (127.0.0.1:8091) checks every chunk and plays it on i
 | An empty buffer | the policy is late | the arm holds its last target; 10 s dry ends the run |
 | Five refusals in a row | | the run ends (`policy_error`) |
 | The runner stops (crash, hang) | no heartbeat for 1 s | every leased arm holds; `roborun policy runs`, the next `policy run` and `roborun stop` mark the run `failed` (`runner_gone`) |
-| Stop | the page, the viewer, `roborun stop`, `POST /v1/stop`; this task's Stop (the page, `Robot.stop_task`) | the lease ends on the next tick and the arms hold |
+| Stop | the page, the viewer, `roborun stop`, `POST /v1/stop`; this task's Stop (the page, `Robot.stop_task`, `POST /v1/tasks/{id}/stop`) | the lease ends on the next tick and the arms hold |
 | Stop while the model warms up | any Stop after the run started | the run ends `stopped` with nothing leased; the station refuses a lease asked for after a later Stop |
 | SIGTERM or SIGHUP to `roborun policy run` | | as Ctrl-C: the lease ends, the arms hold, the record says `stopped` (`signal`) |
 
