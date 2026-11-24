@@ -99,6 +99,16 @@ def test_a_deep_runtime_dir_and_a_second_install_get_a_short_socket_everyone_fin
         srv.close()
 
 
+def test_a_policy_run_reads_the_camera_service_s_short_socket(install, tmp_path):
+    """The policy route's camera reader (roborun policy run passes no socket) names the same short socket as the camera
+    service, roborun up and the other readers."""
+    policy_station = pytest.importorskip('roborun_sdk.policy.station')
+    install(deep(tmp_path))
+    cam = robot.camera_socket()
+    assert Path(cam).parent.parent == Path('/tmp')
+    assert policy_station.Cameras().socket_path == cam == cameras._socket_path()
+
+
 def test_a_folder_with_room_for_camera_sock_but_not_its_helper_s_socket_moves_them_all(install, short_dir):
     folder_len = robot.SOCKET_MAX - len('/camera-capture.sock') + 1      # one byte too deep for camera-capture.sock
     pad = folder_len - len(os.fsencode(short_dir)) - len('/manifest/roborun-12345678') - 1

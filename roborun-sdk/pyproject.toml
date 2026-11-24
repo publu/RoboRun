@@ -58,6 +58,11 @@ feetech = ["pyserial>=3.5"]
 dynamixel = ["pyserial>=3.5"]
 # the robot's LeRobot v2.1 dataset (roborun_sdk.dataset): parquet + H.264 video. roborun up installs it once (about 290 MB)
 dataset = ["pyarrow>=17", "av>=14", "numpy>=1.26"]
+# Run a DreamLabs policy (roborun policy run --provider dreamlabs): DreamLabs' own client, plus numpy and OpenCV for the face
+# blur on frames sent. The upper bound follows DreamLabs' own `dreamlabs` package, which pins the client to <2.
+dreamlabs = ["dreamlabs-client>=1.1.7,<2", "numpy>=1.26", "opencv-python-headless>=4.8"]
+# roborun dreamlabs export | upload | finetune | status: the client's dataset tools (pyarrow, PyAV, boto3) as well
+dreamlabs-data = ["dreamlabs-client[datasets]>=1.1.7,<2", "numpy>=1.26", "opencv-python-headless>=4.8"]
 test = ["pytest>=8", "tomli>=2; python_version < '3.11'"]
 
 [project.urls]
@@ -75,7 +80,7 @@ pythonpath = ["src"]
 
 [tool.setuptools.package-data]
 roborun_sdk = ["py.typed", "rt/_ed25519.LICENSE", "viewer/*.html", "viewer/*.js", "viewer/*.css", "_docs/*.md", "_docs/docs/*.md", "_docs/examples/*.py", "_docs/examples/*.md", "_docs/examples/*.yaml", "_docs/examples/*.xml",
-               "data/*.json", "data/profiles/*.json", "data/arms/*.json",
+               "data/*.json", "data/profiles/*.json", "policy/data/*.json", "policy/data/*.LICENSE", "data/arms/*.json",
                "data/arm_models/*.json", "data/arm_models/*/*.json", "data/arm_models/*/*.xml", "data/arm_models/*/meshes/*.stl", "data/arm_models/*/LICENSE*", "data/models/*",
                "data/bodies/*.json", "data/body_models/*/*.xml", "data/body_models/*/*.json", "data/body_models/*/LICENSE",
                "data/body_models/*/meshes/*.STL",

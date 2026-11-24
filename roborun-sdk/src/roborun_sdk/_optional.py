@@ -17,9 +17,14 @@ EXTRA_FOR = {
     'msgpack': 'link', 'websockets': 'link', 'zstandard': 'link',
     'cryptography': 'crypto',
     'pyarrow': 'dataset', 'av': 'dataset',
+    'dream': 'dreamlabs', 'boto3': 'dreamlabs-data',
     'numpy': 'robot', 'PIL': 'robot', 'can': 'robot', 'serial': 'robot', 'usb': 'robot', 'libusb_package': 'robot',
     'tyro': 'robot', 'dm_env': 'robot', 'mcap': 'robot', 'mcap_ros2': 'robot', 'crcmod': 'robot', 'pydantic': 'robot',
 }
+
+
+# the extras [robot] contains (the dataset and DreamLabs extras are not in it, so a hint never offers [robot] for them)
+ROBOT_HAS = ('sim', 'cameras', 'link', 'crypto', 'urdf', 'yam', 'damiao', 'robstride', 'feetech', 'dynamixel')
 
 
 class MissingExtra(ModuleNotFoundError):
@@ -29,7 +34,7 @@ class MissingExtra(ModuleNotFoundError):
 def install_hint(module, extra=None) -> str:
     top = str(module or '').split('.')[0]
     extra = extra or EXTRA_FOR.get(top) or 'robot'
-    also = '' if extra == 'robot' else ", or 'roborun-sdk[robot]' for everything a robot runs"
+    also = (", or 'roborun-sdk[robot]' for everything a robot runs" if extra in ROBOT_HAS else '')
     return f"{top} is not installed: pip install 'roborun-sdk[{extra}]'{also}"
 
 

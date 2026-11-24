@@ -68,6 +68,60 @@ def _no_real_owner_urls(monkeypatch):
     monkeypatch.setattr(lh.LocalJSON, "__init__", guarded)
 
 
+RUNTIME_CALLS = []        # (what, runtime) for every policy-runtime touch outside the session's temp tree; see below
+
+
+@pytest.fixture(autouse=True)
+def _policy_runtime_in_tmp(monkeypatch, tmp_path_factory):
+    """A test that reaches a policy runtime (close_orphans, make_room, Paths: the task records, recordings and their
+    cleanup) outside pytest's temp tree fails. Without it, a test that patches only robot.CONFIG falls through to
+    robot._manifest_root(), ~/roborun/robot/runtime, and its Stop closes the real install's 'running' policy records.
+    The touch is recorded, not raised, because `roborun stop` swallows errors from close_orphans."""
+    import importlib
+    import os
+    import sys as _sys
+    record = importlib.import_module("roborun_sdk.policy.record")
+    for holder in ("roborun_sdk.policy.runner", "roborun_sdk.policy.control", "roborun_sdk.policy.cli", "roborun_sdk.cli"):
+        importlib.import_module(holder)     # modules that hold their own reference, imported before the swap below
+    base = os.path.realpath(str(tmp_path_factory.getbasetemp()))
+    seen = []
+
+    def check(what, runtime):
+        if runtime is None:
+            return
+        where = os.path.realpath(os.path.abspath(os.fspath(runtime)))
+        if where != base and not where.startswith(base + os.sep):
+            seen.append((what, where))
+            RUNTIME_CALLS.append((what, where))
+
+    real_close, real_room, real_paths = record.close_orphans, record.make_room, record.Paths
+
+    def close_orphans(runtime, *a, **k):
+        check("close_orphans", runtime)
+        return real_close(runtime, *a, **k)
+
+    def make_room(settings, here, video_root, runtime=None, *a, **k):
+        check("make_room", video_root)
+        check("make_room", runtime)
+        return real_room(settings, here, video_root, runtime, *a, **k)
+
+    class Paths(real_paths):
+        def __init__(self, runtime, run_id):
+            check("Paths", runtime)
+            super().__init__(runtime, run_id)
+
+    swap = {id(real_close): close_orphans, id(real_room): make_room, id(real_paths): Paths}
+    for name, mod in list(_sys.modules.items()):
+        if mod is None or not name.startswith("roborun_sdk"):
+            continue
+        for attr, val in list(vars(mod).items()):
+            if id(val) in swap and any(val is f for f in (real_close, real_room, real_paths)):
+                monkeypatch.setattr(mod, attr, swap[id(val)])
+    yield seen
+    if seen:
+        pytest.fail(f"this test reached a policy runtime outside pytest's temp tree: {seen}", pytrace=False)
+
+
 @pytest.fixture(autouse=True)
 def _gc_restored():
     """A runtime abandoned mid-segment in a test leaves automatic gc off (rt disables it while a segment runs)."""

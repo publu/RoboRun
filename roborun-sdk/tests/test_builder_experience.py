@@ -13,12 +13,21 @@ from pathlib import Path
 
 import pytest
 
+from fake_policy_bits import own_home
+
 from roborun_sdk import cli, devkit, scaffold
 from roborun_sdk.client import Robot, RobotError, RobotUnavailable, error_from
 from roborun_sdk.errors import ArmLoadError, RoborunError
 
 SDK = Path(__file__).resolve().parents[1]
 JPEG = b'\xff\xd8\xff\xe0fakejpeg'
+
+
+@pytest.fixture(autouse=True)
+def _home(tmp_path, monkeypatch):
+    """A client of a robot on 127.0.0.1 also looks for this computer's policy runs (policy.control: robot.json, the runtime's
+    task records, closing the stale ones): the test's own home, never this computer's."""
+    return own_home(tmp_path, monkeypatch)
 
 
 def load(path, name):

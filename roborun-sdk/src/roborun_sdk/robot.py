@@ -1476,6 +1476,11 @@ def cmd_status(a) -> int:
         if 'roborun-robot' not in on:                          # its port may answer for another Roborun install here
             raise RuntimeError('this install\'s robot is not running')
         st = _get(backend + '/v1/status')
+        try:                                                   # a policy run is a task the backend does not drive: named too
+            from .policy import control
+            st = control.merge_status(st)
+        except Exception:
+            pass
         from .arm_profiles import shown_profile
         print(f"{'profile':<17} {shown_profile(st.get('profile'))}")
         print(f"{'local API':<17} {backend} (answering)")

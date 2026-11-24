@@ -8,6 +8,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
+from fake_policy_bits import own_home
+
 from roborun_sdk.local_proxy import HELLO, LocalProxy, account_of, allowed_origins
 
 APP = 'https://app.roborun.app'
@@ -45,6 +47,13 @@ class Backend(BaseHTTPRequestHandler):
         if self.command != 'HEAD': self.wfile.write(data)
 
     do_GET = do_HEAD = do_POST = do_PUT = do_PATCH = do_DELETE = _reply
+
+
+@pytest.fixture(autouse=True)
+def _home(tmp_path, monkeypatch):
+    """A client of a robot on 127.0.0.1 also looks for this computer's policy runs (policy.control: robot.json, the runtime's
+    task records, closing the stale ones): the test's own home, never this computer's."""
+    return own_home(tmp_path, monkeypatch)
 
 
 @pytest.fixture()

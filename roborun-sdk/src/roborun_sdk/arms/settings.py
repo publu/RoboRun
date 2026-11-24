@@ -78,6 +78,9 @@ TEMPLATE = """\
 #                          # to the motion service and keeps history images here
 #   face_blur: true
 
+# policy:                  # policy runs (roborun policy run): the tool speed cap the station gives the arms while a
+#   max_tool_speed_m_s: 0.25  # policy drives them; at most the arm's own max_tool_speed_m_s
+
 # Your own rules, in Python: keep-out zones, speed rules, anything. See `check` below.
 # rules: my_rules.py
 #
@@ -88,7 +91,7 @@ TEMPLATE = """\
 #           return False                               # refuse: the arm holds where it is
 #       return positions_rad, gripper                  # or return changed values; None also means "fine"
 """
-KNOWN = {'robot', 'profile', 'token_file', 'arms', 'cameras', 'motion', 'privacy', 'rules', 'dry_run', 'sim', 'body'}
+KNOWN = {'robot', 'profile', 'token_file', 'arms', 'cameras', 'motion', 'privacy', 'rules', 'dry_run', 'sim', 'body', 'policy'}
 
 
 def path() -> Path:

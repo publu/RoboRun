@@ -10,7 +10,13 @@ What it reproduces (each is a behaviour Stop and the connectors must deal with):
 - the vendor's automatic Homes open the grippers, but are suppressed under a supervised lease;
 - during an motion lease the station pulls answers from a predict callable / URL every other 30 Hz tick and enforces
   0.04 rad and 0.081 jaw per answer and a 0.25 s answer age;
-- GET /supervisor/pose: the stamped manifest-native-pose/1 rows.
+- GET /supervisor/pose: the stamped manifest-native-pose/1 rows;
+- a `policy` lease (roborun_station.policy): one or both arms, up to 600 s with a 1 s heartbeat; the runner pushes timed
+  chunks (POST /supervisor/policy/chunk), the station checks each one and plays it on its own tick, clipped per tick, and an
+  empty buffer holds; POST /supervisor/policy/end ends it as an ordinary end. POST /supervisor/policy/stop {run_id} is the
+  per-task Stop of one policy run (the runtime's POST /v1/tasks/{id}/stop): it ends that run's lease the way a task's own
+  /supervisor/stop does, and remembers the run, so a run still warming up is refused its lease and sees itself stopped in
+  status()/pose() (stopped_runs).
 `lease_free_hold=True` adds the lease-free hold route: POST /supervisor/hold, no
 lease id, any state, never refused (an unverified request is obeyed and recorded). It latches (new leases refused for
 0.75 s), ends any lease with reason 'supervisor_stop', interrupts the thermal blend and the station Home move, and
@@ -34,9 +40,10 @@ import time
 import urllib.request
 import uuid
 
+from . import policy as pol
 from .core import Faults, RealClock, SimArm, finite, metal_right_spec, yam_left_spec, yam_right_spec
 
-ORDINARY_ENDS = ("action_window_finished", "action_goal_reached")   # the commands ran out; nobody asked for a stop
+ORDINARY_ENDS = ("action_window_finished", "action_goal_reached", "policy_finished")   # the commands ran out; nobody asked for a stop
 HOLD_WAIT_S = 0.25                                 # wait this long for the arms to settle
 HOLD_WAIT_MAX_S = 2.0
 LATCH_S = 0.75                                     # new leases refused this long after a hold
@@ -55,6 +62,9 @@ JAW_STEP = 0.081
 HOME_S = 3.0
 REOPEN_S = 2.0
 THERMAL_STEPS = 30
+
+
+STOPPED_RUNS_KEPT = 32       # policy runs remembered as stopped by id (a run id is a fresh 32-hex task id)
 
 
 class StationError(ValueError):
@@ -91,8 +101,10 @@ class FakeYamStation:
         self._last_tick = self.clock()
         self.last_error = None
         self.hold_generation = 0
+        self.stopped_runs: list[str] = []          # policy runs stopped by id (newest last): no lease for them any more
         self.holds: list[dict] = []                # recent hold records (id, source, verified, states)
         self._last_hold_at = float("-inf")       # the latch: no lease starts within LATCH_S of a hold
+        self.policy_tool_speed_m_s = pol.POLICY_TOOL_SPEED_M_S   # a policy run's tool speed cap (robot.yaml may set it)
 
     # ---- time ----------------------------------------------------------------------------------------------------
     def advance(self, seconds: float, *, step: float = 1/TICK_HZ):
@@ -111,6 +123,8 @@ class FakeYamStation:
             self._run_task(now)
             self._follow_setup_pose(now)
             self._watchdog(now)
+            if self.lease and self.lease["active"] and self.lease["kind"] == "policy" and self.state == "running":
+                self._play_policy(now)
             if (self.lease and self.lease["active"] and self.lease["kind"] == "video_motion"
                     and self._ticks % REFILL_TICKS == 0 and self.state == "running"):
                 self._refill(now)
@@ -142,6 +156,11 @@ class FakeYamStation:
     def lease_arm(self) -> SimArm:
         return self.arm((self.lease or {}).get("arm") or "left")
 
+    def lease_arms(self) -> list:
+        """Every arm the lease drives (a policy lease may drive both)."""
+        lease = self.lease or {}
+        return [self.arm(name) for name in (lease.get("arms") or [lease.get("arm") or "left"])]
+
     def note(self, event, **detail):
         self.events.append((self.clock(), event, detail))
 
@@ -159,7 +178,8 @@ class FakeYamStation:
             dead = [a.spec.name for a in self._arms() if self._dead(a, self.clock())]
             return {"state": self.state, "run": self.run, "arms": {a.spec.name: a.spec.name not in dead for a in self._arms()},
                     "dead_arms": dead, "last_error": self.last_error,
-                    "parked_arms": ["right"] if self.parked_right else []}
+                    "parked_arms": ["right"] if self.parked_right else [], "hold_generation": self.hold_generation,
+                    "stopped_runs": list(self.stopped_runs)}
 
     def pose(self) -> dict:
         now = self.clock()
@@ -180,9 +200,15 @@ class FakeYamStation:
             measured[arm.spec.name] = row
             arms[arm.spec.name] = {"body": arm.spec.body, "state": "fresh" if row["fresh"] else "stale"}
         out = {"schema": "manifest-native-pose/1", "version": 4, "server_monotonic_s": now, "measured": measured,
-               "arms": arms, "controller_state": self.state, "mixed_motion_left_version": 1}
+               "arms": arms, "controller_state": self.state, "mixed_motion_left_version": 1,
+               "hold_generation": self.hold_generation,         # a client that started before a Stop sees it here
+               "stopped_runs": list(self.stopped_runs)}         # and a run stopped by its id (policy_stop) sees that
         if self.lease and self.lease["active"]:
             out["execution_lease"] = {"id": self.lease["id"], "active": True, "kind": self.lease["kind"]}
+            if self.lease["kind"] == "policy":
+                with self.lock:                        # the tick changes the buffers under this lock
+                    out["execution_lease"].update(arms=list(self.lease["arms"]), run_id=self.lease.get("run_id"),
+                                                  policy=self._policy_public(now))
         return out
 
     def observe(self, body=None) -> dict:
@@ -191,6 +217,7 @@ class FakeYamStation:
             self.observations[oid] = self.clock()
             return {"observation_id": oid, "status": self.status(), "measured": self.pose()["measured"],
                     "limits": {a.spec.name: [list(row) for row in a.spec.limits] for a in self._arms()},
+                    "jaw_range": {a.spec.name: [a.spec.jaw_closed, a.spec.jaw_open] for a in self._held_arms()},
                     "lease": self.public_lease()}
 
     def public_lease(self):
@@ -212,6 +239,9 @@ class FakeYamStation:
                 raise StationError(f"ValueError: Stop (hold) was pressed {since:.2f} s ago: nothing new starts within "
                                    f"{LATCH_S:g} s of a Stop; send it again")
             if self.lease and self.lease["active"]:
+                if self.lease["kind"] == "policy":
+                    raise StationError(f"ValueError: An action is already leased: a policy run is in progress "
+                                       f"(task {self.lease.get('run_id')}); Stop it first")
                 raise StationError("ValueError: An action is already leased")
             if self.state != "idle":
                 raise StationError("ValueError: Station is not idle; the operator keeps control")
@@ -225,7 +255,7 @@ class FakeYamStation:
             seconds = body.get("seconds", 4)
             ref = body.get("reference") or {}
             kind = ref.get("kind")
-            longest = HAND_GUIDE_MAX_S if kind == "hand_guide" else 12
+            longest = HAND_GUIDE_MAX_S if kind == "hand_guide" else pol.POLICY_MAX_S if kind == "policy" else 12
             if not finite(seconds) or not 0.5 <= seconds <= longest:
                 raise StationError(f"ValueError: seconds must be between 0.5 and {longest:g}")
             if kind == "video_motion":
@@ -234,6 +264,8 @@ class FakeYamStation:
                 arm_name = self.sessions[ref["session_id"]].get("arm") or "left"
             elif kind in ("mixed_jog", "move_home", "setup_pose", "hand_guide"):
                 arm_name = ref.get("arm") or "left"
+            elif kind == "policy":
+                return self._start_policy(body, ref, float(seconds))
             else:
                 raise StationError("ValueError: unsupported reference")
             arm = self.arm(arm_name)
@@ -281,6 +313,181 @@ class FakeYamStation:
             self.note("lease_start", kind=kind, lease=self.lease["id"], arm=arm_name)
             return {"lease": self.public_lease(), "status": self.status()}
 
+    # ---- policy leases (roborun_station.policy) -----------------------------------------------------------------------
+    def _start_policy(self, body, ref, seconds):
+        names = ref.get("arms") or [ref.get("arm") or "left"]
+        if (not isinstance(names, list) or not names or len(set(names)) != len(names)
+                or any(n not in ("left", "right") for n in names)):
+            raise StationError("ValueError: a policy lease names its arms: ['left'], ['right'] or ['left', 'right']")
+        names = [n for n in ("left", "right") if n in names]
+        arms = [self.arm(n) for n in names]
+        now = self.clock()
+        for arm in arms:
+            if self._dead(arm, now):
+                raise StationError("ValueError: arm driver is dead; reset the arms first")
+        gripper = ref.get("gripper", True)
+        if not isinstance(gripper, bool):
+            raise StationError("ValueError: gripper must be true or false")
+        if gripper:
+            for arm in arms:
+                if not pol.jaw_range_usable((arm.spec.jaw_closed, arm.spec.jaw_open)):
+                    raise StationError(f"ValueError: the {arm.spec.name} arm has no jaw range; policy runs need one")
+        cap = self.policy_tool_speed_m_s
+        asked = ref.get("max_tool_speed_m_s")
+        if asked is not None:
+            if not finite(asked) or asked <= 0:
+                raise StationError("ValueError: max_tool_speed_m_s must be a number above 0")
+            cap = asked if cap is None else min(cap, float(asked))        # a request can lower the cap, never raise it
+        since = ref.get("since_hold_generation")      # the hold generation the run saw when it started (optional)
+        if since is not None:
+            if isinstance(since, bool) or not isinstance(since, int):
+                raise StationError("ValueError: since_hold_generation must be an integer")
+            if since < self.hold_generation:
+                raise StationError("ValueError: Stop was pressed after this run started; nothing moved; run again")
+            if since > self.hold_generation:
+                raise StationError("ValueError: the arms' station restarted after this run started; nothing moved; "
+                                   "run again")
+        run_id = str(ref.get("run_id") or "")[:64] or None
+        if run_id is not None and run_id in self.stopped_runs:
+            raise StationError(f"ValueError: Stop was pressed for this run (task {run_id}); nothing moved")
+        self.run += 1
+        self.lease = {"id": uuid.uuid4().hex, "run": self.run, "kind": "policy", "seconds": seconds, "active": True,
+                      "reason": None, "accepted": now, "last_heartbeat": now, "motion_start": now, "_session": None,
+                      "arm": names[0], "arms": names, "run_id": run_id, "heartbeat_s": pol.POLICY_HEARTBEAT_S,
+                      "tool_speed_m_s": cap, "gripper": gripper, "limits": pol.limits(),
+                      "_retained": list(arms[0].q_cmd) + [arms[0].jaw_cmd],
+                      "_policy": {"buffers": {n: pol.PolicyBuffer() for n in names}, "t_last": now, "seq": None,
+                                  "dry_since": now, "in_row": 0, "joints": {a.spec.name: len(a.q) for a in arms},
+                                  "jaw_range": {a.spec.name: (a.spec.jaw_closed, a.spec.jaw_open) for a in arms}},
+                      "policy": {"chunks": 0, "played_rows": 0, "dry_ticks": 0, "clipped_ticks": 0, "refused": {},
+                                 "skipped_rows": 0}}
+        self.state = "running"
+        self._policy_started(arms, cap)
+        self.note("lease_start", kind="policy", lease=self.lease["id"], arm=names[0], arms=names)
+        return {"lease": self.public_lease(), "status": self.status(), "limits": pol.limits()}
+
+    def _policy_started(self, arms, cap):
+        """Hook: the arms' drivers take the run's tool speed cap (AdapterStation). The simulated arms have no tool model."""
+        self.lease["tool_speed_active"] = False
+
+    def _policy_ended(self):
+        """Hook: the arms' drivers get their own tool speed cap back (AdapterStation)."""
+
+    def _policy_public(self, now):
+        lease = self.lease
+        state = lease["_policy"]
+        return dict(lease["policy"], buffer_s=round(max((b.seconds_left(now) for b in state["buffers"].values()), default=0.0), 4),
+                    tool_speed_m_s=lease.get("tool_speed_m_s"), tool_speed_active=lease.get("tool_speed_active"))
+
+    def _policy_lease(self, body):
+        if not self.lease or body.get("lease_id") != self.lease["id"]:
+            raise StationError("ValueError: Unknown action lease")
+        if self.lease["kind"] != "policy":
+            raise StationError("ValueError: this lease is not a policy lease")
+
+    def policy_chunk(self, body: dict) -> dict:
+        """POST /supervisor/policy/chunk {lease_id, seq, hz, skip_s, rows: {side: [[q.., gripper fraction], ...]}}."""
+        with self.lock:
+            self._policy_lease(body)
+            lease = self.lease
+            now = self.clock()
+            if not lease["active"]:
+                err = pol.ChunkRefused(f"the lease has ended ({lease.get('reason')})", "lease")
+                err.reply["lease"] = self.public_lease()
+                raise err
+            state, stats = lease["_policy"], lease["policy"]
+            try:
+                seq = body.get("seq")
+                if seq is not None and (not isinstance(seq, int) or isinstance(seq, bool)
+                                        or (state["seq"] is not None and seq <= state["seq"])):
+                    raise pol.ChunkRefused("seq must be an integer above the last chunk's", "seq")
+                names = lease["arms"]
+                commanded = {n: (list(self.arm(n).q_cmd), self.arm(n).jaw_cmd) for n in names}
+                rows, skipped = pol.check_chunk(body, sides=names, joints=state["joints"],
+                                                grippers={n: lease["gripper"] for n in names},
+                                                jaw_ranges=state["jaw_range"], commanded=commanded, arrival=now)
+            except pol.ChunkRefused as exc:
+                stats["refused"][exc.code] = stats["refused"].get(exc.code, 0) + 1
+                state["in_row"] += 1
+                self.note("policy_refused", code=exc.code, why=str(exc))
+                if state["in_row"] >= pol.POLICY_REFUSALS_END:
+                    lease["stop_reason"] = f"{pol.POLICY_REFUSALS_END} chunks refused in a row; the last: {exc}"
+                    self._end("policy_error")
+                exc.reply["lease"] = self.public_lease()
+                raise
+            state["in_row"] = 0
+            state["seq"] = body.get("seq", state["seq"])
+            for n in names:
+                state["buffers"][n].replace(rows[n])
+            stats["chunks"] += 1
+            stats["skipped_rows"] += skipped
+            last = {}
+            for n in names:
+                arm = self.arm(n)
+                q = list(arm.q_cmd)
+                last[n] = q + ([pol.fraction_from_jaw(arm.jaw_cmd, state["jaw_range"][n])] if lease["gripper"] else [])
+            return {"accepted": True, "skipped_rows": skipped, "buffer_s": self._policy_public(now)["buffer_s"],
+                    "clipped_ticks": stats["clipped_ticks"], "last_played": last, "lease": self.public_lease()}
+
+    def policy_end(self, body: dict) -> dict:
+        """POST /supervisor/policy/end {lease_id, reason}: the run is over; the arms settle where they are (an ordinary end)."""
+        with self.lock:
+            self._policy_lease(body)
+            if self.lease["active"]:
+                self.lease["end_note"] = str(body.get("reason") or "")[:120] or None
+                self._end("policy_finished")
+            return {"lease": self.public_lease(), "status": self.status()}
+
+    def policy_stop(self, body: dict) -> dict:
+        """POST /supervisor/policy/stop {run_id}: the per-task Stop of one policy run, by its task id. A running lease of that
+        run ends as a task's own /supervisor/stop ends it (reason supervisor_stop, the arms hold where they are); a run that
+        has no lease yet (its model still warming up) is refused one from now on. Any other run or lease is left alone.
+        Never refused for a well-formed id: stopping a run that already ended is fine."""
+        run_id = body.get("run_id") if isinstance(body, dict) else None
+        if not isinstance(run_id, str) or not 1 <= len(run_id) <= 64:
+            raise StationError("ValueError: run_id must be the policy run's task id")
+        with self.lock:
+            if run_id in self.stopped_runs:
+                self.stopped_runs.remove(run_id)
+            self.stopped_runs = (self.stopped_runs + [run_id])[-STOPPED_RUNS_KEPT:]
+            lease = self.lease
+            ended = False
+            if lease and lease["kind"] == "policy" and lease.get("run_id") == run_id and lease["active"]:
+                lease["end_note"] = "per-task Stop"
+                self._end("supervisor_stop", client_end=True)
+                ended = True
+            self.note("policy_stop", run_id=run_id, lease_ended=ended)
+            mine = lease is not None and lease["kind"] == "policy" and lease.get("run_id") == run_id
+            return {"run_id": run_id, "lease_ended": ended, "lease": self.public_lease() if mine else None,
+                    "status": self.status()}
+
+    def _play_policy(self, now):
+        lease = self.lease
+        state, stats = lease["_policy"], lease["policy"]
+        played = False
+        for name in lease["arms"]:
+            arm = self.arm(name)
+            got = state["buffers"][name].target(now, list(arm.q_cmd), arm.jaw_cmd, state["t_last"])
+            if got is None:
+                continue                                     # nothing left: the arm keeps its last target (holds)
+            q, jaw = got
+            q, jaw, clipped = pol.clip_step(list(arm.q_cmd), arm.jaw_cmd, q, jaw)
+            stats["clipped_ticks"] += clipped
+            arm.command(q=q, jaw=jaw)
+            played = True
+        state["t_last"] = now
+        if played:
+            stats["played_rows"] += 1
+            state["dry_since"] = None
+            lease["_retained"] = list(self.lease_arm().q_cmd) + [self.lease_arm().jaw_cmd]
+        else:
+            stats["dry_ticks"] += 1
+            if state["dry_since"] is None:
+                state["dry_since"] = now
+            elif now - state["dry_since"] >= pol.POLICY_DRY_END_S:
+                lease["stop_reason"] = f"no rows to play for {pol.POLICY_DRY_END_S:g} s"
+                self._end("policy_error")
+
     def heartbeat(self, body: dict) -> dict:
         with self.lock:
             if not self.lease or body.get("lease_id") != self.lease["id"]:
@@ -300,6 +507,10 @@ class FakeYamStation:
         lease = self.lease
         if not lease or not lease["active"]:
             return
+        if lease["kind"] == "policy":                  # nothing more plays: the buffers go before the arms are held
+            for buffer in lease["_policy"]["buffers"].values():
+                buffer.clear()
+            self._policy_ended()
         if lease["kind"] == "hand_guide":              # held again where the hands left it, never pulled back to the old target
             arm = self.lease_arm()
             arm.powered = True
@@ -322,7 +533,7 @@ class FakeYamStation:
         lease = self.lease
         if not lease or not lease["active"]:
             return
-        if now - lease["last_heartbeat"] > HEARTBEAT_TIMEOUT:
+        if now - lease["last_heartbeat"] > lease.get("heartbeat_s", HEARTBEAT_TIMEOUT):
             self._end("client_disconnected")
         elif lease["kind"] == "move_home" and self.lease_arm().at(self.lease_arm().spec.home, tol=0.002):
             self._end("action_goal_reached")
@@ -330,10 +541,14 @@ class FakeYamStation:
             self._end("action_goal_reached")
         elif now - lease["motion_start"] >= lease["seconds"]:
             self._end("action_window_finished")
-        elif self._dead(self.lease_arm(), now):
-            self.last_error = {"type": "MotorError", "message": self._dead(self.lease_arm(), now)}
-            self._end("station_error")
-            self.state = "error"
+        else:
+            for arm in self.lease_arms():
+                dead = self._dead(arm, now)
+                if dead:
+                    self.last_error = {"type": "MotorError", "message": dead}
+                    self._end("station_error")
+                    self.state = "error"
+                    break
 
     def _refill(self, now):
         lease = self.lease
@@ -524,7 +739,8 @@ class FakeYamStation:
             reply = {"schema": "manifest-station-hold/1", "version": 1, "hold": record,
                      "actions": actions or ["nothing_moving"], "pending": False, "loop_error": None,
                      "lease": None if not self.lease else {"id": self.lease["id"], "active": self.lease["active"],
-                                                           "reason": self.lease.get("reason")},
+                                                           "reason": self.lease.get("reason"), "kind": self.lease["kind"],
+                                                           "run_id": self.lease.get("run_id")},
                      "elapsed_ms": round((now - t0)*1000, 1), "controller_state": self.state,
                      "last_error": self.last_error, "writer": writer, "arms": arms,
                      "parked_arms": ["right"] if self.parked_right else [],
@@ -605,7 +821,9 @@ class FakeYamStation:
         post = {"/supervisor/observe": self.observe, "/supervisor/action": self.action,
                 "/supervisor/heartbeat": self.heartbeat, "/supervisor/stop": self.supervisor_stop,
                 "/stop": self.stop, "/home": self.home, "/reset": self.reset,
-                "/supervisor/reload-reference": self._reload}
+                "/supervisor/reload-reference": self._reload,
+                "/supervisor/policy/chunk": self.policy_chunk, "/supervisor/policy/end": self.policy_end,
+                "/supervisor/policy/stop": self.policy_stop}
         if self.lease_free_hold:
             post["/supervisor/hold"] = self.hold
         return get, post

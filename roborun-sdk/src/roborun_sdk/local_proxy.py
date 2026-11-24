@@ -54,9 +54,14 @@ RESPONSE_DROP = {'connection', 'keep-alive', 'proxy-authenticate', 'proxy-author
 EXPOSE = 'Accept-Ranges, Content-Disposition, Content-Length, Content-Range, Retry-After'
 MAX_BODY = 64 << 20
 READ_S = 130.                      # one read from the backend; live streams send far more often than this
+STOP_CONFIRM_S = 2.0               # POST /v1/stop: how long the backend has to answer before this computer's policy runs are
+                                   # stopped at the arms' station without it (they do not need the backend to move)
 PROFILE_APPLY = re.compile(r'/v1/robot-profiles/([a-z][a-z0-9_+]{0,79})/apply')
 COMPOSE = '/v1/robot-profiles/compose'
 PROFILES = '/v1/robot-profiles'
+TASK_STOP = re.compile(r'/v1/tasks/([0-9a-f]{32})/stop')
+STOP_STATUS = '/v1/stop/status'
+STATUS = '/v1/status'
 USE_ARMS = '/v1/robot-profiles/use-connected-arms'
 BAD_PATH = re.compile(r'(^|/)(\.|%2e){1,2}(/|$)|\\|%2f|%5c|%00', re.I)
 VIEW_FILES = {'/': ('index.html', 'text/html; charset=utf-8'), '/view': ('index.html', 'text/html; charset=utf-8'),
@@ -289,6 +294,159 @@ class LocalProxy:
             threading.Thread(target=watch, daemon=True, name='profile-switch').start()
             return 202, dict(inv, configured_id=profile_id, switch_job=job)
 
+    # ---------------------------------------------------------------- policy runs: tasks of this robot the backend does not drive
+    def policy_stop(self, task_id):
+        """The page's per-task Stop when the task is a policy run (roborun_sdk.policy.control): (status, body), or None when
+        it is not one (the backend answers it). Any failure looking for the run (a damaged record, a robot.json that is not
+        an object) is None too, so the Stop still goes on to the backend, as for any task."""
+        from .policy import control
+        try:
+            if control.policy_record(task_id) is None:
+                return None
+        except Exception:
+            return None
+        try:
+            rec = control.stop_run(task_id)
+        except control.StopNotConfirmed as exc:
+            return 503, dict(error=dict(code='stop_not_confirmed', message=str(exc), retryable=True))
+        except (KeyError, IndexError) as exc:              # a damaged record, not "no such policy run"
+            return self._stop_damaged_run(task_id, exc)
+        except LookupError:                                # not a policy run after all: the backend answers
+            return None
+        except Exception as exc:
+            return self._stop_damaged_run(task_id, exc)
+        code, view = self._backend_json(f'/v1/tasks/{task_id}')
+        if code != 200 or not isinstance(view, dict):
+            try:
+                return 200, control.view(rec)
+            except Exception:
+                return 200, rec
+        if rec.get('status') == 'stopping' and view.get('status') == 'running':
+            view = dict(view, status='stopping')
+        return 200, view
+
+    def _stop_damaged_run(self, task_id, exc):
+        """A policy run whose Stop could not be worked out here: the backend's own Stop all the same; when the backend does not
+        take it either, the Stop is not confirmed (never a quiet 'no such task' while the run may still move)."""
+        conn = http.client.HTTPConnection(self.backend_host, self.backend_port, timeout=10)
+        try:
+            conn.request('POST', f'/v1/tasks/{task_id}/stop', body=b'{}', headers={'Content-Type': 'application/json'})
+            r = conn.getresponse()
+            code, out = r.status, json.loads(r.read() or b'{}')
+        except (OSError, http.client.HTTPException, ValueError):
+            code, out = None, None
+        finally:
+            conn.close()
+        if code == 200:
+            return code, out
+        message = (f"the Stop of policy run {task_id} could not be sent to the arms' station ({exc!r}); use roborun stop, "
+                   "or the arm's power switch if anything moves")
+        return 503, dict(error=dict(code='stop_not_confirmed', message=message, retryable=True))
+
+    def stop_status(self):
+        """GET /v1/stop/status with this computer's policy runs counted as the running task: (status, body)."""
+        code, out = self._backend_json(STOP_STATUS)
+        if code is None:
+            return 502, dict(error='the robot backend is not answering')
+        if code != 200:
+            return code, out
+        try:
+            from .policy import control
+            return code, control.merge_stop_status(out)
+        except Exception:                                  # the policy runs cannot be read: the backend's own answer
+            return code, out
+
+    def status(self):
+        """GET /v1/status with this computer's policy runs: when the backend names no task, a running policy run is the task
+        (the backend does not drive policy runs). (status, body)."""
+        code, out = self._backend_json(STATUS)
+        if code is None:
+            return 502, dict(error='the robot backend is not answering')
+        if code != 200:
+            return code, out
+        try:
+            from .policy import control
+            return code, control.merge_status(out)
+        except Exception:                                  # the policy runs cannot be read: the backend's own answer
+            return code, out
+
+    def stop_robot(self, target, headers, body):
+        """POST /v1/stop: sent to the backend first. When the backend cannot be reached, has not answered within
+        STOP_CONFIRM_S, or answers with anything but a 2xx JSON answer (an error, a broken or non-JSON reply), the policy
+        runs on this computer are stopped at the arms' station without it (the robot-wide hold first). (status, body); a run this Stop stopped is named in stopped_tasks."""
+        try:
+            from .policy.record import utc_now
+            since = utc_now()
+        except Exception:
+            since = None
+        box, done = {}, threading.Event()
+
+        def send():
+            conn = http.client.HTTPConnection(self.backend_host, self.backend_port, timeout=5)
+            try:
+                conn.connect(); conn.sock.settimeout(READ_S)
+                conn.request('POST', target, body=body or None, headers=headers)
+                r = conn.getresponse()
+                box['answer'] = (r.status, r.read())
+            except (OSError, http.client.HTTPException) as exc:
+                box['down'] = exc
+            finally:
+                conn.close()
+                done.set()
+        threading.Thread(target=send, name='door-stop', daemon=True).start()
+        finished = done.wait(STOP_CONFIRM_S)                # read once: the send thread may finish just after this
+        answer = box.get('answer') if finished else None
+        out = _json_or_text(answer[1]) if answer is not None else None
+        if answer is not None and 200 <= answer[0] < 300 and isinstance(out, dict) and 'error' not in out:
+            return answer[0], self._stopped_runs_named(out, since)   # the backend confirmed it
+        # anything else is not the backend taking the Stop (a Stop is never refused): the policy runs here do not need the
+        # backend to move, so they are stopped at the arms' station; with none, the backend's own answer is passed on
+        if not finished:
+            why = f"Roborun's backend has not confirmed the Stop within {STOP_CONFIRM_S:g} s"
+        elif answer is None:
+            why = None
+        elif answer[0] >= 300:
+            why = f"Roborun's backend answered the Stop with an error ({answer[0]})"
+        else:
+            why = "Roborun's backend answered the Stop without saying what it stopped"
+        instead = self.stop_without_backend(why)
+        if instead is not None:
+            return instead
+        done.wait(READ_S + 10)                             # no policy run here: the backend's own answer, as before
+        answer = box.get('answer')
+        if answer is None:
+            return 502, dict(error='the robot backend is not answering')
+        return answer[0], _json_or_text(answer[1])
+
+    def _stopped_runs_named(self, out, since):
+        if since is None or not isinstance(out, dict):
+            return out
+        try:
+            from .policy import control
+            runs = [r for r in control.stopped_since(since) if isinstance(r, str)]
+        except Exception:
+            return out
+        if not runs:
+            return out
+        return dict(out, stopped_tasks=list(dict.fromkeys(list(out.get('stopped_tasks') or []) + runs)))
+
+    def stop_without_backend(self, why=None):
+        """POST /v1/stop while the backend does not answer (or answers too late, or with an error: `why`): the policy runs on
+        this computer are stopped at the arms' station (they do not need the backend to move). (status, body), or None when
+        none runs or none can be read."""
+        try:
+            from .policy import control
+            result = control.stop_all()                    # finds the runs itself; nothing of ours runs: ids == []
+        except Exception:
+            return None
+        if not result['ids']:
+            return None
+        message = control.stop_all_message(result, why or control.BACKEND_DOWN)
+        if result['failed'] and not result['held']:
+            return 503, dict(state='not_confirmed', confirmed=False, stopped_tasks=[r for r in result['ids'] if r in result['stopped']],
+                             arms={}, message=message, error=dict(code='stop_not_confirmed', message=message, retryable=True))
+        return 200, dict(state='stopping', confirmed=False, stopped_tasks=list(result['ids']), arms={}, message=message)
+
     def hello(self):
         return dict(roborun=1, key=self.key, robot=self.robot, account=self.account, ready=self.backend_state())
 
@@ -334,6 +492,14 @@ class LocalProxy:
     def stop(self):
         if self.server is not None:
             self.server.shutdown(); self.server.server_close()
+
+
+def _json_or_text(raw):
+    """A backend's answer body for the door to answer with: its JSON, or its text as an error."""
+    try:
+        return json.loads(raw) if raw else None
+    except ValueError:
+        return dict(error=(raw or b'').decode('utf-8', 'replace').strip()[:300])
 
 
 def _handler(proxy):
@@ -457,10 +623,16 @@ def _handler(proxy):
             api_path = target.split('?', 1)[0]
             if BAD_PATH.search(api_path):
                 return self._plain(404) or True
+            if self.command == 'GET' and api_path == STOP_STATUS:
+                code, out = proxy.stop_status()
+                return self._plain(code, None, out) or True
+            if self.command == 'GET' and api_path == STATUS:
+                code, out = proxy.status()
+                return self._plain(code, None, out) or True
             if self.command in ('GET', 'HEAD') and VIEW_GET.fullmatch(api_path):
                 self._forward(target, None); return True
             if self.command == 'POST' and api_path in VIEW_POST:
-                self._forward(target, origin[0] if origin else self._own_origins()[0], cors=False); return True
+                self._stop(target, origin[0] if origin else self._own_origins()[0], cors=False); return True
             return self._plain(403, None, dict(error=dict(code='forbidden', retryable=False,
                                                           message='The viewer only reads; start tasks from the page or the local API'))) or True
 
@@ -493,6 +665,22 @@ def _handler(proxy):
             if self.command == 'POST' and (m or path == USE_ARMS):       # switched here, on the robot (the backend only lists them)
                 if self._body() is None: return
                 code, out = proxy.switch_profile(m.group(1) if m and path != USE_ARMS else None); return self._plain(code, origin, out)
+            stop = TASK_STOP.fullmatch(path)
+            if self.command == 'POST' and stop:                          # a policy run: stopped at the station, by its id
+                raw = self._body()
+                if raw is None: return
+                answer = proxy.policy_stop(stop.group(1))
+                if answer is not None:
+                    return self._plain(answer[0], origin, answer[1])
+                return self._forward(target, origin, body=raw)
+            if self.command == 'GET' and path == STOP_STATUS:
+                code, out = proxy.stop_status()
+                return self._plain(code, origin, out)
+            if self.command == 'GET' and path == STATUS:
+                code, out = proxy.status()
+                return self._plain(code, origin, out)
+            if self.command == 'POST' and path == '/v1/stop':
+                return self._stop(target, origin)
             if path == PROFILES and self.command == 'GET':
                 code, inv = proxy._backend_json(PROFILES)
                 out = dict(inv if isinstance(inv, dict) else {}, hardware=proxy.hardware())
@@ -516,8 +704,20 @@ def _handler(proxy):
                 self._plain(413); return None
             return self.rfile.read(size) if size else b''
 
-        def _forward(self, target, origin, cors=True):
+        def _stop(self, target, origin, cors=True):
+            """POST /v1/stop: the backend first, this computer's policy runs at the arms' station when it fails or is slow."""
             body = self._body()
+            if body is None: return
+            headers = {k: self.headers[k] for k in self.headers.keys() if k.lower() in REQUEST_HEADERS}
+            headers['Origin'] = origin
+            headers[DOOR_HEADER] = '1'
+            code, out = proxy.stop_robot(target, headers, body)
+            return self._plain(code, origin if cors else None, out)
+
+        def _forward(self, target, origin, cors=True, body=None, unreachable=None):
+            """On to the backend. `body`: already read here; `unreachable`: () -> (status, body) or None, answered instead when
+            the backend cannot be reached (nothing was sent)."""
+            body = self._body() if body is None else body
             if body is None: return
             headers = {k: self.headers[k] for k in self.headers.keys() if k.lower() in REQUEST_HEADERS}
             if origin:                                     # the backend still refuses browsers on its native-only routes
@@ -530,6 +730,9 @@ def _handler(proxy):
                     conn.request(self.command, target, body=body or None, headers=headers)
                     r = conn.getresponse()
                 except (OSError, http.client.HTTPException):
+                    instead = unreachable() if unreachable is not None else None
+                    if instead is not None:
+                        return self._plain(instead[0], origin if cors else None, instead[1])
                     return self._plain(502, origin, dict(error='the robot backend is not answering'))
                 self.send_response(r.status); self._cors(origin if cors else None); self._safety(r.getheader('Content-Type') or '')
                 sized = False

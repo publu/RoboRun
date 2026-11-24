@@ -112,6 +112,19 @@ def load_adapter(ref, **kw):
     return obj
 
 
+def _policy_tool_speed():
+    """robot.yaml's policy.max_tool_speed_m_s (a policy run's tool speed cap), else the station's default (0.25 m/s)."""
+    from roborun_station.policy import POLICY_TOOL_SPEED_M_S
+    try:
+        from .arms.settings import load
+        value = (load(warn=lambda *_: None).get('policy') or {}).get('max_tool_speed_m_s', POLICY_TOOL_SPEED_M_S)
+    except (Exception, SystemExit):                     # an unreadable robot.yaml stops the station elsewhere, not here
+        return POLICY_TOOL_SPEED_M_S
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value < 10:
+        return POLICY_TOOL_SPEED_M_S
+    return float(value)
+
+
 def _station_classes():
     """The Roborun station logic (roborun_station) with arms backed by adapters instead of simulation."""
     from roborun_station import FakeYamStation
@@ -233,6 +246,7 @@ def _station_classes():
             if right is not None:
                 self.right = AdapterArm(right, 'right', self.clock, self.faults, seed=1)
             self.sessions_dir = Path(sessions_dir) if sessions_dir else None
+            self.policy_tool_speed_m_s = _policy_tool_speed()
             self._reopening = None
             self._reopen_errors = {}
 
@@ -248,12 +262,35 @@ def _station_classes():
         def _watchdog(self, now):
             super()._watchdog(now)
             lease = self.lease
-            if not lease or not lease['active'] or lease['kind'] != 'video_motion':
+            if not lease or not lease['active'] or lease['kind'] not in ('video_motion', 'policy'):
                 return
-            arm = self.lease_arm()
-            refused = getattr(arm.adapter, 'rule_refusal', lambda: None)() if isinstance(arm, AdapterArm) else None
-            if refused:                                  # the arm is holding: the task must hear why, not wait out its window
-                self._end(refused)
+            for arm in self.lease_arms():                # a policy lease may drive both arms: either one's rules end it
+                refused = getattr(arm.adapter, 'rule_refusal', lambda: None)() if isinstance(arm, AdapterArm) else None
+                if refused:                              # the arm is holding: the task must hear why, not wait out its window
+                    self._end(refused)
+                    return
+
+        def _policy_started(self, arms, cap):
+            """A policy run's tool speed cap goes to each driver that has one (a StreamedArm); _policy_ended gives it back."""
+            saved, active = {}, False
+            for arm in arms:
+                adapter = getattr(arm, 'adapter', None)
+                if adapter is None or not hasattr(adapter, 'max_tool_speed_m_s'):
+                    continue
+                own = adapter.max_tool_speed_m_s
+                saved[arm.spec.name] = own
+                if cap is not None:
+                    adapter.max_tool_speed_m_s = cap if own is None else min(own, cap)
+                active = active or (getattr(adapter, '_tool', None) is not None and adapter.max_tool_speed_m_s is not None)
+            self.lease['_tool_saved'] = saved
+            self.lease['tool_speed_active'] = active
+
+        def _policy_ended(self):
+            for name, own in (self.lease.get('_tool_saved') or {}).items():
+                try:
+                    self.arm(name).adapter.max_tool_speed_m_s = own
+                except Exception:
+                    pass
 
         def status(self):
             out = super().status()

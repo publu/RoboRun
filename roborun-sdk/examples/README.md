@@ -11,6 +11,8 @@ each extension point; `roborun new my-robot` writes a starter project with a dri
 | `robot_client.py` | A command line on `roborun_sdk.client.Robot`: tasks, live stream, Stop, a camera frame | `roborun python robot_client.py status` (needs `roborun up`) |
 | `rover.py` (+ `my_rover.yaml`, `my_rover.xml`) | Your own robot body: a diff-drive rover with a fixed camera, its profile and its simulation model | `roborun python rover.py` (offline), `--mujoco` (simulated), `install` (then `roborun up --profile my_rover --sim room`) |
 | `llm_tools.py` | The robot as an LLM's tools: specs (JSON Schema) and `call_tool()` for look, run a task, arm state, Stop | `roborun python llm_tools.py tools` |
+| `dreamlabs_policy.py` | A DreamLabs policy (Dream-1) on two YAM arms through Roborun, from Python: check, shadow, run | `roborun python dreamlabs_policy.py check` (needs `pip install 'roborun-sdk[dreamlabs]'` and your DreamLabs credentials) |
+| `my_policy.py` | Your own policy: a provider that sways the wrist, run as a Roborun task through every limit and Stop | `roborun policy run --provider my_policy.py:Sway --arms left --prompt "sway"` (needs `roborun up`) |
 
 Run them with `roborun python FILE`: Roborun's own Python, where `roborun_sdk` is installed. `roborun docs --examples DIR`
 copies them out of an installed Roborun.

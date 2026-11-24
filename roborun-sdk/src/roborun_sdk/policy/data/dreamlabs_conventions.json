@@ -1,0 +1,134 @@
+{
+ "schema": "roborun-policy-convention/1",
+ "about": "The joint convention of DreamLabs' YAM robot config, read from DreamLabs' published `dreamlabs` wheel (Apache-2.0) by tools/dreamlabs_convention.py. tests/test_dreamlabs_convention.py compares it with Roborun's YAM model and driver config; `verified` models may run the base Dream-1 model.",
+ "source": {
+  "package": "dreamlabs",
+  "version": "1.0.42",
+  "wheel": "dreamlabs-1.0.42-py3-none-any.whl",
+  "sha256": "fd6951df26903019c68c4bfb45401099b0240d40bf1e990404d9a2fac6c3291b",
+  "license": "Apache-2.0",
+  "files": [
+   "i2rt/robots/config/yam.yml",
+   "i2rt/robot_models/arm/yam/yam.xml",
+   "i2rt/robots/config/linear_4310.yml",
+   "i2rt/robots/get_robot.py",
+   "robots/yam.py"
+  ]
+ },
+ "models": {
+  "yam": {
+   "verified": true,
+   "joints": [
+    "joint1",
+    "joint2",
+    "joint3",
+    "joint4",
+    "joint5",
+    "joint6"
+   ],
+   "motors": [
+    [
+     1,
+     "DM4340"
+    ],
+    [
+     2,
+     "DM4340"
+    ],
+    [
+     3,
+     "DM4340"
+    ],
+    [
+     4,
+     "DM4310"
+    ],
+    [
+     5,
+     "DM4310"
+    ],
+    [
+     6,
+     "DM4310"
+    ]
+   ],
+   "directions": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "zero_offsets_rad": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "limits_rad": [
+    [
+     -2.61799,
+     3.05433
+    ],
+    [
+     0.0,
+     3.65
+    ],
+    [
+     0.0,
+     3.66519
+    ],
+    [
+     -1.5708,
+     1.5708
+    ],
+    [
+     -1.5708,
+     1.5708
+    ],
+    [
+     -2.0944,
+     2.0944
+    ]
+   ],
+   "gripper": {
+    "type": "linear_4310",
+    "motor_type": "DM4310",
+    "units": "open fraction",
+    "closed": 0.0,
+    "open": 1.0,
+    "driver_converts_nothing": true
+   },
+   "mapping": {
+    "joint_order": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "signs": [
+     1,
+     1,
+     1,
+     1,
+     1,
+     1
+    ],
+    "offsets_rad": [
+     0.0,
+     0.0,
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "gripper": "same open fraction"
+   }
+  }
+ }
+}

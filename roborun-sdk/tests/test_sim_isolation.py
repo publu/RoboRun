@@ -463,6 +463,40 @@ def test_up_sim_on_a_deep_runtime_dir_hands_its_short_camera_socket_to_the_backe
         shutil.rmtree(Path(robot.camera_socket()).parent, ignore_errors=True)
 
 
+def test_a_policy_run_under_up_sim_on_a_deep_runtime_dir_reads_the_simulation_s_socket_and_lives_in_its_copy(box, monkeypatch):
+    """roborun up --sim on a runtime dir too deep for a Unix socket: the simulation serves the short camera socket it is given
+    (and owns it: sim_home.own_socket), and a policy run started then (roborun policy run, no --camera-socket and no runtime=)
+    works out the same socket on its own, reads the simulated cameras there and keeps its records in the simulation's copy.
+    When the simulation ends, it removes only its own socket."""
+    pytest.importorskip('camera_service')                                               # the runtime's camera protocol
+    from roborun_sdk import cameras
+    from roborun_sdk.policy.record import robot_runtime
+    from roborun_sdk.policy.station import Cameras
+    deep = box.run / ('a-sandbox-named-for-what-it-tests' + 'x' * 40) / 'run' / 'xdg'
+    deep.mkdir(parents=True); monkeypatch.setenv('XDG_RUNTIME_DIR', str(deep))
+    units = []; _up_stubs(monkeypatch, units)
+    try:
+        assert robot.cmd_up(up_args(sim='cup')) == 0
+        run = {name: (argv, env) for name, argv, env in units}
+        sim_argv = run['roborun-sim'][0]
+        cam = sim_argv[sim_argv.index('--camera-socket') + 1]
+        assert len(os.fsencode(cam)) <= robot.SOCKET_MAX and Path(cam).parent.parent == Path('/tmp')
+        world = SimpleNamespace(cameras={'top': dict(depth=True), 'left': dict(depth=False), 'right': dict(depth=True)},
+                                card=lambda role: dict(id=role), objects_state=lambda: {}, renderer=lambda: None)
+        release = mujoco_sim.Cameras(world, cam).serve()                                 # the simulation, as roborun-sim runs it
+        try:
+            seen = Cameras()                                                             # the policy run's own reader
+            assert seen.socket_path == cam == cameras._socket_path() == run['roborun-robot'][1]['MANIFEST_CAMERA_SOCKET']
+            assert seen.roles() == ['top', 'left', 'right']                              # over the socket, from the simulation
+            assert robot_runtime(json.loads(robot.CONFIG.read_text())) == box.home / 'sim' / 'robot' / 'runtime'
+        finally:
+            release()
+        assert not os.path.exists(cam) and not os.path.exists(cam + sim_home.OWNER)
+        assert Cameras().roles() == []                                                   # nothing serves: no camera, no error
+    finally:
+        shutil.rmtree(Path(robot.socket_path('camera.sock')).parent, ignore_errors=True)
+
+
 def test_up_sim_forgets_only_its_own_unserved_camera_socket(box, monkeypatch):
     path = robot.camera_socket()
     serve_unix(path).close()                                                             # left by this install's camera service

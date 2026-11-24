@@ -18,5 +18,10 @@
   BoosterRobotics, from github.com/BoosterRobotics/booster_assets (unmodified; `source.json` names the commit and each file's
   sha256, with the license text beside it). The Galaxea R1 simulation uses a stand-in made from plain shapes for this SDK
   (`body_models/galaxea_r1/source.json`).
+- **DreamLabs' YAM kinematics** in `src/roborun_sdk/policy/dreamlabs_yam.py`: the joint origins and axes of
+  `assets/yam.urdf` and the tool offset `TCP_OFFSET_M` of the IK module in DreamLabs' `dreamlabs`
+  1.0.42 wheel, Apache License 2.0, Copyright 2026 Dream Labs (license text in `src/roborun_sdk/policy/data/dreamlabs.LICENSE`).
+  DreamLabs' NOTICE says its YAM description is derived from i2rt's (MIT License, Copyright (c) I2RT Robotics). Copied as
+  numbers so that the tool poses Roborun sends are in the frame DreamLabs' own IK uses.
 - **Test photo** `tests/data/astronaut_face.jpg` (tests only, not in the installed package): taken from the "astronaut"
   sample image of scikit-image (`skimage.data.astronaut()`), a NASA photograph of Eileen Collins in the public domain.

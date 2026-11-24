@@ -17,7 +17,9 @@ profiles (a humanoid moves with POST /v1/body/move, `Robot.body_move`).
 """
 from __future__ import annotations
 
+import datetime
 import json
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -26,11 +28,18 @@ from typing import Any, Callable, Dict, Iterator, List, Literal, NoReturn, Optio
 
 from .errors import RoborunError
 
+
+def _utc_now() -> str:
+    """The clock and format of a policy run's record ('ended'), so a Stop's start can be compared with it."""
+    return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='milliseconds')
+
 __all__ = ['API', 'Robot', 'RobotError', 'RobotUnavailable', 'Task', 'ErrorInfo', 'Outcome', 'HeldObject', 'Placed', 'StopResult', 'StopStatus',
            'TERMINAL']
 
 API = 'http://127.0.0.1:8120'
 TERMINAL = ('done', 'stopped', 'failed')
+STOP_CONFIRM_S = 2.0              # Robot.stop: how long the backend has to answer POST /v1/stop before this computer's policy
+                                  # runs are stopped at the arms' station without it (they do not need the backend to move)
 
 Mode = Literal['run', 'preview']
 Arm = Literal['left', 'right', 'both']
@@ -139,6 +148,23 @@ def error_from(status: int, raw: bytes) -> RobotError:
     return RobotError(status, 'error', text or f'HTTP {status}', status in (429, 502, 503, 504), body)
 
 
+def _stop_not_taken(finished, exc, out, bound):
+    """What Roborun's backend did with a POST /v1/stop it did not confirm, as a clause for the Stop's message."""
+    if not finished:
+        return f"Roborun's backend has not confirmed the Stop within {bound:g} s"
+    if isinstance(exc, RobotUnavailable):
+        return "Roborun's backend is not answering"
+    if isinstance(exc, RobotError):
+        return f"Roborun's backend answered the Stop with an error ({exc.status} {exc.code})"
+    if exc is not None:
+        return f"Roborun's backend answered the Stop with something broken ({type(exc).__name__})"
+    if isinstance(out, dict) and 'error' in out:
+        err = out.get('error')
+        code = err.get('code') if isinstance(err, dict) else None
+        return f"Roborun's backend answered the Stop without confirming it ({code or 'error'})"
+    return "Roborun's backend answered the Stop without saying what it stopped"
+
+
 class Robot:
     """The robot on this computer. `api`: its local address (default http://127.0.0.1:8120). `timeout`: seconds per call."""
 
@@ -169,6 +195,24 @@ class Robot:
         except ValueError:
             raise RobotError(response.status, 'not_json', 'the robot answered with something that is not JSON') from None
 
+    def _policy(self):
+        """roborun_sdk.policy.control when this client talks to the robot on this computer (a loopback address), else None:
+        a policy run (`roborun policy run`) is a task of this computer's robot that the backend lists but does not drive."""
+        if urllib.parse.urlsplit(self.api).hostname not in ('127.0.0.1', 'localhost', '::1'):
+            return None
+        from .policy import control
+        return control
+
+    def _ask_policy(self, name, *args, default=None):
+        """policy.control.<name>(*args) for this computer's policy runs, or `default` when this client is not on the robot's
+        computer or the lookup fails in any way (a damaged record, a robot.json that is not an object): these lookups
+        never stand between a Stop, a task view or a wait and Roborun's backend."""
+        try:
+            control = self._policy()
+            return default if control is None else getattr(control, name)(*args)
+        except Exception:
+            return default
+
     def _bytes(self, path: str) -> bytes:
         with self._open('GET', path) as response:
             return response.read()
@@ -179,8 +223,9 @@ class Robot:
         return self.call('GET', '/v1/health')
 
     def status(self) -> Dict[str, Any]:
-        """Profile, arms, cameras and the running task."""
-        return self.call('GET', '/v1/status')
+        """Profile, arms, cameras and the running task (a policy run on this computer counts as the running task)."""
+        out = self.call('GET', '/v1/status')
+        return self._ask_policy('merge_status', out, default=out)
 
     def state(self) -> Dict[str, Any]:
         """The arms now (GET /v1/robot): joints_rad, gripper (0 closed .. 1 open), tool_mm per arm, cameras, safety."""
@@ -204,8 +249,16 @@ class Robot:
         return self.call('POST', '/v1/tasks', body)
 
     def task(self, task_id: str) -> Task:
-        """One task now (GET /v1/tasks/{id}): status running, done, stopped or failed; message, moves, outcome, error_info."""
-        return self.call('GET', f'/v1/tasks/{urllib.parse.quote(task_id)}')
+        """One task now (GET /v1/tasks/{id}): status running, done, stopped or failed; message, moves, outcome, error_info.
+        A policy run of this computer is read from its own record while Roborun's backend is down."""
+        try:
+            return self.call('GET', f'/v1/tasks/{urllib.parse.quote(task_id)}')
+        except RobotUnavailable:
+            rec = self._ask_policy('policy_record', task_id)
+            view = self._ask_policy('view', rec) if rec is not None else None
+            if view is None:
+                raise
+            return view
 
     def tasks(self, limit: int = 10) -> List[Task]:
         """Recent tasks, newest first."""
@@ -236,7 +289,8 @@ class Robot:
                 if deadline is not None and time.monotonic() > deadline:
                     raise TimeoutError(f'task {task_id} still running after {timeout} s')
         except RobotUnavailable:
-            raise
+            if self._ask_policy('policy_record', task_id) is None:
+                raise                                              # a policy run is polled from its record below
         except (OSError, ValueError, RobotError):
             pass                                                   # the stream dropped: poll instead
         while True:
@@ -264,8 +318,42 @@ class Robot:
             raise
 
     def stop_task(self, task_id: str) -> Task:
-        """Stop this task; the arms hold where they are. Stopping a finished task is fine."""
+        """Stop this task; the arms hold where they are. Stopping a finished task is fine. A policy run (`roborun policy run`)
+        is stopped at the arms' station by its id, the same hold, also while Roborun's backend is down; it answers 'stopping'
+        until the run has closed its record (then 'stopped'). Raises RobotError code 'stop_not_confirmed' (status 503) when
+        the station could not take it. Anything else that goes wrong looking for a policy run (a damaged record, a robot.json
+        that is not an object) sends the Stop to Roborun's backend, as for any task."""
+        if self._ask_policy('policy_record', task_id) is not None:
+            control = self._policy()
+            try:
+                rec = control.stop_run(task_id)
+            except control.StopNotConfirmed as exc:
+                raise RobotError(503, 'stop_not_confirmed', str(exc), True) from None
+            except (KeyError, IndexError) as exc:                 # a damaged record, not "no such policy run"
+                return self._stop_damaged_run(task_id, exc)
+            except LookupError:                                    # not a policy run after all: the backend's own Stop
+                rec = None
+            except Exception as exc:                               # anything else: the backend's Stop, never silence
+                return self._stop_damaged_run(task_id, exc)
+            if rec is not None:
+                try:
+                    view = self.task(task_id)
+                except RobotError:
+                    return self._ask_policy('view', rec, default=rec)
+                if rec.get('status') == 'stopping' and view.get('status') == 'running':
+                    view = dict(view, status='stopping')
+                return view
         return self.call('POST', f'/v1/tasks/{urllib.parse.quote(task_id)}/stop', {})
+
+    def _stop_damaged_run(self, task_id: str, exc: BaseException) -> Task:
+        """A policy run whose Stop could not be worked out here: the backend's own Stop all the same, and if the backend does
+        not know the task either, the Stop is not confirmed (never a quiet 'no such task' while a run may still move)."""
+        try:
+            return self.call('POST', f'/v1/tasks/{urllib.parse.quote(task_id)}/stop', {})
+        except RobotError:
+            raise RobotError(503, 'stop_not_confirmed', f'the Stop of policy run {task_id} could not be sent to the arms\' '
+                             f'station ({exc!r}); use roborun stop, or the arm\'s power switch if anything moves',
+                             True) from None
 
     def recording(self, task_id: str) -> Dict[str, Any]:
         """What the cameras recorded during the task: frame counts (frames are numbered from 0) and frame URLs."""
@@ -319,9 +407,71 @@ class Robot:
     def stop(self) -> StopResult:
         """Stop all motion now, like the Stop button. Never refused. Returns state 'stopped' or 'stopping' (an arm still
         brakes: see stop_status()). Raises RobotError code 'stop_not_confirmed' (status 503) when it could not be
-        confirmed: support the arm or cut its power."""
-        return self.call('POST', '/v1/stop', {})
+        confirmed: support the arm or cut its power. A policy run stops with everything else (stopped_tasks names it); while
+        Roborun's backend is down, does not answer within STOP_CONFIRM_S, or answers the Stop with anything but a 2xx JSON
+        answer with no error in it (an error status, an error in the body, a broken or non-JSON reply), the policy runs on this computer are still stopped at the arms'
+        station (the robot-wide hold first)."""
+        control = self._policy()
+        if control is None:                                    # another computer's robot: its backend answers, as for any call
+            return self.call('POST', '/v1/stop', {})
+        since = _utc_now()                                     # a clock reading only: nothing is looked up first
+        box, done = {}, threading.Event()
+
+        def send():
+            try:
+                box['out'] = self.call('POST', '/v1/stop', {})  # first, before anything else is looked up
+            except BaseException as exc:                       # noqa: BLE001 - handed back below
+                box['exc'] = exc
+            finally:
+                done.set()
+        threading.Thread(target=send, name='roborun-stop', daemon=True).start()
+        finished = done.wait(STOP_CONFIRM_S)                # read once: the send thread may finish just after this
+        exc, out = box.get('exc'), box.get('out')
+        if finished and exc is None and isinstance(out, dict) and 'error' not in out:
+            return self._with_stopped_runs(out, since)     # the backend confirmed it: a 2xx JSON answer with no error in it
+        # anything else is not the backend taking the Stop (a Stop is never refused): the policy runs here do not need the
+        # backend to move, so they are stopped at the arms' station
+        backend = _stop_not_taken(finished, exc, out, STOP_CONFIRM_S)
+        try:
+            result = control.stop_all()
+        except Exception as failed:                            # the runs could not be read or stopped: not confirmed
+            if not self._running_policy_runs():
+                return self._backend_stop_answer(box, done, since)
+            raise RobotError(503, 'stop_not_confirmed', str(failed) or 'the arms\' station did not take the Stop',
+                             True) from None
+        if not result['ids']:                                  # no policy run here: the backend's own answer, as before
+            return self._backend_stop_answer(box, done, since)
+        message = control.stop_all_message(result, backend)
+        if result['failed'] and not result['held']:
+            raise RobotError(503, 'stop_not_confirmed', message, True)
+        return {'state': 'stopping', 'confirmed': False, 'stopped_tasks': list(result['ids']), 'arms': {},
+                'message': message}
+
+    def _backend_stop_answer(self, box, done, since) -> StopResult:
+        """The backend's own answer to POST /v1/stop (waited for, within this client's timeout), or its error raised."""
+        done.wait(self.timeout + 1.0)
+        if not done.is_set():
+            raise RobotUnavailable(0, 'not_running', f'Roborun is not answering at {self.api} (the Stop was not answered)',
+                                   True)
+        if 'exc' in box:
+            raise box['exc']
+        return self._with_stopped_runs(box.get('out'), since)
+
+    def _with_stopped_runs(self, out, since):
+        """The backend's Stop answer, with the policy runs this Stop stopped (closed or not) in stopped_tasks."""
+        runs = self._ask_policy('stopped_since', since, default=[]) or []
+        runs = [r for r in runs if isinstance(r, str)]
+        if runs and isinstance(out, dict):
+            out = dict(out, stopped_tasks=list(dict.fromkeys(list(out.get('stopped_tasks') or []) + runs)))
+        return out
+
+    def _running_policy_runs(self) -> List[str]:
+        """The ids of this computer's running policy runs; [] when there are none or they cannot be read."""
+        runs = self._ask_policy('running', default=[]) or []
+        return [r['id'] for r in runs if isinstance(r, dict) and isinstance(r.get('id'), str)]
 
     def stop_status(self) -> StopStatus:
-        """Has everything stopped: state 'stopped' (confirmed), 'stopping', 'running' (a task runs) or 'moving'."""
-        return self.call('GET', '/v1/stop/status')
+        """Has everything stopped: state 'stopped' (confirmed), 'stopping', 'running' (a task runs) or 'moving'. A policy
+        run on this computer counts as the running task."""
+        out = self.call('GET', '/v1/stop/status')
+        return self._ask_policy('merge_stop_status', out, default=out)

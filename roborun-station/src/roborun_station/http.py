@@ -157,8 +157,9 @@ def _handler_for(fake):
                 self._reply(403, {"error": str(exc)})
             except LookupError as exc:
                 self._reply(404, {"error": str(exc)})
-            except ValueError as exc:
-                self._reply(409, {"error": str(exc)})
+            except ValueError as exc:                # a refused policy chunk answers its own reply (why, code, the lease)
+                reply = getattr(exc, "reply", None)
+                self._reply(409, dict(reply, error=str(exc)) if isinstance(reply, dict) else {"error": str(exc)})
             except Exception as exc:  # noqa: BLE001 - the real owners answer 503 for anything else
                 self._reply(503, {"error": f"{type(exc).__name__}: {exc}"})
 

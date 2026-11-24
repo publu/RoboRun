@@ -274,25 +274,94 @@ def _rt_stop(port: int, timeout_s: float = 0.3) -> dict:
     return out
 
 
-def _stop_this_robot(args) -> int:
-    """`roborun stop`: the same Stop as the button in the app, sent to the robot on this computer."""
+def _post_json(url, body, timeout, headers=None):
+    """(status, reply) of a JSON POST; raises OSError when nothing answers. An HTTP error answers (code, its JSON or {})."""
     import urllib.error
     import urllib.request
-    from . import robot
-    backend = "http://127.0.0.1:8120"
-    if robot.CONFIG.exists():
-        backend = json.loads(robot.CONFIG.read_text()).get("backend") or backend
-    request = urllib.request.Request(backend + "/api/stop", data=b"{}", method="POST", headers={"Content-Type": "application/json"})
+    request = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
+                                     headers=dict({"Content-Type": "application/json"}, **(headers or {})))
     try:
-        with urllib.request.urlopen(request, timeout=10) as reply:
-            body = json.loads(reply.read() or b"{}")
+        with urllib.request.urlopen(request, timeout=timeout) as reply:
+            return reply.status, json.loads(reply.read() or b"{}")
     except urllib.error.HTTPError as exc:
-        print(f"the robot refused or could not confirm Stop (HTTP {exc.code}). If the arm is moving, use its power switch.")
-        return 2
+        try:
+            return exc.code, json.loads(exc.read() or b"{}")
+        except ValueError:
+            return exc.code, {}
+
+
+def _stop_station(config):
+    """Stop straight to this robot's arms' station (POST /supervisor/hold, never refused): it ends any lease, a policy run's
+    too, without any other process. ('not running' | 'refused' | 'held', the reply or None)."""
+    from . import robot
+    station = config.get("station") if isinstance(config.get("station"), str) else None
+    url = (station or f"http://127.0.0.1:{robot.STATION_PORT}").rstrip("/")
+    try:
+        code, body = _post_json(url + "/supervisor/hold", {"source": "roborun stop", "reason": "operator"}, 2.0,
+                                {"X-Manifest-Supervisor": "1"})
     except (OSError, ValueError):
-        print("Roborun is not running on this computer, so there is nothing to stop.")
-        return 0
-    _print(body, True) if args.json else print("Stop sent: the robot is holding where it is.")
+        return "not running", None
+    return ("held" if code == 200 else "refused"), body
+
+
+def _stop_this_robot(args) -> int:
+    """`roborun stop`: the same Stop as the button in the app, sent to the robot on this computer. With a station configured
+    it first goes straight to the arms' station, so a policy run (or any lease) stops even while Roborun is down."""
+    from . import robot
+    config = {}
+    if robot.CONFIG.exists():
+        try:
+            config = json.loads(robot.CONFIG.read_text())
+        except (OSError, ValueError):
+            config = {}
+    if not isinstance(config, dict):           # JSON but not an object: Stop the default addresses all the same
+        config = {}
+    backend = config.get("backend") if isinstance(config.get("backend"), str) else None
+    backend = backend or "http://127.0.0.1:8120"
+    station, station_reply = _stop_station(config) if robot.CONFIG.exists() else ("not running", None)
+    try:
+        code, backend_reply = _post_json(backend + "/api/stop", {}, 10.0)
+        backend_state = "sent" if code == 200 else "refused"
+    except (OSError, ValueError):
+        backend_state, backend_reply, code = "not running", None, None
+    closed = []
+    try:                                       # policy runs whose process was killed: closed as failed, not left 'running'
+        from .policy.record import close_orphans, robot_runtime
+        closed = close_orphans(robot_runtime(config))
+    except Exception:
+        pass
+    if args.json:
+        out = dict(station=station_reply if station != "not running" else "not running",
+                   backend=backend_reply if backend_state != "not running" else "not running")
+        if closed:
+            out["closed_policy_runs"] = closed
+        print(json.dumps(out, indent=1, default=str))
+    else:
+        if closed:
+            print(f"closed {len(closed)} policy run{'s' if len(closed) != 1 else ''} whose process was gone: "
+                  + ", ".join(c[:12] for c in closed))
+        if station == "held":
+            lease = (station_reply or {}).get("lease") or {}
+            ended = "lease_ended" in ((station_reply or {}).get("actions") or [])
+            what = (f" (ended policy run {lease.get('run_id')})" if ended and lease.get("kind") == "policy" and lease.get("run_id")
+                    else " (ended the running action)" if ended else "")
+            print(f"arms' station: holding{what}")
+        elif station == "refused":
+            print("arms' station: refused or could not confirm Stop")
+        elif robot.CONFIG.exists():
+            print("arms' station: not running")
+        if backend_state == "sent":
+            print("Roborun: Stop sent: the robot is holding where it is.")
+        elif backend_state == "refused":
+            print(f"Roborun: refused or could not confirm Stop (HTTP {code}).")
+        else:
+            print("Roborun: not running")
+    if station == "refused" or backend_state == "refused":
+        if not args.json:
+            print("If the arm is moving, use its power switch.")
+        return 2
+    if station == "not running" and backend_state == "not running" and not args.json:
+        print("Neither Roborun nor the arms' station is running on this computer, so there is nothing to stop.")
     return 0
 
 
@@ -569,7 +638,7 @@ USER_COMMANDS = ("login", "up", "down", "status", "stop", "setup", "view", "new"
                  "hw", "profiles")
 DEVELOPER_COMMANDS = ("doctor", "run", "rt", "clear-stop", "local", "sync", "station", "hardware-station", "body", "sim",
                       "cameras", "settings", "profile", "arms", "arm-check", "arm-calibrate", "calibrate-gripper", "motor",
-                      "adapters")
+                      "adapters", "policy", "dreamlabs")
 # roborun hw NAME: the hardware commands, each the same parser as its older spelling (which keeps working)
 HW = (("detect", None, "what is connected (adapters with their ADDRESS, cameras) and which arms it could be; asks and moves nothing"),
       ("check", "arm-check", "read-only check of an arm: nothing is enabled or moved (unless --move)"),
@@ -683,6 +752,10 @@ def main(argv=None) -> int:
     login.add_parser(sub)
     from roborun_sdk import cameras
     cameras.add_parser(sub)
+    from roborun_sdk.policy import cli as policy_cli
+    policy_cli.add_parser(sub)
+    from roborun_sdk.policy import dreamlabs_data
+    dreamlabs_data.add_parser(sub)
     from roborun_sdk.arms import hardware as arm_hardware
     arm_hardware.add_parsers(sub)
     from roborun_sdk.arms import calibrate as arm_calibrate

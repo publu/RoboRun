@@ -97,7 +97,7 @@ support@roborun.dev.
 | Start with your arms | `roborun up` (the first time: the guided setup, which needs a terminal) |
 | Back to your arms after a simulation | `roborun up --no-sim` |
 | What runs, and is it healthy | `roborun status` |
-| Stop motion now | `roborun stop` (also the Stop button and `POST /v1/stop`) |
+| Stop motion now | `roborun stop` (also the Stop button and `POST /v1/stop`): it reaches the arms' station directly as well, so it stops a [policy run](#run-your-own-policy) even while Roborun itself is down |
 | Stop Roborun | `roborun down` |
 | This robot's own viewer | `roborun view` |
 
@@ -305,7 +305,8 @@ Camera images stay sharp on this computer: the robot sees them that way, and so 
 image or depth frame that leaves this computer has faces blurred first, as a best effort: frames sent for motion, and your
 history. If the blur cannot run, nothing is sent, and the robot can still see and stop. `privacy: {face_blur: false}` in
 `robot.yaml` sends frames for motion unblurred and keeps history images and depth on this computer (task records are still
-uploaded).
+uploaded). A policy run with a remote provider sends blurred frames to that provider, after you agree; see
+[Run your own policy](#run-your-own-policy) and [Run a DreamLabs policy](#run-a-dreamlabs-policy).
 
 **One exception, for now: a humanoid's head frame is not blurred yet.** On a humanoid profile (`booster_k1`,
 `galaxea_r1`), the head camera frame that each move sends to the hosted API goes as it is, and `GET /v1/cameras/head.jpg`
@@ -618,6 +619,253 @@ $ python examples/keep_out_box.py
 gripper at (0.40, 0.00, 0.10): False
 gripper at (0.20, 0.25, 0.10): None
 ```
+
+## Run your own policy
+
+New in this release; it may change within 0.1 (the names below are not on the stable surface yet).
+
+A policy run is a Roborun task whose motion comes from a policy (your own model, or a provider's) instead of Roborun's
+motion service. Roborun stays in charge of the arms: the station plays the policy's output through every limit, holds the
+arms when the policy is late, and Stop ends the run at once. The run gets everything any task gets: a task record, a
+recording and a dataset episode when this robot records its tasks, the viewer and History.
+
+```sh
+roborun policy providers                                          # the installed providers
+roborun policy check --provider my_policy.py:Sway --arms left     # offline: does it fit this robot? nothing sent, nothing moves
+roborun policy run --provider my_policy.py:Sway --arms left --seconds 20 --prompt "sway the wrist"
+roborun policy run --provider my_policy.py:Sway --shadow --arms left    # asks the policy, moves nothing, reports what it would do
+roborun policy runs                                               # past runs
+```
+
+```python
+from roborun_sdk import policy
+
+result = policy.run('my_policy.py:Sway', prompt='sway the wrist', arms='left', seconds=20)
+result.task_id, result.status, result.stop_reason, result.summary
+run = policy.start(MyPolicy(), prompt='wave', arms='left', seconds=60)   # in the background: run.stop(), run.wait(), run.events()
+policy.check('my_policy.py:Sway', arms='left')                          # offline
+```
+
+Ctrl-C, `roborun stop`, the page's Stop and the viewer's Stop all end a run; the arms settle where they are and the record
+says `stopped`. The task's own Stop works too: the page's Stop on the task and `Robot().stop_task(id)` stop that run at the
+arms' station by its id, the same hold as an ordinary task's Stop (also while the model warms up, and while Roborun's backend
+is down), and `Robot().stop_status()` and `wait(id)` count a running policy run as the running task (so do `Robot().status()`, `roborun status` and the viewer's "Now" line). The robot-wide Stop from `Robot().stop()`, the page and the viewer stops a policy run at the arms' station also when Roborun's backend is down, has not answered within 2 s, or answers with anything but a confirmed Stop (an error, a broken or non-JSON reply). On this release the
+robot's own `POST /v1/tasks/{id}/stop` at `127.0.0.1:8120` still answers `404` for a policy run: from your own program use the
+Python client, `POST /v1/stop` or `roborun stop`. Exit codes: 0 done or stopped, 1 failed, 2 refused (nothing sent, nothing moved), 3 the model was ready too
+late to start moving on its own.
+
+Policy runs in simulation use `roborun up --sim <scene>` (after `roborun down`): `roborun policy run` then drives the
+simulated arms on the robot's own station and reads the simulated cameras on the robot's camera socket, and the run's
+records stay in the simulation's copy of the runtime (see [What is recorded, and where](#what-is-recorded-and-where)).
+A bare `roborun sim` (station on 8191, cameras on `sim-camera.sock`) is not a target for a policy run: `roborun policy
+run` has no station or camera socket option, so it always uses this robot's own station and cameras, and with the live
+robot up those are the real arms.
+
+### A provider
+
+```python
+from roborun_sdk.policy import Chunk, Provider, plain_needs
+
+class Sway(Provider):
+    def needs(self, spec):                        # offline: what it drives and wants to see; raise PolicyRefused if it does not fit
+        self.arms = {a.side: a for a in spec.arms}
+        return plain_needs(tuple(self.arms), frame_hz=2.0, version='sway 1')
+
+    def start(self, spec):                        # optional: connect (after consent, for a remote provider). Nothing moves yet
+        pass
+
+    def act(self, obs):                           # rows of absolute targets from obs.t on; may take seconds (its own thread)
+        rows = {}
+        for side, arm in self.arms.items():
+            q = list(obs.arms[side].commanded_rad)
+            rows[side] = [q[:-1] + [q[-1] + 0.1 * i / 48] + ([1.0] if arm.gripper else []) for i in range(48)]
+        return Chunk(rows, hz=30)
+```
+
+- `needs(spec)` gets the arms (`spec.arms`: side, catalog model, joint count, limits, whether it has a gripper), the camera
+  roles that deliver frames (`top`, `left`, `right`), the prompt, the model name and your `--option` values. It returns a
+  `Needs`: the sides it drives, the cameras it wants (`{its role: Roborun role}`), how often it wants observations, whether it is
+  remote (frames and state leave this computer) and, for a remote provider, the plain words of what it sends. It must not
+  touch the network: `roborun policy check` calls only this.
+- `observe(obs)` (optional) is called at `frame_hz` so a provider can keep a history; `act(obs)` returns a `Chunk`. The
+  observation holds per arm the measured joints, the target the station last played (`commanded_rad`) and the grippers, all
+  from one pose read at `obs.t`, plus the newest camera frames as JPEGs.
+- `act` raises `ProviderError` when it has nothing this time (`retryable`, `retry_after_s`, `warming` while a model warms up,
+  `session_restarted` to end the run). Any other exception fails the run.
+- `end_episode()` and `close()` (optional) run after the run, off the Stop path, at most 3 s.
+- Load a provider by file (`my_policy.py:Sway`, relative paths also under the Roborun home), by module
+  (`mypackage.policies:Sway`), or by name through an entry point in the group `roborun.policies`. `--option k=v` (Python:
+  `options={...}`) goes to its constructor; an option it does not take is refused before anything is sent or moves.
+- Built in: `hold` (keeps the arms where they are; a self-test) and `replay` (plays the `action` rows of a recorded episode:
+  `--option path=episode.npz` or a dataset folder with `--option episode=N`; `--option relative=true` starts it where the arm
+  is). [examples/my_policy.py](../examples/my_policy.py) is the provider above as a runnable file.
+
+**Units and joint order.** Rows are absolute targets in the arm's own joint order (the order of `spec.arms[i].limits_rad`
+and of the observation), in radians; the last value is the gripper as an open fraction, 0 closed to 1 open, for an arm with a
+gripper. The station converts the fraction to the arm's own jaw units (a YAM's 0..1, a Metal's motor units). A provider that
+works in other units converts them itself.
+
+### What Roborun enforces after the policy
+
+Before anything moves: the provider's `needs()`, then the match against this robot (sides, joint counts, grippers, cameras,
+extras), then consent for a remote provider, then `start()`, then the warm-up. Only when the first chunk is there does the
+run take a lease on the arms, and if that took more than 60 s after you started it, it asks again before moving (`policy.run`
+raises `PolicyNotStarted` instead): the arms never start moving on their own after a long wait.
+
+While it runs, the station (127.0.0.1:8091) checks every chunk and plays it on its own 30 Hz tick:
+
+| Check | Limit | What happens |
+| --- | --- | --- |
+| Rows | finite, the right length, at most 512 per arm, 5-200 Hz, at most 10 s ahead | refused; the arm plays on what it had, or holds |
+| Gripper | an open fraction within -0.05 .. 1.05 | refused |
+| Age | the chunk's observation at most 3 s old; rows already due are skipped, never played late | refused when nothing is left |
+| Seam | the first row still due within 0.5 rad of the target the arm is at | refused |
+| Step per tick | 0.04 rad per joint, 0.081 on the jaw | clipped (counted) |
+| Then, on every arm | the joint limits and speed (0.6 rad/s), jerk shaping at 100 Hz, your rules file | as for every task |
+| Tool speed | 0.25 m/s by default (`policy: {max_tool_speed_m_s: ...}` in `robot.yaml`, at most the arm's own; `--max-tool-speed` lowers it) | slowed; needs the arm's model |
+| An empty buffer | the policy is late | the arm holds its last target; 10 s dry ends the run |
+| Five refusals in a row | | the run ends (`policy_error`) |
+| The runner stops (crash, hang) | no heartbeat for 1 s | every leased arm holds; `roborun policy runs`, the next `policy run` and `roborun stop` mark the run `failed` (`runner_gone`) |
+| Stop | the page, the viewer, `roborun stop`, `POST /v1/stop`; this task's Stop (the page, `Robot.stop_task`) | the lease ends on the next tick and the arms hold |
+| Stop while the model warms up | any Stop after the run started | the run ends `stopped` with nothing leased; the station refuses a lease asked for after a later Stop |
+| SIGTERM or SIGHUP to `roborun policy run` | | as Ctrl-C: the lease ends, the arms hold, the record says `stopped` (`signal`) |
+
+`--arms left` with a provider that drives both arms leases only the left arm: the right arm's rows are dropped before they
+are sent, and the station refuses rows for an arm it was not given.
+
+**Shadow runs.** `--shadow` takes no lease and moves nothing: it asks the policy for chunks against live observations for
+`--seconds` (20 by default) and reports the largest seam (the first row due vs where the arm is), the largest step from the
+measured pose, the fastest row and what the station would refuse, in a table and in `log/policy/<id>/shadow.json`. Run one
+before the first run of a new model on real arms.
+
+### What is recorded, and where
+
+| What | Where | Uploaded with your history |
+| --- | --- | --- |
+| The task record (status, stop reason, Roborun's counts: chunks played, refusals, holds, clipped ticks) | `<runtime>/log/tasks/<id>.json`; `/v1/tasks`, the viewer and History list it | yes |
+| The recording (cameras at about 10 Hz, joints at 30 Hz), when this robot records its tasks: by the same setting as every task's recording, the runtime's `config.json` `video_record` (`enabled` true; only the `cameras` it lists; the same retention as every task's recording: before the run, the oldest recordings, tasks' and policy runs' alike, are deleted until there is room for `run_cap_mb` under `total_cap_mb`; nothing when the disk has less than `min_free_mb` free, today's recordings reached `day_cap_mb`, or there is no room even then; during the run, no more frames past `run_cap_mb`, `day_cap_mb`, `min_free_mb` or a full disk, and the task record's `recording` says which cap (`capped`, `why`) and what was deleted (`cleanup`)). With the recorder off, a run leaves no recording and no episode, as every task | the runtime's recordings folder, beside every task's recording; `/v1/tasks/<id>/recording` | yes, faces blurred |
+| A dataset episode (the same features and units as every other episode; `action` is the target the station played) | this robot's LeRobot dataset, only from a recording and only when the robot keeps one, by the same rule as every task's episode (on for an installed robot; `roborun up --no-dataset` or `--no-data-sync` turns it off; the runtime's `config.json` `lerobot_export.enabled` true or false overrides either way; no `robot.json`, no episode). `--no-dataset` skips it for one run and can never turn it on; a simulation (`roborun up --sim`, or cameras whose serials look simulated) never writes one | yes, faces blurred |
+| The provider's timing (one line per request: round trip, sizes, age, outcome), every chunk as it came, a summary, the provider's own files | `<runtime>/log/policy/<id>/` | **no**: it stays on this computer |
+
+Under `roborun up --sim`, `<runtime>` is the simulation's own copy of the runtime in `<Roborun home>/sim/`, as for every
+simulated task: the simulating robot lists the run (`/v1/tasks`, the viewer, History), and the live runtime's `log/` and
+recordings are left as they are.
+
+Dataset grippers are in the station's units, as for every other episode of the same arm: 0..1 on YAM arms, motor units on a
+Metal arm. A policy episode's extras say `gripper_units: "station"` and carry each arm's `jaw_range` (closed, open), so the
+open fraction is `(gripper - closed) / (open - closed)`.
+
+### Remote providers and consent
+
+A provider whose `Needs.remote` is true gets frames and state off this computer, so Roborun asks before anything is sent,
+including the model's warm-up: on a terminal it prints what will be sent and asks once per provider and model (the answer is
+kept in `policy-consent.json` in the Roborun home, never in `robot.yaml`); `--yes` agrees for one run only; from Python,
+`consent=True` agrees for that run. With no answer, the run is refused and nothing is sent. Turning face blur off asks again.
+`roborun policy consent` lists what you agreed to, `--revoke PROVIDER[:MODEL]` forgets it. Frames sent to a remote provider
+are face-blurred (unless `privacy: {face_blur: false}`); if the blur cannot run, nothing is sent and after 3 s the run ends.
+
+### Run a DreamLabs policy
+
+[DreamLabs](https://platform.dreamlabs.ai) makes Dream-1, a robot policy model, and publishes its Python client,
+[`dreamlabs-client`](https://pypi.org/project/dreamlabs-client/) (Apache-2.0). With the `dreamlabs` provider, Roborun runs
+a DreamLabs model as a policy on your arms. The model chooses the motion. Roborun keeps everything this section describes:
+the limits and holds above, Stop, and the task record, recording, dataset episode and timing of each run. For your
+DreamLabs account, keys, models and terms, see DreamLabs' own documentation.
+
+```sh
+pip install 'roborun-sdk[dreamlabs]'           # DreamLabs' client, plus numpy and OpenCV for the face blur
+# set up your DreamLabs credentials as DreamLabs documents them: DREAM_API_KEY (and the DREAM_*_URL variables),
+# or the file ~/.dreamlabs/credentials ($DREAM_CREDENTIALS names another)
+roborun policy check --provider dreamlabs --model dreamlabs/dream-1-beta              # offline; says where the key comes from
+roborun policy run --provider dreamlabs --model dreamlabs/dream-1-beta --shadow --prompt "fold the towel"
+roborun policy run --provider dreamlabs --model dreamlabs/dream-1-beta --prompt "fold the towel" --seconds 60
+```
+
+From Python: `policy.run('dreamlabs', model='dreamlabs/dream-1-beta', prompt=..., consent=True)`;
+[examples/dreamlabs_policy.py](../examples/dreamlabs_policy.py) has check, shadow and run.
+
+**What it runs on.** The base model `dreamlabs/dream-1-beta` runs on two YAM arms with grippers and three cameras: `top`
+(DreamLabs' `overhead`), `left` (`wrist_l`) and `right` (`wrist_r`). It reads both arms' joints, grippers and tool poses, so it
+needs both arms even with `--arms left`; then only the left arm is leased and moves, and the right arm's rows are dropped. Roborun runs
+it only on arm models whose joint convention (order, signs, zeros, limits, gripper 0 closed .. 1 open) was checked against
+DreamLabs' own YAM configuration (`policy/data/dreamlabs_conventions.json`). Today that is the YAM. Any other robot is refused
+by `check` and `run` before anything is sent. Run `--shadow` once before the first run of a model on real arms.
+
+The tool pose of each arm (`state.<side>_eef_xyz`, the tool point in metres in that arm's base frame, and `_eef_rot6`, the
+first two columns of its rotation) is computed by Roborun from the joint angles, in the tool frame DreamLabs' own IK
+uses for the YAM (0.1347 m along link_6's z axis; `policy/dreamlabs_yam.py`, with DreamLabs' kinematics under Apache-2.0).
+
+**What goes to DreamLabs, and when.** Only while a DreamLabs run or shadow run is active, after you agree, including while
+the model warms up and before any motion. Roborun sends it to DreamLabs' inference service (`DREAM_GATEWAY_URL`, by default
+`api.dreamlabs.ai`):
+- the prompt, and the joint angles, grippers and tool poses (where each gripper is and how it is turned, computed from the
+  joint angles) of both arms;
+- up to 9 recent frames per camera (top, left, right) at 320x176, face-blurred (unblurred only if you set
+  `privacy: {face_blur: false}`; the consent is then asked again and says so). This is about 1.3 MB per request at about one
+  request per second, roughly 80 MB per minute;
+- your DreamLabs key, as DreamLabs' client sends it, and an end-of-session call when the run ends. For a fine-tuned
+  `dream-1-ft:...` model, DreamLabs' client also looks up what the model was trained on when the run starts.
+
+Nothing else goes to DreamLabs. The run's Roborun task record, recording and dataset episode are not sent to DreamLabs;
+like any task's, they go to your Roborun history (see [What is recorded, and where](#what-is-recorded-and-where);
+`roborun up --no-data-sync` keeps them on this computer). The request timing in `log/policy/` never leaves this computer.
+`roborun policy check` sends nothing. A refused or missing consent sends nothing.
+
+**Consent.** On a terminal, `roborun policy run` shows that list and asks once per model; `--yes` agrees for one run only,
+and `consent=True` does the same in Python. `roborun policy consent` lists what you agreed to;
+`roborun policy consent --revoke dreamlabs` forgets it.
+
+**DreamLabs' client, as Roborun sets it up.** Roborun creates `dream.DreamClient()` with no arguments, so the client finds
+your credentials in DreamLabs' own order. Roborun never reads, stores or prints the key; `check` names only where the key
+will come from. With no key at all (no `DREAM_API_KEY` and no credentials file), `check` and `run` refuse and nothing is
+sent. The embodiment is passed to the client, so it does not look the model up before the run. DreamLabs' client
+also has a recorder that streams each observation to DreamLabs. Roborun turns it off unless you pass
+`--option record=true` (the consent text then says so). The setting it uses, `_record`, is internal to the client, and
+Roborun will not start a run if a client version refuses it. The client's log goes to `log/policy/<id>/provider/` unless you
+set `DREAM_LOG` or `DREAM_LOG_DIR`. When the client asks a person to check what the model sees (`python -m dream.check`),
+Roborun shows that notice once per run.
+
+Options (`--option k=v`): `timeout_ms` (10000), `obs_window` (9), `obs_fps` (5), `action_hz` (30), `execution_horizon`
+(30), `sync_above_ms` (3000), `frame_size` (320x176), `record` (false), `embodiment` (a fine-tune's `embodiment.json`, below).
+
+**Pacing.** DreamLabs' client decides when to ask for the next chunk. While the median of the last five round trips stays
+under `sync_above_ms` it asks early, so the next chunk lands as `execution_horizon` rows of the current one have run, and
+the arms move without a break. Above it, the client plays each chunk to the end and only then asks again, so the arms
+hold for a round trip after every chunk. The client's own default is 700 ms; a warm dream-1-beta round trip over the
+internet was measured at about 0.6 s (median) and 1.0 s (p90), so Roborun passes 3000 ms. Set it lower if your link is
+slow and you would rather the arms stop and go than run on an older plan.
+
+**How DreamLabs' answers are handled.** The model's rows (30 per second, 48 per answer, already smoothed by DreamLabs'
+client) are played through every Roborun limit above. While DreamLabs warms a model up (`pool_warming`), nothing is leased and
+the run waits up to `--wait-ready` (2 minutes by default, at most 30; a cold start can take longer), and the 60 s
+start-motion rule applies. A rate limit or a busy service is retried after the wait DreamLabs gives; the arms hold
+meanwhile. A model failure is retried three times in a row, then the run fails. A refused key or request fails the run with
+DreamLabs' reason. A session DreamLabs restarted ends the run as `stopped` (`provider_session_restarted`); run it again.
+`log/policy/<id>/requests.jsonl` keeps each request's round trip, the model's own time and the sizes, on this computer only.
+
+**Fine-tune on your own episodes (optional).** The episodes Roborun records can be exported in the dataset format DreamLabs
+accepts, uploaded to your own DreamLabs account and used to fine-tune a model that you then run through Roborun. Each step
+runs only when you ask for it:
+
+```sh
+pip install 'roborun-sdk[dreamlabs-data]'
+roborun dreamlabs export --episodes last:20             # writes a folder; sends nothing
+roborun dreamlabs upload ~/.config/roborun/dreamlabs/exports/<time> --name towels-v1   # shows what and where, then asks
+roborun dreamlabs finetune --dataset ds_... --suffix towels                             # asks, then queues the job
+roborun dreamlabs status ftj_...                                                         # once ready: the model's id
+roborun policy run --provider dreamlabs --model dream-1-ft:... --prompt "fold the towel"
+```
+
+- `export` reads this robot's dataset and writes `dataset/<session>/` (LeRobot v2.1 with `observation.state` and `action`
+  only: joints in radians, each gripper as an open fraction), `embodiment.json` (the parts and camera roles DreamLabs reads,
+  and the arms they came from) and `validation.json`. It checks the result with DreamLabs' own offline check
+  (`dream.datasets` `validate_dataset`) and exits non-zero when that fails. Every video is face-blurred first. An episode whose
+  video cannot be blurred is left out and listed, and so is an episode shorter than 1.6 s.
+- `upload` sends the export's `dataset/` folder to the DreamLabs data service your credentials name, after showing its size,
+  episodes and cameras. `--yes` skips the question. Uploads and jobs are listed in `dreamlabs-uploads.jsonl` in the Roborun
+  home (on this computer only).
+- `status` shows a job or a dataset. Once a fine-tune is ready, Roborun remembers which arms it was trained on, so
+  `--model dream-1-ft:...` runs on those arms. On another computer, pass `--option embodiment=<export>/embodiment.json`.
 
 ## Arm profile from a URDF
 

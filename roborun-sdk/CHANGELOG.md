@@ -42,6 +42,36 @@ Releases before 0.1.20261121012822 were put together from the source history and
   camera even when the profile lists no camera for it. The simulated camera service's status lists the cameras it
   draws, with their cards.
 
+- Policy runs ([Run your own policy](docs/BUILDING.md#run-your-own-policy)): run your own policy, or a provider's, on your
+  arms as a Roborun task. `roborun policy providers | check | run | runs | consent` and `roborun_sdk.policy` (`run`,
+  `start`, `check`, `providers`, the `Provider` interface). The station gains a `policy` lease: the runner pushes timed
+  chunks of joint and gripper rows, and the station checks each one (shape, age, seam) and plays it on its own tick with a
+  per-tick clip, a tool speed cap per run (`policy: {max_tool_speed_m_s}` in `robot.yaml`, 0.25 m/s by default), a 1 s
+  heartbeat and a hold whenever the policy is late. Stop ends a run on the next tick. Each run writes a task record, a
+  recording and a dataset episode like any task (the episode follows the robot-wide setting, as every task's does: `roborun up --no-dataset` or `--no-data-sync`, or `config.json` `lerobot_export.enabled`; the run's own `--no-dataset` only turns it off); the provider's own timing stays in `log/policy/`, which is never
+  uploaded. A policy run's own Stop (the page's Stop on the task, `Robot.stop_task`) stops it at the arms' station by its
+  id, also while the model warms up (new station route `POST /supervisor/policy/stop`); `Robot.stop_status()`, `wait()` and
+  `task()` count a running policy run, also while Roborun's backend is down. Looking for policy runs never holds up a Stop:
+  `Robot.stop()` sends `POST /v1/stop` before it looks, and a damaged policy record or a `robot.json` that is not a JSON
+  object sends every Stop (`stop()`, `stop_task()`, the page's Stop on a task, `roborun stop`) on to Roborun's backend. While the backend is down, has not answered within 2 s, or answers the Stop with anything but a 2xx JSON answer with no `error` in it (an error status, a 200 whose body carries an `error`, a broken or non-JSON reply), a robot-wide Stop (`Robot.stop()`, the page's and the viewer's Stop) takes the station's hold first, then stops each run on its own and names every one it could not; `stopped_tasks` also names a run that the Stop ended before it was answered (not one that finished on its own meanwhile). The viewer's "Now" line, `Robot.status()` and `roborun status` name a running policy run as the task. Whether a run writes a dataset episode is decided by the installed robot.json and its runtime's config.json only, never by a caller's own arguments. A run is recorded only when the robot records its tasks (the runtime's config.json `video_record`: enabled, its cameras, its disk caps), and its recording follows the same retention as every task's: before it starts, the oldest recordings (tasks' and policy runs' alike, only the recorder's own folders) are deleted until it fits `total_cap_mb`, by the installed runtime's own cleanup; during the run its frames stop at `run_cap_mb`, `day_cap_mb`, `min_free_mb` or a full disk, and the task record says which (`recording.capped`, `recording.why`) and lists what was deleted (`recording.cleanup`). With the recorder off, it leaves no recording and no episode, as every task; its episode goes into the installed robot's dataset, never one a caller's config= names. `--shadow` asks the policy and moves nothing. A remote provider needs consent before anything is sent
+  (`--yes` for one run, `consent=True` in Python). Built-in providers: `hold` and `replay`; your own from a file, a
+  module or a `roborun.policies` entry point. `examples/my_policy.py` sways a wrist. New in this release and not on the
+  stable surface: it may change within 0.1.
+- Run a DreamLabs policy ([Run a DreamLabs policy](docs/BUILDING.md#run-a-dreamlabs-policy)): the `dreamlabs` provider runs
+  DreamLabs' Dream-1 (`dreamlabs/dream-1-beta`, on two YAM arms) or your own fine-tune through DreamLabs' client
+  (`pip install 'roborun-sdk[dreamlabs]'`, `dreamlabs-client` 1.1.7 or later 1.x), with every Roborun limit, Stop and record
+  of a policy run. Credentials stay in DreamLabs' own files and variables, and Roborun never reads the key. The consent text
+  lists what goes to DreamLabs, and DreamLabs' client-side recorder stays off unless `--option record=true`. The base model
+  runs only on arms whose joint convention was checked against DreamLabs' YAM configuration (the YAM today). dream-1-beta
+  also gets each arm's tool pose, computed by Roborun in the tool frame of DreamLabs' own YAM kinematics (Apache-2.0,
+  `policy/dreamlabs_yam.py`), and the consent names it. Requests are paced with `sync_above_ms` 3000 (an option), so a
+  real round trip of about 0.6-1.0 s keeps the arms moving instead of stopping after every chunk.
+  `examples/dreamlabs_policy.py`.
+- `roborun dreamlabs export | upload | finetune | status` (`pip install 'roborun-sdk[dreamlabs-data]'`): your episodes in
+  the dataset format DreamLabs accepts, checked with DreamLabs' own offline validator and with every video face-blurred.
+  Each is uploaded to your own DreamLabs account only when you ask and confirm, can be fine-tuned there, and the
+  fine-tuned model then runs through Roborun.
+
 **Changed**
 
 - `card` is now a reserved key in a `robot.yaml` camera entry: it is the camera's card section. A camera class of your own
@@ -53,6 +83,8 @@ Releases before 0.1.20261121012822 were put together from the source history and
   in plain words. Frames gain `camera_id` and `rotate`. `roborun up --camera ROLE=SOURCE` takes ROLE from a camera of
   your own name for that run, and `roborun setup` leaves cameras of your own name, and any camera with a card, as you
   wrote them.
+- `roborun stop` now also sends Stop straight to the arms' station, so it stops a policy run (or any lease) even while the
+  Roborun service is down, and says which of the two it reached. It exits 2 when either refuses.
 - An unknown body profile says which bodies there are instead of starting the arm runtime download. Arms named on the
   command line (`--rig`, `--left`/`--right`, `--sim` with an arm scene) and `--profile` of another body or of arms leave
   out `robot.yaml`'s `body:`, which is the class of its own profile only. `--body` refuses a class whose profile is not
