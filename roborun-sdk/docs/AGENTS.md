@@ -42,7 +42,7 @@ Arms: `POST /v1/tasks` (`{"prompt": "pick up the cup"}`; optional `mode` `run` o
 
 A task's `status` is `running`, `done`, `stopped` or `failed`, with `message` and, when finished, `outcome`: `holding.left` / `holding.right` is `{object, lifted_mm, evidence, verified}`, `null` (measured empty) or `"unknown"` (not checked: look first). After "pick up the cup" read `outcome.holding.left`; after "put it down" it is `null`.
 
-Python (`roborun python script.py`): `from roborun_sdk.client import Robot; task = Robot().run('pick up the cup')`. Methods: `status()`, `health()`, `state()`, `frame(camera)`, `start(prompt, mode, arm)`, `task(id)`, `tasks(limit)`, `live(id)`, `wait(id, timeout, on_update)`, `run(...)`, `stop_task(id)`, `recording(id)`, `body_move(prompt, duration_s)`, `body_move_status(id)`, `body_run(...)`, `stop()`, `stop_status()`, `call(method, path, body)`.
+Python (`roborun python script.py`): `from roborun_sdk.client import Robot; task = Robot().run('pick up the cup')`. Methods: `status()`, `health()`, `state()`, `frame(camera)`, `start(prompt, mode, arm, camera)`, `task(id)`, `tasks(limit)`, `live(id)`, `wait(id, timeout, on_update)`, `run(...)`, `stop_task(id)`, `recording(id)`, `body_move(prompt, duration_s)`, `body_move_status(id)`, `body_run(...)`, `stop()`, `stop_status()`, `call(method, path, body)`.
 
 ## 7. Errors and what to do
 

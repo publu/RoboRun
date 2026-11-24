@@ -39,6 +39,8 @@ cameras = ["numpy>=1.26", "opencv-python-headless>=4.8",
            "pyrealsense2>=2.55; sys_platform == 'linux'",
            "pyrealsense2-macosx>=2.54; sys_platform == 'darwin' and platform_machine == 'arm64'",
            "pyobjc-framework-AVFoundation>=10; sys_platform == 'darwin'"]
+# Visio stereo cameras (General Intelligence Labs): H.265 decode, the schemas the device announces, MCAP replay
+visio = ["numpy>=1.26", "opencv-python-headless>=4.8", "av>=14", "protobuf>=4.21", "mcap>=1.1"]
 # YAM arms: the vendored i2rt driver (third_party/i2rt) and CAN over socketcan, slcan or gs_usb; libusb comes from a wheel
 yam = ["numpy>=1.26", "python-can>=4.4", "pyserial>=3.5", "pyusb>=1.2.1", "libusb-package>=1.0.26", "tyro>=0.8", "pydantic>=2",
        "packaging>=23", "crcmod-plus>=2", "dm-env>=1.6", "mcap-ros2-support>=0.5", "mujoco>=3.17", "pyyaml>=6"]

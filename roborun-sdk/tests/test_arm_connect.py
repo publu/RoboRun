@@ -267,6 +267,64 @@ def test_passwordless_sudo_is_used_and_a_password_is_never_asked_for(tmp_path, m
     assert all(c[:2] == ['sudo', '-n'] for c in calls if c[0] == 'sudo')
 
 
+def fd_answer(flags, state='ERROR-ACTIVE', fd=True):
+    data = dict(state=state, bittiming=dict(bitrate=1000000), ctrlmode=['FD'] if fd else [])
+    return json.dumps([dict(flags=flags, linkinfo=dict(info_kind='can', info_data=data))])
+
+
+def raise_link(calls, answer_before, answer_after):
+    """A link this user may raise: `ip link set` succeeds, and the link reads `answer_after` once it was set."""
+    raised = []
+    def run(cmd, **kw):
+        calls.append(cmd)
+        if 'set' in cmd:
+            raised.append(cmd)
+            return SimpleNamespace(returncode=0, stdout='')
+        return SimpleNamespace(returncode=0, stdout=answer_after if raised else answer_before)
+    return run
+
+
+def test_a_link_recreated_by_usb_comes_back_in_the_can_fd_mode_it_ran_in(tmp_path, monkeypatch):
+    """2026-11-22, OpenArm: a hub replug re-enumerated the PCAN; can0/can1 came back with no settings and were raised as
+    classic CAN, where the FD-configured motors answer nothing. The mode the link last ran in is kept."""
+    fake_sys(tmp_path, monkeypatch)
+    canbus.ensure_link('can0', run=raise_link([], fd_answer(['UP']), fd_answer(['UP'])), platform='linux')   # seen up in FD
+    calls = []
+    canbus.ensure_link('can0', run=raise_link(calls, fd_answer([], fd=False), fd_answer(['UP'])), platform='linux')
+    assert ['ip', 'link', 'set', 'can0', 'up', 'type', 'can', 'bitrate', '1000000', 'dbitrate', '5000000', 'fd', 'on'] in calls
+    calls = []
+    canbus.ensure_link('can1', run=raise_link(calls, fd_answer([], fd=False), fd_answer(['UP'], fd=False)), platform='linux')
+    assert ['ip', 'link', 'set', 'can1', 'up', 'type', 'can', 'bitrate', '1000000'] in calls     # never seen: classic, as before
+
+
+def test_a_bus_off_fd_link_restarts_in_fd(tmp_path, monkeypatch):
+    fake_sys(tmp_path, monkeypatch)
+    calls = []
+    canbus.ensure_link('can0', run=raise_link(calls, fd_answer(['UP'], 'BUS-OFF'), fd_answer(['UP'])), platform='linux')
+    sets = [c for c in calls if 'set' in c]
+    assert sets == [['ip', 'link', 'set', 'can0', 'down'],
+                    ['ip', 'link', 'set', 'can0', 'up', 'type', 'can', 'bitrate', '1000000', 'dbitrate', '5000000', 'fd', 'on']]
+
+
+def test_a_classic_link_someone_set_up_is_remembered_as_classic(tmp_path, monkeypatch):
+    fake_sys(tmp_path, monkeypatch)
+    canbus.ensure_link('can0', run=raise_link([], fd_answer(['UP']), fd_answer(['UP'])), platform='linux')
+    canbus.ensure_link('can0', run=raise_link([], fd_answer(['UP'], fd=False), fd_answer(['UP'], fd=False)), platform='linux')
+    calls = []
+    canbus.ensure_link('can0', run=raise_link(calls, fd_answer([], fd=False), fd_answer(['UP'], fd=False)), platform='linux')
+    assert not any('fd' in c for c in calls)
+
+
+def test_the_remembered_can_modes_live_in_the_roborun_home_as_every_module_reads_it(tmp_path, monkeypatch):
+    """The units roborun up starts run in the account's home folder: a relative ROBORUN_HOME, or one set but empty, must
+    still name the same absolute folder as net.roborun_home(), never a can-links.json in the current folder."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('HOME', str(tmp_path / 'account'))
+    for value, want in (('', tmp_path / 'account' / '.config' / 'roborun'), ('second', tmp_path / 'second')):
+        monkeypatch.setenv('ROBORUN_HOME', value)
+        assert canbus._modes_file() == want / 'can-links.json' and canbus._modes_file().is_absolute()
+
+
 def test_socketcan_on_macos_points_at_the_usb_addresses():
     with pytest.raises(canbus.AdapterError, match='only on Linux.*roborun hw detect'):
         canbus.ensure_link('can0', platform='darwin')

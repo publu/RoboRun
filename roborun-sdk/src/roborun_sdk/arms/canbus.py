@@ -324,12 +324,43 @@ def can_links(run=subprocess.run):
     return out
 
 
-def _link_commands(name, kind, bitrate, running):
-    """What makes this link usable, as argument lists without sudo."""
+def _link_commands(name, kind, bitrate, running, fd=False):
+    """What makes this link usable, as argument lists without sudo. fd: bring it up in CAN FD mode (OpenArm's `-fd` setup)."""
     if kind == 'vcan':
         return [['ip', 'link', 'set', name, 'up']]
     steps = [['ip', 'link', 'set', name, 'down']] if running else []
-    return steps + [['ip', 'link', 'set', name, 'up', 'type', 'can', 'bitrate', str(bitrate)]]
+    up = ['ip', 'link', 'set', name, 'up', 'type', 'can', 'bitrate', str(bitrate)]
+    return steps + [up + (['dbitrate', str(FD_DATA_BITRATE), 'fd', 'on'] if fd else [])]
+
+
+def _modes_file():
+    """<ROBORUN_HOME>/can-links.json, the home as every module reads it (absolute; ROBORUN_HOME set but empty is the default)."""
+    from .. import net
+    return net.roborun_home() / 'can-links.json'
+
+
+def _remembered_fd(name):
+    """The CAN FD mode this link last ran in on this computer, or None. A link is recreated without its settings when its
+    adapter re-enumerates on USB (a hub replug, a power blip): motors set up for FD then answer nothing in classic CAN."""
+    try:
+        return json.loads(_modes_file().read_text()).get(name, {}).get('fd')
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _remember_fd(name, fd):
+    if fd is None or _remembered_fd(name) == fd:
+        return
+    path = _modes_file()
+    try:
+        modes = json.loads(path.read_text()) if path.exists() else {}
+        modes[name] = dict(fd=bool(fd))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix('.tmp')
+        tmp.write_text(json.dumps(modes, indent=1))
+        tmp.replace(path)
+    except (OSError, ValueError, TypeError):
+        log.debug('%s: could not remember its CAN mode', name, exc_info=True)
 
 
 def fd_commands(name, bitrate=BITRATE, data_bitrate=FD_DATA_BITRATE):
@@ -360,14 +391,17 @@ def ensure_link(name, bitrate=BITRATE, run=subprocess.run, platform=None):
                            '`roborun hw detect` lists every adapter and link with the address to use')
     wrong_rate = info['kind'] != 'vcan' and info['bitrate'] not in (None, bitrate)
     if info['state'] == 'up' and not wrong_rate:
+        if info['kind'] != 'vcan':
+            _remember_fd(name, info.get('fd'))     # the mode someone set it up in is the one to come back in
         return info
     why = (f"the link runs at {info['bitrate']} bit/s, not {bitrate}" if info['state'] == 'up'
            else f"the link is {info['state'] or 'not up'}")
-    commands = _link_commands(name, info['kind'], bitrate, info['state'] != 'down')
+    fd = bool(info.get('fd')) or bool(_remembered_fd(name))      # its own setting survives a bus-off; a re-created link has none
+    commands = _link_commands(name, info['kind'], bitrate, info['state'] != 'down', fd)
     if _run_all(commands, run) or (shutil.which('sudo') and _run_all(commands, run, ('sudo', '-n'))):
         info = _link_info(name, run) or {}
         if info.get('state') == 'up':
-            log.info('%s: brought up at %s bit/s', name, bitrate)
+            log.info('%s: brought up at %s bit/s%s', name, bitrate, ' (CAN FD)' if fd else '')
             return info
     raise AdapterError(name, why, 'run: ' + ' && '.join('sudo ' + shlex.join(c) for c in commands))
 

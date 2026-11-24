@@ -518,6 +518,11 @@ frame 2 (480, 640, 3) uint8
 frame 3 (480, 640, 3) uint8
 ```
 
+A Visio stereo device (General Intelligence Labs) has its camera class in the SDK: `pip install 'roborun-sdk[visio]'`,
+then `source: roborun_sdk.visio_camera:VisioCamera` with `port: /dev/ttyACM0` (or `tcp://HOST:50001` over its USB network
+link, or `mcap: run.mcap` for a recording). It serves the rectified left eye with depth from the device's own
+calibration, and never writes to the device; the module's docstring lists every setting.
+
 ## Describe your cameras
 
 Every camera has a card: where it is fixed, what image it delivers and which task camera it answers as. Wrist cameras and
@@ -898,7 +903,7 @@ only programs on this computer can reach it. Web pages cannot call it (they go t
 
 | Call | What it does |
 | --- | --- |
-| `POST /v1/tasks` | Start a task: `prompt` (1-1500 characters), optional `mode` (`run` moves the arms, `preview` does not), `arm` (`left`, `right`, `both`; default: chosen from the prompt and the scene). `model` may be left out: there is one model, Manifest (`manifest-1-beta`) |
+| `POST /v1/tasks` | Start a task: `prompt` (1-1500 characters), optional `mode` (`run` moves the arms, `preview` does not), `arm` (`left`, `right`, `both`; default: chosen from the prompt and the scene), `camera` (the camera the motion is generated from: `top`, the default, or the `left` or `right` wrist camera, which plans its own arm). `model` may be left out: there is one model, Manifest (`manifest-1-beta`) |
 | `GET /v1/tasks`, `GET /v1/tasks/{id}` | Recent tasks (`?limit=1..200`); one task |
 | `GET /v1/tasks/{id}/live` | The task and its current motion; with `Accept: text/event-stream`, a stream until it ends |
 | `GET /v1/tasks/{id}/recording` | What the robot's cameras recorded during the task |
@@ -1045,7 +1050,8 @@ Every method: `status()`, `health()`, `state()`, `frame(camera, blur=True)`, `st
 on_update)`, `stop_task(id)`, `recording(id)`, `body_move(prompt, duration_s)`, `body_move_status(id)`,
 `body_run(prompt, duration_s, timeout, on_update)` (a humanoid move, waited for), `stop()`, `stop_status()`, and
 `call(method, path, body)` for any other `/v1` route. `clip(id)` is left only to say it was removed: it raises `RobotError`
-code `removed` (`roborun docs changelog`). `help(Robot)` shows each method's docstring.
+code `removed` (`roborun docs changelog`). `help(Robot)` shows each method's docstring. `start()` and `run()` also take
+`camera=`, as `POST /v1/tasks` does.
 
 [examples/robot_client.py](../examples/robot_client.py) is a small command line on top of it:
 

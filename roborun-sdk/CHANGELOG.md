@@ -71,6 +71,10 @@ Releases before 0.1.20261121012822 were put together from the source history and
   the dataset format DreamLabs accepts, checked with DreamLabs' own offline validator and with every video face-blurred.
   Each is uploaded to your own DreamLabs account only when you ask and confirm, can be fine-tuned there, and the
   fine-tuned model then runs through Roborun.
+- Visio stereo cameras (General Intelligence Labs) are a camera source: `roborun_sdk.visio_camera:VisioCamera` reads a
+  Visio device over USB serial, over its USB network link (`tcp://HOST:50001`) or from an MCAP recording, and serves the
+  rectified left eye with depth from the device's own calibration ([Your own camera](docs/BUILDING.md#your-own-camera)).
+  `pip install 'roborun-sdk[visio]'`. It never writes to the device.
 
 **Changed**
 
@@ -104,6 +108,10 @@ Releases before 0.1.20261121012822 were put together from the source history and
 - Because of that, `roborun uninstall --purge` (or yes when it asks) now deletes `~/roborun` with `~/roborun/datasets`.
   Before, an install with a dataset kept `~/roborun` whatever the answer. Without `--purge` (or with `--keep-data`) the
   dataset is still kept, as before.
+- `Robot.start` and `Robot.run` take `camera=`: the camera a task's motion is generated from, `top` (the overhead camera,
+  the default) or a wrist camera, `left` or `right`, which plans its own arm. `POST /v1/tasks` takes the same `camera`,
+  and a task names its camera. The field is sent only when you give it, so a request without it is the same as before;
+  a robot whose runtime predates it refuses the field.
 
 **Fixed**
 
@@ -144,6 +152,10 @@ Releases before 0.1.20261121012822 were put together from the source history and
   alone. Filesystems such as ext4 give a deleted file's number to the next file made, so on exit a simulation could
   delete a file, or another program's socket, made at the same path after its own was gone. It now also checks the
   device, the file times (including a timestamp it sets on its own socket) and that the path is still a socket.
+- A CAN link that USB recreates (a hub replug or a power blip re-enumerates the adapter) comes back in the CAN FD mode it
+  last ran in. Before, it was raised as classic CAN, and arms whose motors are set up for CAN FD (OpenArm) answered
+  nothing until the link was set up again by hand. The mode each link last ran in is kept in
+  `<Roborun home>/can-links.json`; a link never seen before still comes up classic, as before.
 
 ## 0.1.20261121012822 (build 20261121-012822-8f60cdaa99)
 

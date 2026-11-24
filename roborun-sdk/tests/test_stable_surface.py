@@ -133,6 +133,9 @@ def test_a_new_name_needs_no_entry_and_the_two_release_compare_reports_it(tmp_pa
 
 
 def test_update_refuses_a_break_and_needs_the_release(tmp_path, monkeypatch, capsys):
+    # the stand-in changelog starts from the real one: a change the source already names (under Unreleased) stays excused,
+    # so only the test's own break decides
+    real_changelog = tool.CHANGELOG.read_text()
     snap = tmp_path / 'stable_surface.json'
     snap.write_text(tool.SNAPSHOT.read_text())
     monkeypatch.setattr(tool, 'SNAPSHOT', snap)
@@ -140,7 +143,8 @@ def test_update_refuses_a_break_and_needs_the_release(tmp_path, monkeypatch, cap
     broken = tree_with(tmp_path / 'b', {'arms/__init__.py': [('def open_arm(', 'def open_any_arm(')]})
     assert tool.main(['--update', '--release', '0.1.20261122000000', '--new', str(broken)]) == 1
     assert '`open_arm`' in capsys.readouterr().out and snap.read_text() == tool.SNAPSHOT.read_text()
-    (tmp_path / 'CHANGELOG.md').write_text('## Unreleased\n\n**Removed**\n\n- `open_arm`: renamed open_any_arm\n')
+    (tmp_path / 'CHANGELOG.md').write_text(real_changelog.replace(
+        '## Unreleased\n', '## Unreleased\n\n**Removed**\n\n- `open_arm`: renamed open_any_arm\n', 1))
     with pytest.raises(SystemExit):
         tool.main(['--update', '--new', str(broken)])
     assert tool.main(['--update', '--release', '0.1.20261122000000', '--new', str(broken)]) == 0

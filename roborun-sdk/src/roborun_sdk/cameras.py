@@ -13,6 +13,8 @@ Sources (`roborun hw detect` prints the connected ones):
   rtsp://... http://... https://... file:///...   any address OpenCV can open; stream:ADDRESS for any other form.
                     RGB only. Passwords in an address are never logged or put in frames.
   my_cam.py:MyCamera   your own class, also package.module:MyCamera (see CustomSource).
+  roborun_sdk.visio_camera:VisioCamera   a Visio stereo device (USB serial or an MCAP recording): rectified RGB + depth
+                    from its own calibration. pip install 'roborun-sdk[visio]'; see visio_camera.py.
 
 A camera in robot.yaml is a source string, or:
   top: {source: SOURCE, width: 640, height: 480, fps: 30, rotate: 90,

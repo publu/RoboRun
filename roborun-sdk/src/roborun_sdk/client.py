@@ -44,6 +44,7 @@ STOP_CONFIRM_S = 2.0              # Robot.stop: how long the backend has to answ
 Mode = Literal['run', 'preview']
 Arm = Literal['left', 'right', 'both']
 Camera = Literal['top', 'left', 'right', 'head']
+TaskCamera = Literal['top', 'left', 'right']     # the camera a task's motion is generated from
 
 
 class ErrorInfo(TypedDict, total=False):
@@ -89,6 +90,7 @@ class Task(TypedDict, total=False):
     mode: Mode
     model: Optional[str]
     arm: Optional[str]
+    camera: Optional[TaskCamera]
     prompt: Optional[str]
     moves: int
     message: str
@@ -240,12 +242,15 @@ class Robot:
         return self._bytes(f'/v1/cameras/{urllib.parse.quote(camera)}.jpg' + ('' if blur else '?blur=0'))
 
     # ------------------------------------------------------------------------------------------------ tasks (arm profiles)
-    def start(self, prompt: str, mode: Mode = 'run', arm: Optional[Arm] = None) -> Task:
+    def start(self, prompt: str, mode: Mode = 'run', arm: Optional[Arm] = None, camera: Optional[TaskCamera] = None) -> Task:
         """Start a task and return at once (status running). mode='preview' plans the motion; nothing moves.
-        Raises RobotError code 'busy' (retryable) while another task runs."""
+        camera: the camera the motion is generated from: 'top' (the overhead, the default) or a wrist camera ('left', 'right'),
+        which plans its own arm. Raises RobotError code 'busy' (retryable) while another task runs."""
         body: Dict[str, Any] = {'prompt': prompt, 'mode': mode}
         if arm:
             body['arm'] = arm
+        if camera:
+            body['camera'] = camera
         return self.call('POST', '/v1/tasks', body)
 
     def task(self, task_id: str) -> Task:
@@ -305,9 +310,9 @@ class Robot:
             time.sleep(poll_s)
 
     def run(self, prompt: str, mode: Mode = 'run', arm: Optional[Arm] = None, timeout: Optional[float] = None,
-            on_update: Optional[Callable[[Task], None]] = None) -> Task:
+            on_update: Optional[Callable[[Task], None]] = None, camera: Optional[TaskCamera] = None) -> Task:
         """start() then wait(): the finished task. If waiting is interrupted (Ctrl-C, timeout), the task is stopped."""
-        task = self.start(prompt, mode=mode, arm=arm)
+        task = self.start(prompt, mode=mode, arm=arm, camera=camera)
         try:
             return self.wait(task['id'], timeout=timeout, on_update=on_update)
         except BaseException:

@@ -9,7 +9,8 @@ Third-party components in this repository keep their own licenses. Each package 
   `roborun-sdk/src/roborun_sdk/data/arm_models/` names its source, commit and license, with the license text beside it,
   and, where attached, the Robotiq 2F-85 gripper or Franka hand from MuJoCo Menagerie in `LICENSE.gripper.txt`; the
   OpenArm v1 and v2 models are Copyright 2026 Enactic, Inc., Apache License 2.0) and the
-  Booster K1 model (BSD 3-Clause), and the public-domain test photo.
+  Booster K1 model (BSD 3-Clause), the public-domain test photo, and the TUM VI test images of the Visio camera tests
+  (Creative Commons Attribution 4.0).
   The arm models are modified: converted to MJCF by `roborun-sdk/tools/arm_models/build.py`, meshes converted to STL and
   simplified to about 500 faces per link, joints and frames renamed, and where `attached_gripper` is set a MuJoCo
   Menagerie gripper attached; each model file's first line says so.

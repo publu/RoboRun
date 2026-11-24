@@ -1,5 +1,8 @@
 # Third-party notices
 
+- **TUM VI test images** in `tests/data/visio/tumvi_calib_3pairs.mcap`: three stereo pairs and the kalibr calibration of the
+  TUM VI calibration sequence (dataset-calib-cam1_512_16), Copyright (c) Technical University of Munich, Creative Commons
+  Attribution 4.0 (vision.in.tum.de/data/datasets/visual-inertial-dataset). Converted to 8-bit and H.265 by `tests/visio_pack.py`.
 - **i2rt** (YAM arm driver and models), MIT License, Copyright (c) I2RT Robotics. See
   `src/roborun_sdk/third_party/i2rt/LICENSE` and `VENDORED.md`.
 - **YuNet face detector**, MIT License, Shiqi Yu and contributors, from OpenCV Zoo. See

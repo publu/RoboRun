@@ -129,6 +129,14 @@ def test_the_client_runs_a_task_to_its_end(api):
     assert robot.status()['profile'] == 'yam' and robot.state()['arms']['left']['gripper'] == 0.95
 
 
+def test_the_client_asks_for_a_wrist_camera_only_when_told(api):
+    robot = Robot(api)
+    robot.run('pick up the box', camera='left')
+    assert ('POST', '/v1/tasks', {'prompt': 'pick up the box', 'mode': 'run', 'camera': 'left'}) in FakeApi.seen
+    from roborun_sdk import client
+    assert client.Task.__annotations__['camera']
+
+
 def test_the_task_type_names_its_outcome():
     from roborun_sdk import client
     assert client.Task.__annotations__['outcome'] and set(client.Outcome.__annotations__) == {'holding', 'placed', 'verified_by'}
