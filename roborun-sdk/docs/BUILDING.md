@@ -349,7 +349,7 @@ created ~/my-robot
   pyproject.toml
   tests/test_rules.py
   tests/test_driver.py
-pinned: roborun-sdk==0.1.20261119172831 (pyproject.toml)
+pinned: roborun-sdk==0.1.20261124030404 (pyproject.toml)
 next: cd ~/my-robot && roborun python check.py, then add robot.yaml to `roborun settings --edit` (see README.md)
 ```
 
@@ -1124,10 +1124,10 @@ Every Roborun release has two names, printed by `roborun --version`:
 
 ```
 $ roborun --version
-roborun-sdk 0.1.20261119172831 (build 20261119-172831-3f9c1e02ab)
-robot runtime 2026.11.19+c18915e.092756
+roborun-sdk 0.1.20261124030404 (build 20261124-030404-51f94cfe2b)
+robot runtime 2026.11.23+27791c3.195653
 python ~/.roborun/python/bin/python
-pin it: roborun-sdk==0.1.20261119172831  (pip install --find-links https://roborun.app/dl/simple/ roborun-sdk==0.1.20261119172831)
+pin it: roborun-sdk==0.1.20261124030404  (pip install --find-links https://roborun.app/dl/simple/ roborun-sdk==0.1.20261124030404)
 ```
 
 - **The version** is a PEP 440 version, `0.<series>.<UTC YYYYMMDDHHMMSS>`: the series (now `1`) and the time the release was
@@ -1140,9 +1140,9 @@ Releases are not on PyPI; they are at `https://roborun.app/dl/`:
 
 ```sh
 roborun --version                                          # the version installed here
-curl -fsSL https://roborun.app/install.sh | ROBORUN_VERSION=0.1.20261119172831 sh     # Roborun itself, at that release
-pip install --find-links https://roborun.app/dl/simple/ "roborun-sdk==0.1.20261119172831"   # into your own environment
-pip install --find-links https://roborun.app/dl/20261119-172831-3f9c1e02ab/ "roborun-sdk==0.1.20261119172831"   # one build only
+curl -fsSL https://roborun.app/install.sh | ROBORUN_VERSION=0.1.20261124030404 sh     # Roborun itself, at that release
+pip install --find-links https://roborun.app/dl/simple/ "roborun-sdk==0.1.20261124030404"   # into your own environment
+pip install --find-links https://roborun.app/dl/20261124-030404-51f94cfe2b/ "roborun-sdk==0.1.20261124030404"   # one build only
 ```
 
 ### Install only what you need
@@ -1165,7 +1165,7 @@ are extras; a missing one fails with the line that adds it, for example `mujoco 
 | `yam`, `damiao`, `robstride`, `feetech`, `dynamixel`, `piper`, `trossen`, `xarm`, `ur`, `franka`, `abb`, `arx`, `rosbridge` | that arm's packages | `roborun up` installs the one an arm needs the first time it is used |
 
 ```sh
-pip install --find-links https://roborun.app/dl/simple/ "roborun-sdk[robot]==0.1.20261119172831"   # the whole robot
+pip install --find-links https://roborun.app/dl/simple/ "roborun-sdk[robot]==0.1.20261124030404"   # the whole robot
 ```
 
 Releases built before the extras existed (0.1.20261121012822 and older) install everything with plain `roborun-sdk`.
