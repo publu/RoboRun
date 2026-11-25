@@ -112,6 +112,10 @@ Releases before 0.1.20261121012822 were put together from the source history and
   the default) or a wrist camera, `left` or `right`, which plans its own arm. `POST /v1/tasks` takes the same `camera`,
   and a task names its camera. The field is sent only when you give it, so a request without it is the same as before;
   a robot whose runtime predates it refuses the field.
+- `Robot.start` and `Robot.run` take `marks=`: boxes `[x0, y0, x1, y1]` in the pixels of `frame('top')` for the object to
+  pick (`target`) and where it goes (`place`). Use them when look-alikes stand together: the robot takes the marked object
+  instead of choosing among them. `POST /v1/tasks` takes the same `marks`, and a task names its marks. The field is sent
+  only when you give it; a robot whose runtime predates it refuses the field.
 
 **Fixed**
 

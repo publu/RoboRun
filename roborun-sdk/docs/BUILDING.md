@@ -903,7 +903,7 @@ only programs on this computer can reach it. Web pages cannot call it (they go t
 
 | Call | What it does |
 | --- | --- |
-| `POST /v1/tasks` | Start a task: `prompt` (1-1500 characters), optional `mode` (`run` moves the arms, `preview` does not), `arm` (`left`, `right`, `both`; default: chosen from the prompt and the scene), `camera` (the camera the motion is generated from: `top`, the default, or the `left` or `right` wrist camera, which plans its own arm). `model` may be left out: there is one model, Manifest (`manifest-1-beta`) |
+| `POST /v1/tasks` | Start a task: `prompt` (1-1500 characters), optional `mode` (`run` moves the arms, `preview` does not), `arm` (`left`, `right`, `both`; default: chosen from the prompt and the scene), `camera` (the camera the motion is generated from: `top`, the default, or the `left` or `right` wrist camera, which plans its own arm), `marks` (`{"target": [x0, y0, x1, y1], "place": [x0, y0, x1, y1]}`: boxes in the pixels of `GET /v1/cameras/top.jpg` for the object to pick and where it goes; the robot then takes the marked object instead of choosing among look-alikes). `model` may be left out: there is one model, Manifest (`manifest-1-beta`) |
 | `GET /v1/tasks`, `GET /v1/tasks/{id}` | Recent tasks (`?limit=1..200`); one task |
 | `GET /v1/tasks/{id}/live` | The task and its current motion; with `Accept: text/event-stream`, a stream until it ends |
 | `GET /v1/tasks/{id}/recording` | What the robot's cameras recorded during the task |
@@ -1051,7 +1051,7 @@ on_update)`, `stop_task(id)`, `recording(id)`, `body_move(prompt, duration_s)`, 
 `body_run(prompt, duration_s, timeout, on_update)` (a humanoid move, waited for), `stop()`, `stop_status()`, and
 `call(method, path, body)` for any other `/v1` route. `clip(id)` is left only to say it was removed: it raises `RobotError`
 code `removed` (`roborun docs changelog`). `help(Robot)` shows each method's docstring. `start()` and `run()` also take
-`camera=`, as `POST /v1/tasks` does.
+`camera=` and `marks=`, as `POST /v1/tasks` does.
 
 [examples/robot_client.py](../examples/robot_client.py) is a small command line on top of it:
 

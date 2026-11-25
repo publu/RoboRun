@@ -34,7 +34,7 @@ def _utc_now() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='milliseconds')
 
 __all__ = ['API', 'Robot', 'RobotError', 'RobotUnavailable', 'Task', 'ErrorInfo', 'Outcome', 'HeldObject', 'Placed', 'StopResult', 'StopStatus',
-           'TERMINAL']
+           'Marks', 'TERMINAL']
 
 API = 'http://127.0.0.1:8120'
 TERMINAL = ('done', 'stopped', 'failed')
@@ -83,6 +83,14 @@ class Outcome(TypedDict, total=False):
     verified_by: List[str]
 
 
+class Marks(TypedDict, total=False):
+    """Where things are in frame('top'): boxes [x0, y0, x1, y1] in its pixels, x to the right and y down from the top-left corner.
+    target is the object the prompt names (use it when look-alikes stand near it); place is where it goes. Give either or both."""
+    target: List[float]
+    place: List[float]
+    camera: Literal['top']
+
+
 class Task(TypedDict, total=False):
     """A task as GET /v1/tasks/{id} returns it. outcome is None while it runs, for a preview and when nothing moved."""
     id: str
@@ -91,6 +99,7 @@ class Task(TypedDict, total=False):
     model: Optional[str]
     arm: Optional[str]
     camera: Optional[TaskCamera]
+    marks: Optional[Marks]
     prompt: Optional[str]
     moves: int
     message: str
@@ -242,15 +251,19 @@ class Robot:
         return self._bytes(f'/v1/cameras/{urllib.parse.quote(camera)}.jpg' + ('' if blur else '?blur=0'))
 
     # ------------------------------------------------------------------------------------------------ tasks (arm profiles)
-    def start(self, prompt: str, mode: Mode = 'run', arm: Optional[Arm] = None, camera: Optional[TaskCamera] = None) -> Task:
+    def start(self, prompt: str, mode: Mode = 'run', arm: Optional[Arm] = None, camera: Optional[TaskCamera] = None,
+              marks: Optional[Marks] = None) -> Task:
         """Start a task and return at once (status running). mode='preview' plans the motion; nothing moves.
         camera: the camera the motion is generated from: 'top' (the overhead, the default) or a wrist camera ('left', 'right'),
-        which plans its own arm. Raises RobotError code 'busy' (retryable) while another task runs."""
+        which plans its own arm. marks: boxes in frame('top') for the object to pick (target) and where it goes (place).
+        Raises RobotError code 'busy' (retryable) while another task runs."""
         body: Dict[str, Any] = {'prompt': prompt, 'mode': mode}
         if arm:
             body['arm'] = arm
         if camera:
             body['camera'] = camera
+        if marks:
+            body['marks'] = dict(marks)
         return self.call('POST', '/v1/tasks', body)
 
     def task(self, task_id: str) -> Task:
@@ -310,9 +323,10 @@ class Robot:
             time.sleep(poll_s)
 
     def run(self, prompt: str, mode: Mode = 'run', arm: Optional[Arm] = None, timeout: Optional[float] = None,
-            on_update: Optional[Callable[[Task], None]] = None, camera: Optional[TaskCamera] = None) -> Task:
+            on_update: Optional[Callable[[Task], None]] = None, camera: Optional[TaskCamera] = None,
+            marks: Optional[Marks] = None) -> Task:
         """start() then wait(): the finished task. If waiting is interrupted (Ctrl-C, timeout), the task is stopped."""
-        task = self.start(prompt, mode=mode, arm=arm, camera=camera)
+        task = self.start(prompt, mode=mode, arm=arm, camera=camera, marks=marks)
         try:
             return self.wait(task['id'], timeout=timeout, on_update=on_update)
         except BaseException:

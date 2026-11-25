@@ -51,7 +51,13 @@ TOOLS = [
          'prompt': {'type': 'string', 'minLength': 1, 'maxLength': 1500},
          'mode': {'type': 'string', 'enum': ['run', 'preview'], 'default': 'run'},
          'arm': {'type': 'string', 'enum': ['left', 'right', 'both'], 'description': 'leave out to let the robot choose'},
-         'timeout_s': {'type': 'number', 'default': 300, 'description': 'stop the task if it runs longer than this'}}}},
+         'timeout_s': {'type': 'number', 'default': 300, 'description': 'stop the task if it runs longer than this'},
+         'marks': {'type': 'object', 'additionalProperties': False,
+                   'description': 'optional boxes [x0, y0, x1, y1] in the pixels of the top camera image (x right, y down from its '
+                                  'top-left corner): target = the object to pick, place = where it goes. Use them when look-alikes '
+                                  'stand together.',
+                   'properties': {'target': {'type': 'array', 'items': {'type': 'number'}, 'minItems': 4, 'maxItems': 4},
+                                  'place': {'type': 'array', 'items': {'type': 'number'}, 'minItems': 4, 'maxItems': 4}}}}}},
     {'name': 'stop',
      'description': 'Stop all motion now. Always available, never refused. Use it whenever something looks wrong.',
      'input_schema': {'type': 'object', 'properties': {}, 'additionalProperties': False}},
@@ -85,7 +91,7 @@ def call_tool(name, arguments=None, robot=None):
                              for side, arm in (state.get('arms') or {}).items()}}
         if name == 'run_task':
             task = robot.run(args['prompt'], mode=args.get('mode', 'run'), arm=args.get('arm'),
-                             timeout=float(args.get('timeout_s', 300)))
+                             timeout=float(args.get('timeout_s', 300)), marks=args.get('marks'))
             return _task_result(task)
         if name == 'stop':
             return robot.stop()

@@ -137,6 +137,17 @@ def test_the_client_asks_for_a_wrist_camera_only_when_told(api):
     assert client.Task.__annotations__['camera']
 
 
+def test_the_client_sends_marks_only_when_given(api):
+    robot = Robot(api)
+    box = {'target': [182, 206, 219, 250], 'place': [408, 200, 522, 310]}
+    robot.run('pick up the alphabet soup and place it in the basket', marks=box)
+    assert ('POST', '/v1/tasks', {'prompt': 'pick up the alphabet soup and place it in the basket', 'mode': 'run', 'marks': box}) in FakeApi.seen
+    robot.run('pick up the cup')
+    assert ('POST', '/v1/tasks', {'prompt': 'pick up the cup', 'mode': 'run'}) in FakeApi.seen
+    from roborun_sdk import client
+    assert client.Task.__annotations__['marks'] and {'target', 'place'} <= set(client.Marks.__annotations__)
+
+
 def test_the_task_type_names_its_outcome():
     from roborun_sdk import client
     assert client.Task.__annotations__['outcome'] and set(client.Outcome.__annotations__) == {'holding', 'placed', 'verified_by'}
