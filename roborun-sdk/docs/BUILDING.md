@@ -554,6 +554,8 @@ cameras:
 | `rectified` | `true` when the source already serves undistorted (pinhole) frames |
 | `pose` | your measured `T_parent_camera` (4x4). Reported only: the robot plans from its own calibration |
 | `sees` | up to 8 short names, such as `table` or `left.gripper` |
+| `description` | plain text (up to 400 characters) describing what this camera sees |
+| `fingers` | plain text (up to 200 characters) describing how this arm's gripper fingers appear in a wrist camera's image |
 
 A wrist camera plans only its own arm: `left.tool` can only be the `left` camera. A camera on the table can only be
 `top`. Any other key in `card:` is refused, as are names like `overhead`, and every mistake is named in plain words
@@ -1050,8 +1052,8 @@ Every method: `status()`, `health()`, `state()`, `frame(camera, blur=True)`, `st
 on_update)`, `stop_task(id)`, `recording(id)`, `body_move(prompt, duration_s)`, `body_move_status(id)`,
 `body_run(prompt, duration_s, timeout, on_update)` (a humanoid move, waited for), `stop()`, `stop_status()`, and
 `call(method, path, body)` for any other `/v1` route. `clip(id)` is left only to say it was removed: it raises `RobotError`
-code `removed` (`roborun docs changelog`). `help(Robot)` shows each method's docstring. `start()` and `run()` also take
-`camera=` and `marks=`, as `POST /v1/tasks` does.
+code `removed` (`roborun docs changelog`). `help(Robot)` shows each method's docstring. `cameras()` reads the robot's camera
+cards (`GET /v1/cameras`); `start()` and `run()` also take `camera=` and `marks=`, as `POST /v1/tasks` does.
 
 [examples/robot_client.py](../examples/robot_client.py) is a small command line on top of it:
 

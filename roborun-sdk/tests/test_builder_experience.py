@@ -61,6 +61,9 @@ class FakeApi(BaseHTTPRequestHandler):
             return self._json(200, {'ready': True, 'profile': 'yam', 'arms': {'left': {'ok': True}}, 'cameras': {'top': {'fresh': True}}})
         if path == '/v1/robot':
             return self._json(200, {'arms': {'left': {'ok': True, 'joints_rad': [0.0] * 6, 'gripper': 0.95, 'tool_mm': [300, 0, 200], 'x': 1}}})
+        if path == '/v1/cameras':
+            return self._json(200, {'schema': 'roborun.cameras/1', 'cameras': [{'id': 'top', 'alias': 'top', 'mount': 'world',
+                                                                                'optics': {'delivered': {'width': 640, 'height': 480}}}]})
         if path == '/v1/stop/status':
             return self._json(200, {'state': 'stopped', 'confirmed': True, 'arms': {}, 'task': None, 'message': 'still'})
         m = re.fullmatch(r'/v1/cameras/(\w+)\.jpg', path)
@@ -306,17 +309,19 @@ def test_robot_client_example_drives_the_robot(api, capsys):
 def test_llm_tools_are_valid_specs_and_every_call_answers(api):
     ex = load(EXAMPLES / 'llm_tools.py', 'example_llm_tools')
     names = [t['name'] for t in ex.TOOLS]
-    assert names == ['robot_status', 'look', 'arm_state', 'run_task', 'stop'] and len(set(names)) == len(names)
+    assert names == ['robot_status', 'look', 'arm_state', 'cameras', 'run_task', 'stop'] and len(set(names)) == len(names)
     for tool in ex.TOOLS:
         assert tool['description'] and tool['input_schema']['type'] == 'object'
         json.dumps(tool)
     robot = Robot(api)
     assert ex.call_tool('robot_status', robot=robot)['ready'] is True
+    assert ex.call_tool('cameras', robot=robot)['cameras'][0]['id'] == 'top'
     image = ex.call_tool('look', {'camera': 'top'}, robot=robot)
     assert image['type'] == 'image' and image['media_type'] == 'image/jpeg' and base64.b64decode(image['data']) == JPEG + b'blurred'
     assert ex.call_tool('arm_state', robot=robot) == {'arms': {'left': {'ok': True, 'joints_rad': [0.0] * 6, 'gripper': 0.95, 'tool_mm': [300, 0, 200]}}}
-    done = ex.call_tool('run_task', {'prompt': 'pick up the cup'}, robot=robot)
+    done = ex.call_tool('run_task', {'prompt': 'pick up the cup', 'camera': 'left'}, robot=robot)
     assert done['status'] == 'done' and done['moves'] == 2
+    assert any(c[0] == 'POST' and c[1] == '/v1/tasks' and c[2].get('camera') == 'left' for c in FakeApi.seen)
     assert done['outcome'] == PICKUP_OUTCOME and done['outcome']['holding']['left']['object'] == 'cup'   # not the gripper value
     assert 'outcome' in next(t for t in ex.TOOLS if t['name'] == 'run_task')['description']
     assert ex.call_tool('stop', robot=robot)['confirmed'] is True

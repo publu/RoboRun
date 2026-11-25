@@ -40,22 +40,30 @@ TOOLS = [
                     'The gripper opening does not tell whether an object is held (a jaw around a wide cup reads nearly open): '
                     'use the outcome that run_task returns.',
      'input_schema': {'type': 'object', 'properties': {}, 'additionalProperties': False}},
+    {'name': 'cameras',
+     'description': 'Every camera card on the robot: id, alias (top, left, right), mount (world or <arm>.tool), image width and '
+                    'height in pixels (for marks boxes), pinhole intrinsics, pose, depth availability and whether each camera is '
+                    'calibrated for planning.',
+     'input_schema': {'type': 'object', 'properties': {}, 'additionalProperties': False}},
     {'name': 'run_task',
      'description': 'Have the robot do one physical task described in plain words, such as "pick up the cup" or "put the cup '
                     'back where it was", and wait until it ends. Returns status (done, stopped, failed), the number of moves, '
                     'a message and outcome: outcome.holding.left / .right is what that arm holds now ({object, lifted_mm, '
                     'evidence, verified}), null when the robot measured it empty, or "unknown" when it did not check that arm; '
                     'outcome.placed lists what the task let go of. When an arm you need is "unknown", use look before relying '
-                    'on it. mode "preview" plans and shows the motion without moving anything (outcome is null).',
+                    'on it. mode "preview" plans and shows the motion without moving anything (outcome is null). Pass camera '
+                    '"left" or "right" for fine close-up wrist work, or "top" (default) for general table tasks.',
      'input_schema': {'type': 'object', 'required': ['prompt'], 'additionalProperties': False, 'properties': {
          'prompt': {'type': 'string', 'minLength': 1, 'maxLength': 1500},
          'mode': {'type': 'string', 'enum': ['run', 'preview'], 'default': 'run'},
          'arm': {'type': 'string', 'enum': ['left', 'right', 'both'], 'description': 'leave out to let the robot choose'},
+         'camera': {'type': 'string', 'enum': ['top', 'left', 'right'],
+                    'description': 'which camera plans the motion: top (overhead, default) or a wrist camera (left, right)'},
          'timeout_s': {'type': 'number', 'default': 300, 'description': 'stop the task if it runs longer than this'},
          'marks': {'type': 'object', 'additionalProperties': False,
-                   'description': 'optional boxes [x0, y0, x1, y1] in the pixels of the top camera image (x right, y down from its '
-                                  'top-left corner): target = the object to pick, place = where it goes. Use them when look-alikes '
-                                  'stand together.',
+                   'description': 'optional boxes [x0, y0, x1, y1] in the pixels of look(camera="top") (x right, y down from its '
+                                  'top-left corner; call cameras for exact image width/height): target = the object to pick, '
+                                  'place = where it goes. Use them whenever look-alikes stand together or exact placement matters.',
                    'properties': {'target': {'type': 'array', 'items': {'type': 'number'}, 'minItems': 4, 'maxItems': 4},
                                   'place': {'type': 'array', 'items': {'type': 'number'}, 'minItems': 4, 'maxItems': 4}}}}}},
     {'name': 'stop',
@@ -89,9 +97,11 @@ def call_tool(name, arguments=None, robot=None):
             state = robot.state()
             return {'arms': {side: {k: arm.get(k) for k in ('ok', 'joints_rad', 'gripper', 'tool_mm')}
                              for side, arm in (state.get('arms') or {}).items()}}
+        if name == 'cameras':
+            return robot.cameras()
         if name == 'run_task':
             task = robot.run(args['prompt'], mode=args.get('mode', 'run'), arm=args.get('arm'),
-                             timeout=float(args.get('timeout_s', 300)), marks=args.get('marks'))
+                             camera=args.get('camera'), timeout=float(args.get('timeout_s', 300)), marks=args.get('marks'))
             return _task_result(task)
         if name == 'stop':
             return robot.stop()

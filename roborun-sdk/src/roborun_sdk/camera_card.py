@@ -47,7 +47,7 @@ BODY_ALIAS = 'head'
 MOUNTS = ('world', 'left.tool', 'right.tool', 'body.head')
 ARM_MOUNTS = MOUNTS[:3]
 RESERVED = ('overhead', 'both', 'all', 'head')
-CARD_KEYS = ('alias', 'label', 'mount', 'pose', 'depth', 'rectified', 'sees', 'device')
+CARD_KEYS = ('alias', 'label', 'mount', 'pose', 'depth', 'rectified', 'sees', 'device', 'description', 'fingers')
 ID = re.compile(r'[a-z][a-z0-9_]{0,31}')
 SEE = re.compile(r'[a-z][a-z0-9_.]*')
 DEFAULT_MOUNT = {'top': 'world', 'left': 'left.tool', 'right': 'right.tool', 'head': 'body.head'}
@@ -282,9 +282,13 @@ def check_card(cid, card, *, arms=None, body=False):
         value = card.get(key)
         if value is not None and (not isinstance(value, str) or not value.strip() or len(value) > 80):
             raise CardError(f'camera {cid}: {key} is a short text (up to 80 characters)')
+    for key, limit in (('description', 400), ('fingers', 200)):
+        value = card.get(key)
+        if value is not None and (not isinstance(value, str) or not value.strip() or len(value) > limit):
+            raise CardError(f'camera {cid}: {key} is plain text (up to {limit} characters)')
     out = dict(alias=alias, label=card.get('label') or LABELS.get(alias) or cid, mount=mount, pose=pose,
                depth=card.get('depth'), rectified=card.get('rectified'), sees=list(sees) if sees is not None else None,
-               device=card.get('device'))
+               device=card.get('device'), description=card.get('description'), fingers=card.get('fingers'))
     return out, warnings
 
 
@@ -467,6 +471,10 @@ def derive(cid, settings, cfg, rig=None, model=None, sim=None, cad=None):
         card['device'] = cfg['device']
     if cfg.get('sees') is not None:
         card['sees'] = list(cfg['sees'])
+    if cfg.get('description'):
+        card['description'] = cfg['description'].strip()
+    if cfg.get('fingers'):
+        card['fingers'] = cfg['fingers'].strip()
     card.update(calibration=None, planning=None)
     return card
 
@@ -575,6 +583,9 @@ def validate(card):
         bad('optics.rectified is true, false or null')
     if card.get('sees') is not None and (not isinstance(card['sees'], list) or len(card['sees']) > 8):
         bad('sees is a list of up to 8 short names')
+    for key, limit in (('description', 400), ('fingers', 200)):
+        if card.get(key) is not None and (not isinstance(card[key], str) or len(card[key]) > limit):
+            bad(f'{key} is text of up to {limit} characters')
     return card
 
 
@@ -617,6 +628,10 @@ def outbound(card, *, intrinsics, T_table_camera, T_tool_camera, table_z_m=None)
                T_table_camera=table, T_tool_camera=tool)
     if table_z_m is not None:
         out['table_z_m'] = float(table_z_m)
+    if card.get('description'):
+        out['description'] = str(card['description']).strip()[:400]
+    if card.get('fingers'):
+        out['fingers'] = str(card['fingers']).strip()[:200]
     return out
 
 

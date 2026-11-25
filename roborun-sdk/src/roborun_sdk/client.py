@@ -242,6 +242,11 @@ class Robot:
         """The arms now (GET /v1/robot): joints_rad, gripper (0 closed .. 1 open), tool_mm per arm, cameras, safety."""
         return self.call('GET', '/v1/robot')
 
+    def cameras(self) -> Dict[str, Any]:
+        """The robot's camera cards (GET /v1/cameras): mount, delivered image size (width, height), pinhole intrinsics,
+        pose, depth availability and planning readiness per camera."""
+        return self.call('GET', '/v1/cameras')
+
     def frame(self, camera: Camera = 'top', blur: bool = True) -> bytes:
         """The newest JPEG from a camera (top, left, right; head on a humanoid). blur=True (the default) covers faces, so the
         image may leave this computer, for example to an LLM. blur=False gives the sharp frame for use on this computer.

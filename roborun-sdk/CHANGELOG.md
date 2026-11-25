@@ -15,6 +15,12 @@ Releases before 0.1.20261121012822 were put together from the source history and
 
 **Added**
 
+- Camera cards (`robot.yaml` `card:` and `roborun_sdk.camera_card.outbound()`) now accept optional `description` (up to
+  400 characters) and `fingers` (up to 200 characters) so custom cameras and wrist grippers describe themselves accurately
+  to the motion service.
+- `Robot.cameras()` (`GET /v1/cameras`) returns every camera card (delivered pixel size, mount, intrinsics, pose, depth
+  and planning readiness). `examples/llm_tools.py` adds the `cameras` tool and exposes `camera` (`top`, `left`, `right`)
+  on `run_task` so an LLM/VLM can plan from both overhead and wrist cameras with exact pixel dimensions for `marks`.
 - Custom robot body profiles now accept `kind: quadruped`, `tracked` and `mobile` (in addition to `humanoid`, `wheeled`
   and `rover`), `base: tracked` (in addition to `legged` and `wheeled`), and up to 4 arms (`arms: 0..4`).
 - `roborun up --server URL` now updates the saved motion service address in `robot.json` on an already configured robot

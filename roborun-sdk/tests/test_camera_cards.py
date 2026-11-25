@@ -60,7 +60,7 @@ def card_of(cid, entry, rig_spec=None, model=None, cad=None):
     (dict(left=dict(source='usb:1', card=dict(rectified=1))), 'camera left: rectified must be true or false'),
     (dict(top=dict(source='usb:1', card=dict(sees=['Table']))), 'camera top: sees is a list of up to 8 short names such as table or left.gripper'),
     (dict(top=dict(source='usb:1', card=dict(sees=[f's{i}' for i in range(9)]))), 'camera top: sees is a list'),
-    (dict(top=dict(source='usb:1', card=dict(lens=dict(fx=1)))), 'camera top: card does not take "lens"; it takes alias, label, mount, pose, depth, rectified, sees, device'),
+    (dict(top=dict(source='usb:1', card=dict(lens=dict(fx=1)))), 'camera top: card does not take "lens"; it takes alias, label, mount, pose, depth, rectified, sees, device, description, fingers'),
     (dict(top=dict(source='usb:1', card='world')), 'camera top: card must be a section (alias, mount, ...)'),
     (dict(aux=dict(source='usb:1', card=dict(pose=np.eye(4).tolist()))), 'camera aux: a pose needs a mount'),
 ])
@@ -290,6 +290,9 @@ def test_outbound_sends_camera_facts_only():
     out = cc.outbound(card, intrinsics=FACTORY, T_table_camera=YAM_TOP, T_tool_camera=CAD)
     text = json.dumps(out)
     assert 'realsense' not in text and 'sees' not in out and 'model' not in out['intrinsics'] and 'table_z_m' not in out
+    described = dict(card, description='Left wrist wide-angle view', fingers='Two white rubber pads at the bottom')
+    out2 = cc.outbound(described, intrinsics=FACTORY, T_table_camera=YAM_TOP, T_tool_camera=CAD)
+    assert out2['description'] == 'Left wrist wide-angle view' and out2['fingers'] == 'Two white rubber pads at the bottom'
     nomount = dict(card, pose=dict(card['pose'], T=None, source='none'))
     with pytest.raises(ValueError, match='the left wrist camera has no known mount: motion cannot be planned from it'):
         cc.outbound(nomount, intrinsics=FACTORY, T_table_camera=YAM_TOP, T_tool_camera=CAD)
