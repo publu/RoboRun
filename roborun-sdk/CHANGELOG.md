@@ -78,6 +78,8 @@ Releases before 0.1.20261121012822 were put together from the source history and
 
 **Changed**
 
+- Data sync: when the API names a data store this robot has not synced to (`GET /v1/health` `store`), the robot uploads its
+  history again, once. It asks at most every 10 minutes; an API that names no store, or does not answer, changes nothing.
 - `card` is now a reserved key in a `robot.yaml` camera entry: it is the camera's card section. A camera class of your own
   that took a `card=` argument from `robot.yaml` no longer receives it; rename that setting (any other extra key still
   reaches your class's `__init__` as before).

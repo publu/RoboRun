@@ -25,3 +25,27 @@ def test_uninstall_never_takes_the_dataset_with_the_install(tmp_path, monkeypatc
     monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path))
     d = robot.dataset_root('lab-k1')
     assert (tmp_path / 'roborun') in d.parents and (tmp_path / '.roborun') not in d.parents
+
+
+def test_a_new_api_store_sends_the_history_again(tmp_path):
+    """When the API names a store this robot has not synced to, what it sent before is not there: it all goes up again, once."""
+    from roborun_sdk import datasync
+    state = tmp_path / 'sync-state.json'
+    health = {}
+    sync = datasync.DataSync('https://api.example', 'rr_test_x', 'lab-k1', {}, state_file=state, log=lambda *a: None)
+    sync._req = lambda method, path, **kw: (200, dict(health))
+    sync.state['files'] = {'datasets/meta/info.json': '10:1'}
+    sync._check_store()                                         # an API that names no store: nothing changes
+    assert sync.state['files'] and 'store' not in sync.state
+    health['store'] = 'aaaa1111bbbb2222'; sync._store_at = -1e9
+    sync._check_store()                                         # a store this robot has not synced to: everything again
+    assert sync.state['files'] == {} and sync.state['store'] == 'aaaa1111bbbb2222'
+    sync.state['files'] = {'datasets/meta/info.json': '10:1'}; sync._store_at = -1e9
+    sync._check_store()                                         # the same store: kept
+    assert sync.state['files'] == {'datasets/meta/info.json': '10:1'}
+    import json
+    assert json.loads(state.read_text())['store'] == 'aaaa1111bbbb2222'
+    sync._req = lambda method, path, **kw: (_ for _ in ()).throw(RuntimeError('GET /v1/health: 502'))
+    sync._store_at = -1e9
+    sync._check_store()                                         # an API that cannot answer: the state stays
+    assert sync.state['files']

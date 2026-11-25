@@ -293,7 +293,30 @@ class DataSync:
             raise privacy.BlurUnavailable(f'{privacy.NO_BLUR}: this depth frame is not in its colour video')
         return privacy.clear_depth_png(p.read_bytes(), hits[frame], shape)
 
+    STORE_EVERY_S = 600
+
+    def _check_store(self):
+        """The API keeps what this robot sent in one store (GET /v1/health: store). A store that is new to this robot has none
+        of it, so everything goes up again, once. Asked at most every STORE_EVERY_S; unknown keeps the state."""
+        now = time.monotonic()
+        if now - getattr(self, '_store_at', -1e9) < self.STORE_EVERY_S:
+            return
+        self._store_at = now
+        try:
+            out = self._req('GET', '/v1/health', timeout=30)[1] or {}
+        except Exception:
+            return
+        store = out.get('store') if isinstance(out, dict) else None
+        if not isinstance(store, str) or not store or self.state.get('store') == store:
+            return
+        if self.state.get('files'):
+            self.log(f"data sync: the Roborun API keeps a new store ({store}); this robot's history goes up again")
+        self.state['files'] = {}
+        self.state['store'] = store
+        self._save()
+
     def sync_files(self, budget_s=None):
+        self._check_store()
         seen = self.state.setdefault('files', {})
         started = time.monotonic(); pending = {}; marks = {}; bodies = {}
         for rel, p in self._files():
