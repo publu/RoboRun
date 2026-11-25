@@ -1287,9 +1287,9 @@ plans every move from what the profile says, so give the real numbers of your ro
 
 ```yaml
 label: My rover
-kind: wheeled              # wheeled (also: rover) or humanoid
-base: wheeled              # wheeled or legged; a wheeled kind has a wheeled base, a humanoid says which
-arms: 0                    # 0 to 2 (told to the planner; this API drives no arms yet)
+kind: wheeled              # humanoid, wheeled (also: rover), quadruped, tracked or mobile
+base: wheeled              # legged, wheeled or tracked (defaults from kind; a humanoid says which)
+arms: 0                    # 0 to 4 (told to the planner; this API drives no arms yet)
 head_dof: 0                # 0: a fixed camera, 1: it pitches, 2: it pitches and turns
 limits:
   vx_m_s: [-0.2, 0.5]      # forward speed range, m/s; must include 0

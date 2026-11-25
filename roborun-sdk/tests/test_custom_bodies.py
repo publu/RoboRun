@@ -125,10 +125,10 @@ def test_a_humanoid_profile_in_json_with_a_moving_head(home):
 
 
 @pytest.mark.parametrize('change, words', [
-    (dict(kind='tank'), 'kind: wheeled (or rover) or humanoid'),
-    (dict(kind='humanoid'), 'base: legged or wheeled (a humanoid has to say which)'),
+    (dict(kind='tank'), 'kind: one of humanoid, mobile, quadruped, rover, tracked, wheeled'),
+    (dict(kind='humanoid'), 'base: legged, wheeled or tracked (a humanoid has to say which)'),
     (dict(base='legged'), 'base: a wheeled body has a wheeled base'),
-    (dict(arms=3), 'arms: a whole number from 0 to 2'),
+    (dict(arms=5), 'arms: a whole number from 0 to 4'),
     (dict(head_dof=1), 'limits.head_pitch_rad: required for a head that pitches'),
     (dict(limits=dict(vx_m_s=[0.1, 0.5], vyaw_rad_s=[-1, 1])), 'limits.vx_m_s: the range has to include 0'),
     (dict(limits=dict(vx_m_s=[-0.2, 0.5])), 'limits.vyaw_rad_s: required'),
@@ -600,7 +600,16 @@ def test_roborun_profiles_lists_your_bodies_and_what_is_wrong(up_env, capsys):
     robot.cmd_profiles(types.SimpleNamespace(manifest=str(home / "no-runtime")))
     out = capsys.readouterr().out
     assert 'yard_rover   Yard rover (wheeled, wheeled base, 0 arms, head_dof 0)' in out
-    assert 'not usable: ' + str(home / 'bodies' / 'broken.yaml') + ': kind: wheeled (or rover) or humanoid' in out
+    assert 'not usable: ' + str(home / 'bodies' / 'broken.yaml') + ': kind: one of humanoid, mobile, quadruped, rover, tracked, wheeled' in out
+
+
+def test_custom_quadruped_tracked_and_mobile_profiles(home):
+    import yaml
+    for pid, kind, want_base, arms in (('spot', 'quadruped', 'legged', 1), ('treads', 'tracked', 'tracked', 2), ('mob', 'mobile', 'wheeled', 4)):
+        raw = dict(yaml.safe_load(ROVER), label=pid, kind=kind, arms=arms)
+        write(home, f'{pid}.yaml', yaml.safe_dump(raw))
+        p = profiles.load(pid)
+        assert (p['robot']['kind'], p['robot']['base'], p['robot']['arms']) == (kind, want_base, arms)
 
 
 # ------------------------------------------------------------------------------------------------ the example rover

@@ -1209,6 +1209,9 @@ def cmd_up(a) -> int:
     c = json.loads(CONFIG.read_text())
     if carry and any(c.get(k) != v for k, v in carry.items()):
         c.update(carry); CONFIG.write_text(json.dumps(c, indent=1))
+    if a.server and a.server.rstrip('/') != str(c.get('server') or '').rstrip('/'):
+        c['server'] = a.server.rstrip('/')                               # a server given now replaces the saved one
+        CONFIG.write_text(json.dumps(c, indent=1)); print(f"server: {c['server']}", flush=True)
     if a.key_file and str(Path(a.key_file).expanduser().resolve()) != str(Path(c.get('key_file') or '').expanduser().resolve()):
         c['key_file'] = str(Path(a.key_file).expanduser().resolve())     # a key given now replaces the saved one
         CONFIG.write_text(json.dumps(c, indent=1)); print(f"key: {c['key_file']}", flush=True)

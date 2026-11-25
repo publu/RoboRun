@@ -146,6 +146,12 @@ def up(a) -> int:
                              f'--profile {pid} --sim room   (or --body-agent http://ROBOT:PORT for a real one)')
         c = dict(server=(a.server or robot.SERVER).rstrip('/'), robot=a.robot, backend=a.backend,
                  data=dict(enabled=False, opt_out=False, sources={}, state=str(robot.HOME / 'robot' / 'sync-state.json')))
+    if a.server:
+        from .. import net
+        net.check_server(a.server, getattr(a, 'insecure', False))
+        if a.server.rstrip('/') != str(c.get('server') or '').rstrip('/'):
+            c['server'] = a.server.rstrip('/')
+            robot.CONFIG.write_text(json.dumps(c, indent=1)); print(f"server: {c['server']}", flush=True)
     if a.key_file:
         c['key_file'] = str(Path(a.key_file).expanduser().resolve())
     if not c.get('key_file'):

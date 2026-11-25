@@ -32,8 +32,10 @@ SUFFIXES = ('.yaml', '.yml', '.json')
 ID = re.compile(r'[a-z0-9][a-z0-9_-]{0,47}')
 LABEL = re.compile(r'[A-Za-z0-9][A-Za-z0-9_. -]{0,47}')            # the hosted API's robot.family
 ROBOT_SCHEMA = 'manifest.robot-descriptor.v2'
-KINDS = {'humanoid': 'humanoid', 'wheeled': 'wheeled', 'rover': 'wheeled'}    # rover: a wheeled body, as the hosted API names it
-BASES = ('legged', 'wheeled')
+KINDS = {'humanoid': 'humanoid', 'wheeled': 'wheeled', 'rover': 'wheeled', 'quadruped': 'quadruped',
+         'tracked': 'tracked', 'mobile': 'mobile'}
+BASES = ('legged', 'wheeled', 'tracked')
+DEFAULT_BASE = {'wheeled': 'wheeled', 'quadruped': 'legged', 'tracked': 'tracked', 'mobile': 'wheeled'}
 TOP_KEYS = {'id', 'label', 'maker', 'description', 'kind', 'base', 'arms', 'head_dof', 'limits', 'robot', 'camera', 'motion',
             'guard', 'sim', 'agent', 'footprint_m'}
 LIMIT_KEYS = {'vx_m_s', 'vy_m_s', 'vyaw_rad_s', 'head_pitch_rad', 'head_yaw_rad', 'walk_min_pitch_rad', 'head_rate_rad_s', 'deadband_m_s'}
@@ -322,14 +324,16 @@ def validate(raw, source='profile'):
             r = {k: raw[k] for k in ('kind', 'base', 'arms', 'head_dof', 'limits') if k in raw}
             where = ''
         if r.get('kind') not in KINDS:
-            raise ProfileError(f'{where}kind: wheeled (or rover) or humanoid')
+            raise ProfileError(f'{where}kind: one of {", ".join(sorted(KINDS))}')
         kind = KINDS[r['kind']]
-        base = r.get('base', 'wheeled' if kind == 'wheeled' else None)
+        base = r.get('base', DEFAULT_BASE.get(kind))
         if base not in BASES:
-            raise ProfileError(f'{where}base: legged or wheeled' + (' (a humanoid has to say which)' if kind == 'humanoid' else ''))
+            raise ProfileError(f'{where}base: legged, wheeled or tracked' + (' (a humanoid has to say which)' if kind == 'humanoid' else ''))
         if kind == 'wheeled' and base != 'wheeled':
             raise ProfileError(f'{where}base: a wheeled body has a wheeled base')
-        arms = _int(r.get('arms', 0), f'{where}arms', 0, 2)
+        if kind == 'tracked' and base != 'tracked':
+            raise ProfileError(f'{where}base: a tracked body has a tracked base')
+        arms = _int(r.get('arms', 0), f'{where}arms', 0, 4)
         head_dof = _int(r.get('head_dof', 0), f'{where}head_dof', 0, 2)
         family = r.get('family', pid)
         if not isinstance(family, str) or not LABEL.fullmatch(family):

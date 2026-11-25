@@ -15,6 +15,10 @@ Releases before 0.1.20261121012822 were put together from the source history and
 
 **Added**
 
+- Custom robot body profiles now accept `kind: quadruped`, `tracked` and `mobile` (in addition to `humanoid`, `wheeled`
+  and `rover`), `base: tracked` (in addition to `legged` and `wheeled`), and up to 4 arms (`arms: 0..4`).
+- `roborun up --server URL` now updates the saved motion service address in `robot.json` on an already configured robot
+  instead of silently keeping the previous address.
 - `Robot.clip()` is back as a stub so that a program written for 0.1.20261119203708 gets a clear error instead of
   `AttributeError`. It raises `RobotError` with status 410 and code `removed` and sends no request. The cameras' own
   recording of a task is `Robot.recording(task_id)`.
