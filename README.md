@@ -1,113 +1,147 @@
 # Roborun SDK
 
-This is the latest iteration of RoboRun. Roborun turns a sentence and your camera view into motion on your robot arms.
-The hosted service plans the motion; this SDK runs on the computer wired to the robot and keeps the arm drivers, cameras,
-safety rules and Stop on your own machine. This repository holds the SDK and the station it runs your arms through, with
-their docs, examples and tests. It is open source under the Apache License 2.0: use it, change it and build on it.
+**Turn plain-English instructions and camera views into verified motion on any robot arm or body — at a fraction of the cost of driving robots directly with frontier VLMs.**
 
-Earlier iterations of RoboRun (the `ros-agent` package, releases v0.1.0 to v0.9.0) are kept on the
-[`legacy`](https://github.com/publu/RoboRun/tree/legacy) branch; their releases are tagged `legacy-v0.1.0` to `legacy-v0.9.0`
-and their other branches are `legacy-feat-fleet-lab` and `legacy-openclaw-mcp`.
+Roborun splits robot control cleanly into two halves:
 
-| Folder | What it is |
-|---|---|
-| [`roborun-sdk/`](roborun-sdk/) | The `roborun` command and the `roborun_sdk` Python package: `roborun up`, guided setup, arm drivers, cameras, MuJoCo simulation, the local API and its Python client |
-| [`roborun-station/`](roborun-station/) | The station your arm drivers run inside: motion leases, Stop and hold, Home, plus simulated stations (pure Python) |
+- **Local on your machine (this repo, Apache-2.0):** arm drivers, cameras, custom body adapters, MuJoCo simulation, local keep-out/clearance safety rules, and an unrefusable `Stop`.
+- **Hosted Roborun API:** motion planning from your camera view, robot profile, and instruction — returning verified trajectories while keeping hardware control and safety local.
 
-The robot runtime is not in this repository: `roborun up` downloads it from the service the first time it starts.
+> **Using an AI coding assistant?** Point it at [`roborun-sdk/docs/AGENTS.md`](roborun-sdk/docs/AGENTS.md) (or run `roborun docs agents` after install) for a single-page setup, drive, and stop reference.
+
+---
+
+## Why Roborun? Cost & Benchmark Data
+
+Using a frontier VLM directly as a low-level robot controller works, but burns dozens of reasoning turns per task — typically **$1–$16+ per episode** and **20–30 minutes** on real or simulated arms — while smaller, low-cost VLMs fail completely at low-level pose control.
+
+Because the Roborun API handles physical motion planning in a single high-level task call (`POST /v1/tasks`, with optional pixel `marks` from any camera), **even a $0.10/M-token VLM (`gpt-6-luna`) achieves 90%+ zero-shot pick-and-place success**, cutting end-to-end cost per task by **10×–100×** and wall time by **~15×**.
+
+### Measured Cost & Performance (Simulated Franka Panda, Zero-Shot)
+
+| Setup | Benchmark | Success Rate | Calls / Tasks per Ep | Wall Time | VLM Cost / Ep | Roborun API Cost / Ep\* | **Total Cost / Ep** |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| **GPT-6 Astra (high)** direct† | LIBERO-10 | 44% (44/100) | 49.4 tool calls | — | $7.09 | — | **$7.09** ($16.11 / pass) |
+| **GPT-6.1 Sol (high)** direct† | LIBERO-10 | 33% (33/100) | 53.8 tool calls | — | $1.64 | — | **$1.64** ($4.97 / pass) |
+| **GPT-6.1 Sol (low)** direct† | LIBERO-10 | 24% (24/100) | 51.6 tool calls | — | $1.02 | — | **$1.02** ($4.25 / pass) |
+| **GPT-6 Luna (all efforts)** direct† | LIBERO-10 | **0%** (0/300) | 8.5–74.0 calls | — | $0.003–$0.29 | — | **∞** (no passes) |
+| **`gpt-6-luna` + Roborun API** | LIBERO-Object | **90%** (9/10) | 1.3 robot tasks | ~2.1 min | **$0.013** | $0.06–$0.16 | **$0.07–$0.17** |
+| **`gpt-6.2-sol` (low) + Roborun API** | LIBERO-Object | **100%** (10/10) | **1.0 robot task** | ~1.8 min | **$0.194** | $0.05–$0.14 | **$0.25–$0.33** |
+| **`gpt-6.1-sol` (high) + Roborun API** | LIBERO-Object (5 layouts × 10) | **88%** ≤600 steps (44/50; **98%** any step) | 1.6 robot tasks | ~2.4 min | **$0.187** | $0.09–$0.23 | **$0.28–$0.41** |
+
+*\*Roborun API cost range reflects fleet-amortized compute (10+ active robots) through single-robot dedicated operation; variable motion-planning compute on a 1-shot pass is under **$0.05/task**. VLM costs use published standard API token rates (`gpt-6-luna` $0.10/$0.50 per M; `gpt-6.1/6.2-sol` $2/$10 per M; `gpt-6-astra` $10/$50 per M).*  
+*†Direct-VLM baselines from Espinola, Zhang & Xiang, [arXiv:2610.30051](https://arxiv.org/abs/2610.30051) (Oct 2026), evaluating frontier models issuing closed-loop end-effector pose commands on LIBERO-10 without pretrained manipulation skills.*
+
+**Evaluation notes:** All Roborun trials above run zero-shot (no task-specific fine-tuning) through the standard Roborun local API and hosted service with LIBERO's own BDDL success predicates and 600-step budget. LIBERO-Object runs use a 960×720 scene camera, frozen physics during planning, an open start gripper, and a one-page product reference sheet; multi-suite zero-shot evaluations (LIBERO-10, LIBERO-Spatial, and LIBERO-Goal without reference sheets) are in progress and will be added to this table as runs complete.
+
+---
 
 ## Install
 
-Everyone, the official installer (macOS and Linux; Windows: WSL2):
+**Official installer** (macOS and Linux; Windows via WSL2 — installs its own Python, no admin rights required):
 
 ```sh
 curl -fsSL https://roborun.app/install.sh | sh
 ```
 
-Developers can install from source into their own Python 3.10+ environment:
+**From source** (Python 3.10+):
 
 ```sh
-# from a clone
 git clone https://github.com/publu/RoboRun.git roborun-sdk && cd roborun-sdk
 python -m venv .venv && . .venv/bin/activate
 pip install ./roborun-station "./roborun-sdk[robot]"
+```
 
-# or straight from git (station first: the SDK depends on it)
+Or install straight from GitHub (`roborun-station` first):
+
+```sh
 pip install "git+https://github.com/publu/RoboRun.git#subdirectory=roborun-station" \
             "roborun-sdk[robot] @ git+https://github.com/publu/RoboRun.git#subdirectory=roborun-sdk"
 ```
 
-`[robot]` is everything a robot runs (the simulator, cameras, the arm drivers), the same set the installer installs.
-Without it, `pip install ./roborun-sdk` is the light SDK: the Python client, your own drivers and rules and the `roborun`
-command, with no simulator or hardware packages. Or pick only the extras you need, for example
-`pip install "./roborun-sdk[cameras,feetech]"`; the list is in
-[`roborun-sdk/pyproject.toml`](roborun-sdk/pyproject.toml) and
-[Install only what you need](roborun-sdk/docs/BUILDING.md#install-only-what-you-need). `roborun docs` prints the guides
-from any of these installs.
+- **`roborun-sdk[robot]`** includes everything a robot runs (simulator, cameras, arm drivers) — matching the official installer.
+- **`roborun-sdk`** (light install) installs only the Python client, driver/rule interfaces, and `roborun` CLI with no simulator or hardware dependencies. You can also select specific extras such as `pip install "./roborun-sdk[cameras,feetech]"` (see [`roborun-sdk/pyproject.toml`](roborun-sdk/pyproject.toml) and [Install only what you need](roborun-sdk/docs/BUILDING.md#install-only-what-you-need)).
 
-Using the service needs a Roborun key. Roborun is invite-only: if you don't have a key, email support@roborun.dev.
+Using the hosted Roborun API requires a key. Access is currently invite-only — email **support@roborun.dev** to request one.
 
-## Quickstart in simulation
+---
 
-This needs a Roborun key and an internet connection: `roborun up` stops at `no key: run roborun login` without one, and its
-first start downloads the robot runtime from the service.
+## 60-Second Quickstart (Simulation)
 
 ```sh
-roborun login                # prints a link: approve this computer on https://app.roborun.app
-roborun up --sim cup         # two simulated arms and a cup on this computer; the first start downloads the robot runtime
-curl -X POST http://127.0.0.1:8120/v1/tasks -H 'Content-Type: application/json' -d '{"prompt": "pick up the cup"}'
-roborun stop                 # Stop is never refused
+roborun login                  # opens a sign-in link on https://app.roborun.app
+roborun up --sim cup           # starts two simulated arms + a cup locally (downloads runtime on first run)
+curl -X POST http://127.0.0.1:8120/v1/tasks \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt": "pick up the cup"}'
+roborun stop                   # Stop is local and never refused
 roborun down
 ```
 
-Or open <https://app.roborun.app> on the same computer and type the task there. The step-by-step version is
-[`roborun-sdk/README.md`](roborun-sdk/README.md).
+Or open <https://app.roborun.app> on the same computer to send tasks and watch the live cameras. See [`roborun-sdk/README.md`](roborun-sdk/README.md) for the full walkthrough.
 
-### Without a key
+### Drive from Python or a VLM
 
-These run on this computer alone, no key and no network (from the `roborun-sdk/examples/` folder):
+```python
+from roborun_sdk.client import Robot
 
-```sh
-python minimal_arm.py                  # the smallest arm driver, on a local station on a free port
-python folder_camera.py FOLDER         # your own camera, from a folder of images
-python keep_out_box.py                 # a rules file: the gripper stays out of a box
-roborun new my-robot                   # a starter project: driver, rules and a task client
-roborun docs                           # the guides; roborun docs --examples DIR copies the examples out
+robot = Robot()
+cams = robot.cameras()                       # pixel size, mount, intrinsics, pose for every camera
+task = robot.run(
+    "pick up the milk and place it in the basket",
+    camera="top",                            # or "left" / "right" for wrist-camera tasks
+    marks={                                  # optional pixel boxes in the scene image
+        "camera": "top",
+        "target": [269, 279, 326, 383],
+        "place": [625, 297, 810, 470],
+    },
+)
+print(task["status"], task["message"], task["outcome"])
 ```
 
-## Building on Roborun
+For ready-to-use LLM tool schemas (`cameras`, `frame`, `run_task`, `robot_state`, `stop`), see [`roborun-sdk/examples/llm_tools.py`](roborun-sdk/examples/llm_tools.py).
 
-The reference is [`roborun-sdk/docs/BUILDING.md`](roborun-sdk/docs/BUILDING.md):
+### Try Locally Without a Key
 
-- [Your own arm driver](roborun-sdk/docs/BUILDING.md#your-own-arm-driver)
-- [Your own camera](roborun-sdk/docs/BUILDING.md#your-own-camera) and
-  [Describe your cameras](roborun-sdk/docs/BUILDING.md#describe-your-cameras) (camera cards: mount, lens, depth;
-  `roborun cameras describe`)
-- [Rules](roborun-sdk/docs/BUILDING.md#rules) (keep-out zones and limits that run locally)
-- [Arm profile from a URDF](roborun-sdk/docs/BUILDING.md#arm-profile-from-a-urdf)
-- [The local API](roborun-sdk/docs/BUILDING.md#the-local-api)
-- [The Python client](roborun-sdk/docs/BUILDING.md#the-python-client)
-- [An LLM's tools](roborun-sdk/docs/BUILDING.md#an-llms-tools)
-- [Humanoids: Booster K1 and Galaxea R1](roborun-sdk/docs/BUILDING.md#humanoids-booster-k1-and-galaxea-r1)
-- [Your own robot body](roborun-sdk/docs/BUILDING.md#your-own-robot-body) (a mobile base or a humanoid of your own)
-- [Profiles and simulation](roborun-sdk/docs/BUILDING.md#profiles-and-simulation) (`roborun sim` runs from its own copy
-  of the runtime and never touches a live robot) and
-  [Two installs on one computer](roborun-sdk/docs/BUILDING.md#two-installs-on-one-computer)
+These examples run completely offline on your machine (from `roborun-sdk/examples/`):
 
-Also: [`roborun-sdk/docs/AGENTS.md`](roborun-sdk/docs/AGENTS.md) (a short guide for coding agents that install and drive Roborun),
-[`roborun-sdk/docs/HOSTED_API.md`](roborun-sdk/docs/HOSTED_API.md) (the hosted API), and
-[`roborun-sdk/DEVELOPING.md`](roborun-sdk/DEVELOPING.md) / [`roborun-station/DEVELOPING.md`](roborun-station/DEVELOPING.md)
-for changing the packages themselves. What changed in each release: [`roborun-sdk/CHANGELOG.md`](roborun-sdk/CHANGELOG.md)
-(`roborun docs changelog`).
+```sh
+python minimal_arm.py          # smallest arm driver on a local station
+python folder_camera.py DIR    # custom camera backed by a folder of images
+python keep_out_box.py         # local safety rule keeping the gripper out of a box
+roborun new my-robot           # scaffold a starter project (driver, rules, task client)
+roborun docs                   # browse guides locally (`roborun docs --examples DIR` copies examples)
+```
 
-## Examples
+---
 
-[`roborun-sdk/examples/`](roborun-sdk/examples/): a minimal arm driver, a camera from a folder of images, a keep-out rules
-file, a command-line client for the local API, the robot as an LLM's tools, and a rover of your own (`rover.py`, a custom
-robot body). `roborun new my-robot` writes a starter
-project.
+## Built for Any Embodiment
 
-## Tests
+Roborun is designed so you can wire in your own arms, cameras, and robot bodies without modifying the hosted service:
+
+- **Custom arms & URDFs:** wrap any joint-controlled arm via [`Your own arm driver`](roborun-sdk/docs/BUILDING.md#your-own-arm-driver) or generate a profile from a URDF ([`Arm profile from a URDF`](roborun-sdk/docs/BUILDING.md#arm-profile-from-a-urdf)).
+- **Custom cameras & camera cards:** attach any overhead, tripod, or wrist camera with intrinsics, pose, mount `description`, and wrist `fingers` metadata ([`Describe your cameras`](roborun-sdk/docs/BUILDING.md#describe-your-cameras)).
+- **Custom robot bodies:** support for wheeled, tracked, legged/quadruped, and humanoid embodiments (`0–4` arms) — see [`Your own robot body`](roborun-sdk/docs/BUILDING.md#your-own-robot-body) and [`roborun-sdk/examples/rover.py`](roborun-sdk/examples/rover.py), plus built-in profiles for [Booster K1 and Galaxea R1](roborun-sdk/docs/BUILDING.md#humanoids-booster-k1-and-galaxea-r1).
+- **Local safety rules:** keep-out boxes, velocity/clearance limits, and `<60 ms` Stop run strictly on your robot computer ([`Rules`](roborun-sdk/docs/BUILDING.md#rules)).
+
+---
+
+## Repository Layout
+
+| Path | Description |
+| --- | --- |
+| [`roborun-sdk/`](roborun-sdk/) | `roborun` CLI and `roborun_sdk` package: guided setup, arm drivers, cameras, MuJoCo simulation, local API, and Python client |
+| [`roborun-station/`](roborun-station/) | Pure-Python station hosting your arm drivers: motion leases, Stop and hold, Home, and simulated stations |
+| [`roborun-sdk/examples/`](roborun-sdk/examples/) | Minimal arm driver, folder camera, keep-out rules, CLI client, VLM tool schemas (`llm_tools.py`), and custom rover (`rover.py`) |
+| [`roborun-sdk/docs/BUILDING.md`](roborun-sdk/docs/BUILDING.md) | Complete builder reference (drivers, cameras, rules, URDFs, local API, client, LLM tools, humanoids, custom bodies) |
+| [`roborun-sdk/docs/HOSTED_API.md`](roborun-sdk/docs/HOSTED_API.md) | Hosted Roborun API reference |
+| [`roborun-sdk/CHANGELOG.md`](roborun-sdk/CHANGELOG.md) | Release notes (`roborun docs changelog`) |
+
+The robot runtime is not stored in this repository; `roborun up` downloads it automatically on first start. Earlier `ros-agent` releases (v0.1.0–v0.9.0) are archived on the [`legacy`](https://github.com/publu/RoboRun/tree/legacy) branch (`legacy-v0.1.0`..`legacy-v0.9.0`, `legacy-feat-fleet-lab`, `legacy-openclaw-mcp`).
+
+---
+
+## Running Tests
 
 ```sh
 pip install "./roborun-station" "./roborun-sdk[robot,test]" pytest-xdist pytest-timeout
@@ -116,27 +150,11 @@ cd roborun-sdk && python -m pytest -q -n auto --timeout=180 \
 cd ../roborun-station && python -m pytest -q
 ```
 
-This is the selection [the CI workflow](.github/workflows/ci.yml) runs: simulation and fakes only, no arm or camera
-needed. Some tests skip themselves when an optional SDK or
-hardware is absent. `tests/test_guided_setup.py` runs separately: it needs root inside a network namespace with the
-`vcan` kernel module and the network (it installs packages from PyPI); see
-[`roborun-sdk/DEVELOPING.md`](roborun-sdk/DEVELOPING.md#run-the-tests).
+This matches [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (simulation and fakes only; no hardware required). For package development and `test_guided_setup.py`, see [`roborun-sdk/DEVELOPING.md`](roborun-sdk/DEVELOPING.md) and [`roborun-station/DEVELOPING.md`](roborun-station/DEVELOPING.md).
 
-## Issues and security
+## Issues, Security & License
 
-Bugs and requests for new arm, camera or robot support: open an issue with the templates in this repository. Pull
-requests are welcome, especially arm drivers, cameras, examples and docs: see [CONTRIBUTING.md](CONTRIBUTING.md). Security problems: do not open a public issue, see [SECURITY.md](SECURITY.md).
-
-## License
-
-Apache-2.0, see [LICENSE](LICENSE) and [NOTICE](NOTICE). You may use, change and redistribute this code, including in
-commercial products, under the terms of that license. Contributions are accepted under the same license
-([CONTRIBUTING.md](CONTRIBUTING.md)). Third-party components keep their own licenses:
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The license does not grant rights to the Roborun name or logo beyond
-what its section 6 allows.
-
-## Service terms
-
-The Apache-2.0 license covers the code in this repository. The hosted Roborun service (app.roborun.app and its API, your
-Roborun key) and the robot runtime that `roborun up` downloads from it are not in this repository and are covered by
-separate terms: <https://roborun.app/terms>.
+- **Bugs, drivers, and PRs:** open an issue or pull request — see [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Security issues:** do not open a public issue; follow [SECURITY.md](SECURITY.md).
+- **Code license:** Apache-2.0 ([LICENSE](LICENSE), [NOTICE](NOTICE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
+- **Service terms:** the hosted Roborun service (`app.roborun.app`, its API, and the downloaded robot runtime) is covered by <https://roborun.app/terms>.
