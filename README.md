@@ -19,17 +19,17 @@ Because the Roborun API handles physical motion planning in a single high-level 
 
 ### Measured Cost & Performance (Simulated Franka Panda, Zero-Shot)
 
-| Setup | Benchmark | Success Rate | Calls / Tasks per Ep | Wall Time | VLM Cost / Ep | Roborun API Cost / Ep\* | **Total Cost / Ep** |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **GPT-6 Astra (high)** direct† | LIBERO-10 | 44% (44/100) | 49.4 tool calls | — | $7.09 | — | **$7.09** ($16.11 / pass) |
-| **GPT-6.1 Sol (high)** direct† | LIBERO-10 | 33% (33/100) | 53.8 tool calls | — | $1.64 | — | **$1.64** ($4.97 / pass) |
-| **GPT-6.1 Sol (low)** direct† | LIBERO-10 | 24% (24/100) | 51.6 tool calls | — | $1.02 | — | **$1.02** ($4.25 / pass) |
-| **GPT-6 Luna (all efforts)** direct† | LIBERO-10 | **0%** (0/300) | 8.5–74.0 calls | — | $0.003–$0.29 | — | **∞** (no passes) |
-| **`gpt-6-luna` + Roborun API** | LIBERO-Object | **90%** (9/10) | 1.3 robot tasks | ~2.1 min | **$0.013** | $0.06–$0.16 | **$0.07–$0.17** |
-| **`gpt-6.2-sol` (low) + Roborun API** | LIBERO-Object | **100%** (10/10) | **1.0 robot task** | ~1.8 min | **$0.194** | $0.05–$0.14 | **$0.25–$0.33** |
-| **`gpt-6.1-sol` (high) + Roborun API** | LIBERO-Object (5 layouts × 10) | **88%** ≤600 steps (44/50; **98%** any step) | 1.6 robot tasks | ~2.4 min | **$0.187** | $0.09–$0.23 | **$0.28–$0.41** |
+| Setup | Benchmark | Success Rate | API Calls / Tasks per Ep | Wall Time | VLM Token Cost / Ep\* |
+| --- | --- | ---: | ---: | ---: | ---: |
+| **GPT-6 Astra (high)** direct† | LIBERO-10 | 44% (44/100) | 49.4 pose tool calls | — | **$7.09** ($16.11 / pass) |
+| **GPT-6.1 Sol (high)** direct† | LIBERO-10 | 33% (33/100) | 53.8 pose tool calls | — | **$1.64** ($4.97 / pass) |
+| **GPT-6.1 Sol (low)** direct† | LIBERO-10 | 24% (24/100) | 51.6 pose tool calls | — | **$1.02** ($4.25 / pass) |
+| **GPT-6 Luna (all efforts)** direct† | LIBERO-10 | **0%** (0/300) | 8.5–74.0 pose tool calls | — | $0.003–$0.29 (no passes) |
+| **`gpt-6-luna` + Roborun API** | LIBERO-Object | **90%** (9/10) | **1.3 `POST /v1/tasks` calls** | ~2.1 min | **$0.013** |
+| **`gpt-6.2-sol` (low) + Roborun API** | LIBERO-Object | **100%** (10/10) | **1.0 `POST /v1/tasks` call** | ~1.8 min | **$0.194** |
+| **`gpt-6.1-sol` (high) + Roborun API** | LIBERO-Object (5 layouts × 10) | **88%** ≤600 steps (44/50; **98%** any step) | **1.6 `POST /v1/tasks` calls** | ~2.4 min | **$0.187** |
 
-*\*Roborun API cost range reflects fleet-amortized compute (10+ active robots) through single-robot dedicated operation; variable motion-planning compute on a 1-shot pass is under **$0.05/task**. VLM costs use published standard API token rates (`gpt-6-luna` $0.10/$0.50 per M; `gpt-6.1/6.2-sol` $2/$10 per M; `gpt-6-astra` $10/$50 per M).*  
+*\*VLM token cost per episode measured from logged input/cached/output tokens at published API rates, plus the Roborun task calls shown (`POST /v1/tasks`).*  
 *†Direct-VLM baselines from Espinola, Zhang & Xiang, [arXiv:2610.30051](https://arxiv.org/abs/2610.30051) (Oct 2026), evaluating frontier models issuing closed-loop end-effector pose commands on LIBERO-10 without pretrained manipulation skills.*
 
 **Evaluation notes:** All Roborun trials above run zero-shot (no task-specific fine-tuning) through the standard Roborun local API and hosted service with LIBERO's own BDDL success predicates and 600-step budget. LIBERO-Object runs use a 960×720 scene camera, frozen physics during planning, an open start gripper, and a one-page product reference sheet; multi-suite zero-shot evaluations (LIBERO-10, LIBERO-Spatial, and LIBERO-Goal without reference sheets) are in progress and will be added to this table as runs complete.
